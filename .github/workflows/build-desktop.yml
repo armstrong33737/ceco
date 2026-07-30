@@ -1,0 +1,47 @@
+name: Build CECO Desktop
+
+# Chaque installateur DOIT être construit sur son OS natif : embedded-postgres
+# télécharge un binaire PostgreSQL différent par plateforme, et pnpm install
+# ne récupère que celui correspondant à la machine qui exécute la commande.
+# Construire le .exe depuis Ubuntu embarquerait un binaire Postgres Linux
+# inutilisable sur Windows.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Installer les dépendances (récupère le binaire Postgres natif à cet OS)
+        run: pnpm install --frozen-lockfile
+
+      - name: Générer le client Prisma
+        run: pnpm --filter @ceco/backend prisma:generate
+
+      - name: Construire l'installateur pour ${{ matrix.os }}
+        run: pnpm --filter @ceco/desktop run build:installer
+
+      - name: Publier l'installateur en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ceco-installer-${{ matrix.os }}
+          path: packages/desktop/dist/**/*
