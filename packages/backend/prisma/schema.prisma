@@ -1,0 +1,487 @@
+// ============================================================
+// CECO — Schéma Prisma V0
+// Principe directeur : chaque table métier porte centerId dès V0,
+// même en mode local à centre unique. Rien n'est ajouté en V8.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- Tenant racine ----------------
+
+model Center {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  logo             String?
+  email            String?
+  phone            String?
+  subscriptionPlan String   @default("local") // "local" | "trial" | "pro" ...
+  maxStorage       BigInt?
+  storageUsedBytes BigInt   @default(0)
+  storageCheckedAt DateTime?
+  createdAt        DateTime @default(now())
+
+  users         User[]
+  roles         Role[]
+  settings      Setting[]
+  subscription  Subscription?
+  license       License?
+
+  programTypes  ProgramType[]
+  filieres      Filiere[]
+  classes       Classe[]
+  salles        Salle[]
+  academicYears AcademicYear[]
+  subjects      Subject[]
+  students      Student[]
+  formateurs    Formateur[]
+  inscriptions  Inscription[]
+  gradingPolicies GradingPolicy[]
+  gradePeriods    GradePeriod[]
+  grades          Grade[]
+  subjectResults  SubjectResult[]
+  deliberations Deliberation[]
+  presences     Presence[]
+
+  entreprises   Entreprise[]
+  stages        Stage[]
+
+  documentTemplates DocumentTemplate[]
+  documents         Document[]
+
+  auditLogs     AuditLog[]
+  notifications Notification[]
+}
+
+model Subscription {
+  id         String    @id @default(cuid())
+  centerId   String    @unique
+  center     Center    @relation(fields: [centerId], references: [id])
+  plan       String    @default("local")
+  status     String    @default("active")
+  expiresAt  DateTime?
+  maxUsers   Int?
+  maxStorage BigInt?
+}
+
+model License {
+  id            String   @id @default(cuid())
+  centerId      String   @unique
+  center        Center   @relation(fields: [centerId], references: [id])
+  signedPayload String   // JSON signé (RSA) — customerId, maxUsers, modules, expiresAt
+  publicKeyId   String   // version de clé publique utilisée pour vérifier
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+}
+
+model Setting {
+  id       String @id @default(cuid())
+  centerId String
+  center   Center @relation(fields: [centerId], references: [id])
+  key      String // "branding.header", "jury.seuil_admission", "signature.directeur", ...
+  value    Json
+
+  @@unique([centerId, key])
+}
+
+// ---------------- Utilisateurs & RBAC ----------------
+
+model User {
+  id        String    @id @default(cuid())
+  centerId  String
+  center    Center    @relation(fields: [centerId], references: [id])
+  roleId    String?
+  role      Role?     @relation(fields: [roleId], references: [id])
+  email     String
+  password  String
+  firstName String
+  lastName  String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([centerId, email])
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  centerId    String
+  center      Center       @relation(fields: [centerId], references: [id])
+  name        String       // "admin", "formateur", "secretaire" — seedés par centre à l'init
+  isSystem    Boolean      @default(false)
+  users       User[]
+  permissions Permission[]
+
+  @@unique([centerId, name])
+}
+
+model Permission {
+  id     String @id @default(cuid())
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+  action String // "student.read", "grades.validate", "bulletins.generate", ...
+
+  @@unique([roleId, action])
+}
+
+// ---------------- Structure académique ----------------
+
+model ProgramType {
+  id       String    @id @default(cuid())
+  centerId String
+  center   Center    @relation(fields: [centerId], references: [id])
+  code     String    // "DQP", "CQP"
+  label    String
+  filieres Filiere[]
+
+  @@unique([centerId, code])
+}
+
+model Filiere {
+  id              String        @id @default(cuid())
+  centerId        String
+  center          Center        @relation(fields: [centerId], references: [id])
+  programTypeId   String
+  programType     ProgramType   @relation(fields: [programTypeId], references: [id])
+  name            String
+  durationInYears Int           // 1 à 3 — définit le nombre de niveaux attendus
+  niveaux         Niveau[]
+  classes         Classe[]
+}
+
+model Niveau {
+  id        String    @id @default(cuid())
+  filiereId String
+  filiere   Filiere   @relation(fields: [filiereId], references: [id])
+  order     Int       // 1, 2, 3
+  classes   Classe[]
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  label     String   // "2025-2026"
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+
+  classes          Classe[]
+  inscriptions     Inscription[]
+  subjectOfferings SubjectOffering[]
+  gradePeriods     GradePeriod[]
+
+  @@unique([centerId, label])
+}
+
+model Salle {
+  id       String  @id @default(cuid())
+  centerId String
+  center   Center  @relation(fields: [centerId], references: [id])
+  name     String
+  capacity Int?
+  classes  Classe[]
+}
+
+model Classe {
+  id             String       @id @default(cuid())
+  centerId       String
+  center         Center       @relation(fields: [centerId], references: [id])
+  filiereId      String
+  filiere        Filiere      @relation(fields: [filiereId], references: [id])
+  niveauId       String
+  niveau         Niveau       @relation(fields: [niveauId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  salleId        String?
+  salle          Salle?       @relation(fields: [salleId], references: [id])
+  label          String       // "DQP Froid - Niveau 2 - 2026-2027"
+
+  inscriptions     Inscription[]
+  subjectOfferings SubjectOffering[]
+  deliberations    Deliberation[]
+  presences        Presence[]
+
+  @@unique([filiereId, niveauId, academicYearId])
+}
+
+model Student {
+  id         String    @id @default(cuid())
+  centerId   String
+  center     Center    @relation(fields: [centerId], references: [id])
+  matricule  String
+  firstName  String
+  lastName   String
+  birthDate  DateTime?
+  photoPath  String?
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  inscriptions   Inscription[]
+  grades         Grade[]
+  subjectResults SubjectResult[]
+  presences      Presence[]
+  stages         Stage[]
+  deliberations  StudentDeliberation[]
+
+  @@unique([centerId, matricule])
+}
+
+model Inscription { // parcours de l'apprenant — une ligne PAR année, jamais écrasée
+  id             String       @id @default(cuid())
+  centerId       String
+  center         Center       @relation(fields: [centerId], references: [id])
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id])
+  classeId       String
+  classe         Classe       @relation(fields: [classeId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  status         String       @default("en_cours") // en_cours | admis | redouble | abandon
+  createdAt      DateTime     @default(now())
+
+  @@unique([studentId, academicYearId])
+}
+
+model Formateur {
+  id        String  @id @default(cuid())
+  centerId  String
+  center    Center  @relation(fields: [centerId], references: [id])
+  firstName String
+  lastName  String
+  email     String?
+  userId    String? // lien optionnel vers un compte User
+}
+
+// ---------------- Pédagogie & non-destruction historique ----------------
+
+model Subject { // référentiel stable — jamais supprimé
+  id       String @id @default(cuid())
+  centerId String
+  center   Center @relation(fields: [centerId], references: [id])
+  name     String
+  code     String?
+
+  offerings      SubjectOffering[]
+  grades         Grade[]
+  subjectResults SubjectResult[]
+
+  @@unique([centerId, code])
+}
+
+model SubjectOffering { // cycle de vie ANNUEL de la matière — active ou non pour une classe/année
+  id             String       @id @default(cuid())
+  subjectId      String
+  subject        Subject      @relation(fields: [subjectId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  classeId       String?
+  classe         Classe?      @relation(fields: [classeId], references: [id])
+  coefficient    Float
+  volumeHoraire  Int?
+  isActive       Boolean      @default(true)
+
+  @@unique([subjectId, academicYearId, classeId])
+}
+
+// ------------------------------------------------------------------
+// SYSTÈME DE NOTATION — MODÈLE FIGÉ
+// Ce sous-ensemble (GradingPolicy, GradePeriod, Grade, SubjectResult)
+// ne doit plus être restructuré sauf nouvelle spécification explicite.
+// Principe : la pondération CC/Normale est CONFIGURABLE et VERSIONNÉE,
+// mais un résultat déjà calculé est TOUJOURS figé — changer la
+// pondération du centre ne doit jamais réécrire un bulletin déjà émis.
+// ------------------------------------------------------------------
+
+model GradingPolicy { // pondération CC / Session Normale, versionnée dans le temps
+  id            String    @id @default(cuid())
+  centerId      String
+  center        Center    @relation(fields: [centerId], references: [id])
+  filiereId     String?   // null = s'applique à toutes les filières du centre
+  ccWeight      Float     @default(0.30) // 30 % par défaut
+  normalWeight  Float     @default(0.70) // 70 % par défaut — ccWeight + normalWeight = 1.0 (validé en app)
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime? // null = politique actuellement active
+  createdAt     DateTime  @default(now())
+
+  @@index([centerId, filiereId, effectiveFrom])
+}
+
+model GradePeriod { // trimestre, semestre ou année — unité de calcul d'un relevé de notes
+  id             String       @id @default(cuid())
+  centerId       String
+  center         Center       @relation(fields: [centerId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  type           String       // "TRIMESTRE" | "SEMESTRE" | "ANNUEL"
+  order          Int          // 1,2,3 pour trimestre ; 1,2 pour semestre ; 1 pour annuel
+  label          String       // "Trimestre 1", "Semestre 2", "Année 2026-2027"
+  startDate      DateTime
+  endDate        DateTime
+
+  grades         Grade[]
+  subjectResults SubjectResult[]
+  deliberations  Deliberation[]
+
+  @@unique([centerId, academicYearId, type, order])
+}
+
+model Grade { // note BRUTE d'une évaluation individuelle — jamais recalculée après coup
+  id            String      @id @default(cuid())
+  centerId      String
+  center        Center      @relation(fields: [centerId], references: [id])
+  studentId     String
+  student       Student     @relation(fields: [studentId], references: [id])
+  subjectId     String      // référence STABLE à Subject, jamais à SubjectOffering
+  subject       Subject     @relation(fields: [subjectId], references: [id])
+  gradePeriodId String
+  gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
+  evaluationType String     // "CC" | "NORMALE" | "RATTRAPAGE" — catégorie utilisée pour la pondération
+  label         String?     // "CC1", "Devoir 2", "Examen final" — libellé libre affiché au bulletin
+  value         Float
+  maxValue      Float       @default(20)
+  createdAt     DateTime    @default(now())
+}
+
+model SubjectResult { // note finale d'une matière pour une période — FIGÉE au moment du calcul
+  id            String      @id @default(cuid())
+  centerId      String
+  center        Center      @relation(fields: [centerId], references: [id])
+  studentId     String
+  student       Student     @relation(fields: [studentId], references: [id])
+  subjectId     String
+  subject       Subject     @relation(fields: [subjectId], references: [id])
+  gradePeriodId String
+  gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
+
+  ccAverage      Float       // moyenne des Grade de type CC pour cette période
+  normalAverage  Float?      // note de session normale (ou rattrapage si substitué)
+  ccWeight       Float       // COPIE figée de GradingPolicy.ccWeight au moment du calcul
+  normalWeight   Float       // COPIE figée de GradingPolicy.normalWeight au moment du calcul
+  coefficient    Float       // COPIE figée de SubjectOffering.coefficient au moment du calcul
+  finalGrade     Float       // = ccAverage * ccWeight + normalAverage * normalWeight
+  gradingPolicyId String?    // traçabilité uniquement — jamais relu pour recalculer
+  isLocked       Boolean     @default(false) // verrouillé dès qu'une Deliberation existe pour cette période
+  computedAt     DateTime    @default(now())
+
+  @@unique([studentId, subjectId, gradePeriodId])
+}
+
+model Deliberation {
+  id            String      @id @default(cuid())
+  centerId      String
+  center        Center      @relation(fields: [centerId], references: [id])
+  classeId      String
+  classe        Classe      @relation(fields: [classeId], references: [id])
+  gradePeriodId String
+  gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
+  juryDate      DateTime
+
+  studentResults StudentDeliberation[]
+}
+
+model StudentDeliberation {
+  id             String       @id @default(cuid())
+  deliberationId String
+  deliberation   Deliberation @relation(fields: [deliberationId], references: [id])
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id])
+  moyenne        Float
+  rang           Int
+  decision       String       // admis | ajourne | redouble | exclu
+}
+
+model Presence {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id])
+  classeId  String
+  classe    Classe   @relation(fields: [classeId], references: [id])
+  date      DateTime
+  present   Boolean  @default(true)
+}
+
+// ---------------- Stages ----------------
+
+model Entreprise {
+  id       String  @id @default(cuid())
+  centerId String
+  center   Center  @relation(fields: [centerId], references: [id])
+  name     String
+  contact  String?
+  stages   Stage[]
+}
+
+model Stage {
+  id           String     @id @default(cuid())
+  centerId     String
+  center       Center     @relation(fields: [centerId], references: [id])
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id])
+  entrepriseId String
+  entreprise   Entreprise @relation(fields: [entrepriseId], references: [id])
+  startDate    DateTime
+  endDate      DateTime
+  evaluation   Float?
+}
+
+// ---------------- Documents (moteur générique) ----------------
+
+model DocumentTemplate {
+  id       String  @id @default(cuid())
+  centerId String
+  center   Center  @relation(fields: [centerId], references: [id])
+  type     String  // BULLETIN | PV | PRESENCE | ATTESTATION | DIPLOME | CONVENTION | RECU ...
+  config   Json    // logo, en-tête, pied de page, blocs de signature, couleurs
+  isActive Boolean @default(true)
+
+  @@unique([centerId, type])
+}
+
+model Document {
+  id             String   @id @default(cuid())
+  centerId       String
+  center         Center   @relation(fields: [centerId], references: [id])
+  type           String
+  studentId      String?
+  classeId       String?
+  filePath       String
+  fileHash       String
+  renderSnapshot Json     // config figée au moment de la génération — jamais réécrite après coup
+  qrToken        String   @unique
+  generatedAt    DateTime @default(now())
+}
+
+// ---------------- Audit & notifications ----------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  centerId  String
+  center    Center   @relation(fields: [centerId], references: [id])
+  userId    String?
+  channel   String   @default("internal") // internal | email | sms
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
