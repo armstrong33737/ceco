@@ -1,6 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
+const http = require("http");
 const ServiceManager = require("./serviceManager");
+const { readConfig, writeConfig, clearConfig } = require("./setup/config");
 
 // Fixe explicitement le dossier userData. app.setName() seul peut ne pas
 // suffire selon le moment où Electron résout ce chemin en interne — on le
@@ -21,8 +23,6 @@ if (!gotSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    // Une seconde tentative de lancement : on ramène la fenêtre existante
-    // au premier plan plutôt que de laisser une nouvelle instance démarrer.
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -32,10 +32,26 @@ if (!gotSingleInstanceLock) {
 }
 
 let mainWindow;
+let setupWindow;
 let tray;
 const serviceManager = new ServiceManager();
 
-function createWindow() {
+// Test de connexion ponctuel (pas une boucle de polling comme au démarrage
+// du mode Serveur) : l'utilisateur vient de saisir une adresse, on vérifie
+// une fois avec un délai raisonnable avant de lui répondre.
+function testConnection(address, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(`http://${address}/health`, { timeout: timeoutMs }, (res) => {
+      res.resume();
+      if (res.statusCode === 200) return resolve();
+      reject(new Error(`Le serveur a répondu avec le code ${res.statusCode}.`));
+    });
+    req.on("timeout", () => req.destroy(new Error("Délai de connexion dépassé.")));
+    req.on("error", (err) => reject(new Error(`Impossible de joindre ce serveur : ${err.message}`)));
+  });
+}
+
+function createWindow(clientAddress) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -43,7 +59,11 @@ function createWindow() {
   });
 
   // En dev : pointe vers le serveur Vite. En prod : charge le build statique.
-  mainWindow.loadURL(process.env.CECO_FRONTEND_URL || "http://localhost:5173");
+  const baseUrl = process.env.CECO_FRONTEND_URL || "http://localhost:5173";
+  const finalUrl = clientAddress
+    ? `${baseUrl}?apiAddress=${encodeURIComponent(clientAddress)}`
+    : baseUrl;
+  mainWindow.loadURL(finalUrl);
 
   // À la fermeture : proposer Minimiser (services actifs) ou Arrêter (séquence propre).
   mainWindow.on("close", async (e) => {
@@ -63,8 +83,6 @@ function createWindow() {
       try {
         await serviceManager.stopServer();
       } catch (err) {
-        // Ne jamais bloquer la fermeture de l'app à cause d'une erreur
-        // d'arrêt de service — on log et on quitte quand même.
         console.error("Erreur pendant l'arrêt des services :", err);
       } finally {
         app.isQuitting = true;
@@ -78,8 +96,23 @@ function createTray() {
   tray = new Tray(path.join(__dirname, "../assets/tray-icon.png"));
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Ouvrir CECO", click: () => mainWindow.show() },
+      { label: "Ouvrir CECO", click: () => mainWindow && mainWindow.show() },
       { type: "separator" },
+      {
+        label: "Changer de mode (Serveur/Client)",
+        click: async () => {
+          try {
+            await serviceManager.stopServer();
+          } catch (err) {
+            console.error("Erreur pendant l'arrêt des services :", err);
+          } finally {
+            clearConfig();
+            app.relaunch();
+            app.isQuitting = true;
+            app.quit();
+          }
+        },
+      },
       {
         label: "Arrêter les services et quitter",
         click: async () => {
@@ -98,18 +131,79 @@ function createTray() {
   tray.setToolTip("CECO — services actifs en arrière-plan");
 }
 
+// ------------------------------------------------------------------
+// Écran de choix Serveur/Client — affiché uniquement au premier lancement
+// (tant qu'aucune configuration n'est encore enregistrée).
+// ------------------------------------------------------------------
+function createSetupWindow() {
+  setupWindow = new BrowserWindow({
+    width: 480,
+    height: 420,
+    resizable: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, "setup/preload.js"),
+    },
+  });
+  setupWindow.setMenuBarVisibility(false);
+  setupWindow.loadFile(path.join(__dirname, "setup/setup.html"));
+}
+
+ipcMain.handle("setup:choose-server", async () => {
+  try {
+    await serviceManager.startServer();
+    writeConfig({ mode: "server" });
+    if (setupWindow) setupWindow.close();
+    createWindow();
+    createTray();
+    return { ok: true };
+  } catch (err) {
+    console.error("Échec du démarrage en mode Serveur :", err);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("setup:choose-client", async (event, address) => {
+  try {
+    await testConnection(address);
+    writeConfig({ mode: "client", serverAddress: address });
+    if (setupWindow) setupWindow.close();
+    createWindow(address);
+    createTray();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return; // app.quit() déjà appelé plus haut
 
+  const config = readConfig();
+
+  if (!config) {
+    // Premier lancement : l'utilisateur doit choisir.
+    createSetupWindow();
+    return;
+  }
+
+  // Lancements suivants : le choix est déjà connu, on saute directement
+  // à l'étape correspondante sans redemander.
   try {
-    await serviceManager.startServer(); // Mode Serveur par défaut pour ce squelette
-    createWindow();
+    if (config.mode === "server") {
+      await serviceManager.startServer();
+      createWindow();
+    } else {
+      await testConnection(config.serverAddress);
+      createWindow(config.serverAddress);
+    }
     createTray();
   } catch (err) {
     console.error("Échec du démarrage des services CECO :", err);
     dialog.showErrorBox(
       "Erreur au démarrage",
-      `CECO n'a pas pu démarrer ses services.\n\n${err.message}`
+      `CECO n'a pas pu démarrer.\n\n${err.message}\n\nUtilisez "Changer de mode" depuis la barre système pour reconfigurer.`
     );
     app.quit();
   }

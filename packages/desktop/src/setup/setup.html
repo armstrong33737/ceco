@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>CECO — Configuration</title>
+<style>
+  :root {
+    --encre: #1B2A44;
+    --papier: #EFEBE2;
+    --ocre: #B8873A;
+    --sauge: #2F6F5E;
+    --brique: #9A3E2B;
+    --anthracite: #2B2823;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--papier);
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    color: var(--anthracite);
+  }
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 40px;
+    width: 420px;
+    box-shadow: 0 8px 24px rgba(27, 42, 68, 0.15);
+  }
+  h1 {
+    font-size: 24px;
+    color: var(--encre);
+    margin: 0 0 4px;
+  }
+  p.subtitle {
+    color: #6B6659;
+    margin: 0 0 28px;
+    font-size: 14px;
+  }
+  .choice {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  button.mode-btn {
+    padding: 16px;
+    border-radius: 8px;
+    border: 2px solid #E2DED2;
+    background: white;
+    text-align: left;
+    cursor: pointer;
+    font-size: 15px;
+    color: var(--anthracite);
+  }
+  button.mode-btn:hover {
+    border-color: var(--ocre);
+  }
+  button.mode-btn strong {
+    display: block;
+    color: var(--encre);
+    margin-bottom: 4px;
+  }
+  .client-form {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .client-form.visible { display: flex; }
+  input[type="text"] {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid #D8D3C6;
+    font-size: 14px;
+  }
+  .primary-btn {
+    background: var(--encre);
+    color: var(--papier);
+    border: none;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .back-link {
+    background: none;
+    border: none;
+    color: #6B6659;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+  }
+  .status {
+    margin-top: 12px;
+    font-size: 13px;
+    min-height: 18px;
+  }
+  .status.error { color: var(--brique); }
+  .status.pending { color: var(--anthracite); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bienvenue sur CECO</h1>
+    <p class="subtitle">Choisissez comment cette machine doit fonctionner.</p>
+
+    <div class="choice" id="choiceView">
+      <button class="mode-btn" id="btnServeur">
+        <strong>Mode Serveur</strong>
+        Cette machine héberge la base de données et les services CECO.
+      </button>
+      <button class="mode-btn" id="btnClient">
+        <strong>Mode Client</strong>
+        Se connecter à un serveur CECO déjà actif sur le réseau.
+      </button>
+    </div>
+
+    <div class="client-form" id="clientForm">
+      <label for="serverAddress">Adresse du serveur (ex. 192.168.1.10:4000)</label>
+      <input type="text" id="serverAddress" placeholder="192.168.1.10:4000" />
+      <button class="primary-btn" id="btnConnect">Se connecter</button>
+      <button class="back-link" id="btnBack">← Retour</button>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const choiceView = document.getElementById("choiceView");
+    const clientForm = document.getElementById("clientForm");
+    const statusEl = document.getElementById("status");
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text || "";
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    document.getElementById("btnServeur").addEventListener("click", async () => {
+      setStatus("Démarrage des services locaux (PostgreSQL, migrations, API)...", "pending");
+      const result = await window.cecoSetup.chooseServer();
+      if (!result.ok) setStatus(result.error, "error");
+    });
+
+    document.getElementById("btnClient").addEventListener("click", () => {
+      choiceView.style.display = "none";
+      clientForm.classList.add("visible");
+    });
+
+    document.getElementById("btnBack").addEventListener("click", () => {
+      choiceView.style.display = "flex";
+      clientForm.classList.remove("visible");
+      setStatus("");
+    });
+
+    document.getElementById("btnConnect").addEventListener("click", async () => {
+      const address = document.getElementById("serverAddress").value.trim();
+      if (!address) return setStatus("Veuillez saisir une adresse.", "error");
+      setStatus("Connexion en cours...", "pending");
+      const result = await window.cecoSetup.chooseClient(address);
+      if (!result.ok) setStatus(result.error, "error");
+    });
+  </script>
+</body>
+</html>
