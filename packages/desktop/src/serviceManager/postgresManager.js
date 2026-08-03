@@ -1,5 +1,6 @@
 const path = require("path");
 const { app } = require("electron");
+const fs = require("fs");
 
 // ------------------------------------------------------------------
 // STRATÉGIE RETENUE (voir document technique consolidé, section 6) :
@@ -10,9 +11,12 @@ const { app } = require("electron");
 // - Arrêt TOUJOURS propre : jamais de kill brutal du processus.
 // - Sauvegarde = pg_dump uniquement, jamais une copie du data dir.
 //
-// ⚠️ AVANT DE CONSTRUIRE DESSUS : valider ce module par le spike
-// technique recommandé (install/start/stop/restart sur Windows et
-// macOS, incluant un test d'arrêt brutal) — voir roadmap V0.
+// NOTE IMPORTANTE (retenue après debug) : embedded-postgres ne détecte pas
+// tout seul, à partir d'une nouvelle instance JS, qu'un cluster existe déjà
+// sur disque. Il faut explicitement lui dire de sauter initdb via
+// `isInitialised = true` quand PG_VERSION est déjà présent — sinon il
+// relance initdb à CHAQUE démarrage, y compris sur un dossier valide, ce
+// qui échoue avec "directory exists but is not empty".
 // ------------------------------------------------------------------
 
 class PostgresManager {
@@ -23,9 +27,24 @@ class PostgresManager {
   }
 
   async start() {
-    // eslint-disable-next-line global-require
-    const EmbeddedPostgres = require("embedded-postgres");
-    const isFirstRun = !require("fs").existsSync(this.dataDir);
+    // embedded-postgres est un module ESM pur — require() est impossible
+    // depuis un fichier CommonJS, il faut un import() dynamique.
+    const { default: EmbeddedPostgres } = await import("embedded-postgres");
+
+    // PG_VERSION est créé par Postgres uniquement quand initdb se termine
+    // avec succès. Un dossier présent MAIS sans ce fichier signifie qu'un
+    // précédent démarrage a été interrompu (crash, coupure, kill brutal).
+    const hasCompletedInit = fs.existsSync(path.join(this.dataDir, "PG_VERSION"));
+
+    if (fs.existsSync(this.dataDir) && !hasCompletedInit) {
+      console.warn(
+        `Dossier de données Postgres incomplet ou corrompu détecté (${this.dataDir}) — ` +
+        "nettoyage automatique avant réinitialisation."
+      );
+      fs.rmSync(this.dataDir, { recursive: true, force: true });
+    }
+
+    const isFirstRun = !fs.existsSync(this.dataDir);
 
     this.pg = new EmbeddedPostgres({
       databaseDir: this.dataDir,
@@ -35,7 +54,14 @@ class PostgresManager {
       persistent: true,
     });
 
-    await this.pg.initialise(); // no-op si déjà initialisé
+    // Cluster déjà initialisé sur disque -> on saute initdb explicitement.
+    // Sinon -> première initialisation réelle.
+    if (hasCompletedInit) {
+      this.pg.isInitialised = true;
+    } else {
+      await this.pg.initialise();
+    }
+
     await this.pg.start();
 
     if (isFirstRun) {
@@ -47,7 +73,16 @@ class PostgresManager {
 
   async stop() {
     if (!this.pg) return;
-    await this.pg.stop(); // arrêt propre obligatoire — jamais de kill direct
+    try {
+      await this.pg.stop(); // arrêt propre obligatoire — jamais de kill direct
+    } catch (err) {
+      console.error(
+        "PostgresManager.stop() a échoué — vérifiez que 'pnpm approve-builds' " +
+        "a bien été exécuté pour embedded-postgres. Erreur :",
+        err
+      );
+      throw err;
+    }
   }
 
   getConnectionUrl() {

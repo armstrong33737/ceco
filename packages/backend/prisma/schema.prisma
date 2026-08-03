@@ -175,7 +175,6 @@ model AcademicYear {
 
   classes          Classe[]
   inscriptions     Inscription[]
-  subjectOfferings SubjectOffering[]
   gradePeriods     GradePeriod[]
 
   @@unique([centerId, label])
@@ -270,34 +269,26 @@ model Subject { // référentiel stable — jamais supprimé
   code     String?
 
   offerings      SubjectOffering[]
-  grades         Grade[]
   subjectResults SubjectResult[]
 
   @@unique([centerId, code])
 }
 
-model SubjectOffering { // cycle de vie ANNUEL de la matière — active ou non pour une classe/année
-  id             String       @id @default(cuid())
-  subjectId      String
-  subject        Subject      @relation(fields: [subjectId], references: [id])
-  academicYearId String
-  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  classeId       String?
-  classe         Classe?      @relation(fields: [classeId], references: [id])
-  coefficient    Float
-  volumeHoraire  Int?
-  isActive       Boolean      @default(true)
-
-  @@unique([subjectId, academicYearId, classeId])
-}
-
 // ------------------------------------------------------------------
 // SYSTÈME DE NOTATION — MODÈLE FIGÉ
-// Ce sous-ensemble (GradingPolicy, GradePeriod, Grade, SubjectResult)
-// ne doit plus être restructuré sauf nouvelle spécification explicite.
-// Principe : la pondération CC/Normale est CONFIGURABLE et VERSIONNÉE,
-// mais un résultat déjà calculé est TOUJOURS figé — changer la
-// pondération du centre ne doit jamais réécrire un bulletin déjà émis.
+// Ce sous-ensemble (SubjectOffering, GradingPolicy, GradePeriod, Grade,
+// SubjectResult, Deliberation) ne doit plus être restructuré sauf
+// nouvelle spécification explicite.
+//
+// Règles retenues :
+// - Pas de trimestre : uniquement SEMESTRE et ANNUEL.
+// - Une matière est offerte par SEMESTRE pour une classe donnée — les
+//   deux semestres d'une même classe peuvent avoir des matières différentes.
+// - Un centre peut générer un PV/relevé pour le CC seul, la Normale
+//   seule, le Semestre (CC+Normale combinés), ou l'Année entière.
+// - La pondération CC/Normale est CONFIGURABLE et VERSIONNÉE, mais un
+//   résultat déjà calculé est TOUJOURS figé — changer la pondération du
+//   centre ne doit jamais réécrire un bulletin déjà émis.
 // ------------------------------------------------------------------
 
 model GradingPolicy { // pondération CC / Session Normale, versionnée dans le temps
@@ -314,40 +305,60 @@ model GradingPolicy { // pondération CC / Session Normale, versionnée dans le 
   @@index([centerId, filiereId, effectiveFrom])
 }
 
-model GradePeriod { // trimestre, semestre ou année — unité de calcul d'un relevé de notes
+model GradePeriod { // semestre ou année — unité de calcul d'un relevé de notes (PAS de trimestre)
   id             String       @id @default(cuid())
   centerId       String
   center         Center       @relation(fields: [centerId], references: [id])
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  type           String       // "TRIMESTRE" | "SEMESTRE" | "ANNUEL"
-  order          Int          // 1,2,3 pour trimestre ; 1,2 pour semestre ; 1 pour annuel
-  label          String       // "Trimestre 1", "Semestre 2", "Année 2026-2027"
+  type           String       // "SEMESTRE" | "ANNUEL"
+  order          Int          // 1,2 pour semestre ; 1 pour annuel
+  label          String       // "Semestre 1", "Année 2026-2027"
   startDate      DateTime
   endDate        DateTime
 
-  grades         Grade[]
-  subjectResults SubjectResult[]
-  deliberations  Deliberation[]
+  subjectOfferings SubjectOffering[]
+  grades           Grade[]
+  subjectResults   SubjectResult[]
+  deliberations    Deliberation[]
 
   @@unique([centerId, academicYearId, type, order])
 }
 
-model Grade { // note BRUTE d'une évaluation individuelle — jamais recalculée après coup
+model SubjectOffering { // matière offerte pour une classe, POUR UN SEMESTRE PRÉCIS
   id            String      @id @default(cuid())
-  centerId      String
-  center        Center      @relation(fields: [centerId], references: [id])
-  studentId     String
-  student       Student     @relation(fields: [studentId], references: [id])
-  subjectId     String      // référence STABLE à Subject, jamais à SubjectOffering
+  subjectId     String
   subject       Subject     @relation(fields: [subjectId], references: [id])
-  gradePeriodId String
+  classeId      String
+  classe        Classe      @relation(fields: [classeId], references: [id])
+  gradePeriodId String      // référence obligatoirement un GradePeriod de type SEMESTRE
   gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
-  evaluationType String     // "CC" | "NORMALE" | "RATTRAPAGE" — catégorie utilisée pour la pondération
-  label         String?     // "CC1", "Devoir 2", "Examen final" — libellé libre affiché au bulletin
-  value         Float
-  maxValue      Float       @default(20)
-  createdAt     DateTime    @default(now())
+  coefficient   Float
+  volumeHoraire Int?
+  isActive      Boolean     @default(true)
+
+  grades Grade[]
+
+  // Même matière, même classe, mais offerte indépendamment par semestre :
+  // Semestre 1 et Semestre 2 peuvent avoir des matières différentes.
+  @@unique([subjectId, classeId, gradePeriodId])
+}
+
+model Grade { // note BRUTE d'une évaluation individuelle — jamais recalculée après coup
+  id                String          @id @default(cuid())
+  centerId          String
+  center            Center          @relation(fields: [centerId], references: [id])
+  studentId         String
+  student           Student         @relation(fields: [studentId], references: [id])
+  subjectOfferingId String          // référence l'offre PAR SEMESTRE, pas juste la matière
+  subjectOffering   SubjectOffering @relation(fields: [subjectOfferingId], references: [id])
+  gradePeriodId     String          // toujours un semestre — les notes brutes n'existent qu'au niveau semestre
+  gradePeriod       GradePeriod     @relation(fields: [gradePeriodId], references: [id])
+  evaluationType    String          // "CC" | "NORMALE" | "RATTRAPAGE" — catégorie utilisée pour la pondération
+  label             String?         // "CC1", "Devoir 2", "Examen final" — libellé libre affiché au bulletin
+  value             Float
+  maxValue          Float           @default(20)
+  createdAt         DateTime        @default(now())
 }
 
 model SubjectResult { // note finale d'une matière pour une période — FIGÉE au moment du calcul
@@ -358,23 +369,27 @@ model SubjectResult { // note finale d'une matière pour une période — FIGÉE
   student       Student     @relation(fields: [studentId], references: [id])
   subjectId     String
   subject       Subject     @relation(fields: [subjectId], references: [id])
-  gradePeriodId String
+  gradePeriodId String      // un SEMESTRE (résultat CC+Normale) ou l'ANNÉE (agrégat des semestres)
   gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
 
-  ccAverage      Float       // moyenne des Grade de type CC pour cette période
-  normalAverage  Float?      // note de session normale (ou rattrapage si substitué)
-  ccWeight       Float       // COPIE figée de GradingPolicy.ccWeight au moment du calcul
-  normalWeight   Float       // COPIE figée de GradingPolicy.normalWeight au moment du calcul
-  coefficient    Float       // COPIE figée de SubjectOffering.coefficient au moment du calcul
-  finalGrade     Float       // = ccAverage * ccWeight + normalAverage * normalWeight
-  gradingPolicyId String?    // traçabilité uniquement — jamais relu pour recalculer
-  isLocked       Boolean     @default(false) // verrouillé dès qu'une Deliberation existe pour cette période
-  computedAt     DateTime    @default(now())
+  // Deux modes de calcul possibles pour finalGrade — jamais mélangés :
+  computationMode String    // "CC_NORMALE" (au niveau semestre) | "AGGREGATE_SEMESTRES" (au niveau année)
+
+  ccAverage       Float?    // rempli uniquement si computationMode = CC_NORMALE
+  normalAverage   Float?    // rempli uniquement si computationMode = CC_NORMALE
+  ccWeight        Float?    // copie figée de GradingPolicy.ccWeight — uniquement en mode CC_NORMALE
+  normalWeight    Float?    // copie figée de GradingPolicy.normalWeight — uniquement en mode CC_NORMALE
+  gradingPolicyId String?   // traçabilité uniquement — jamais relu pour recalculer
+
+  coefficient   Float       // figé depuis SubjectOffering (semestre) au moment du calcul
+  finalGrade    Float       // résultat final, quel que soit le mode de calcul
+  isLocked      Boolean     @default(false) // verrouillé dès qu'une Deliberation existe pour cette période
+  computedAt    DateTime    @default(now())
 
   @@unique([studentId, subjectId, gradePeriodId])
 }
 
-model Deliberation {
+model Deliberation { // un PV = une classe + une période + un PÉRIMÈTRE précis (CC / Normale / Semestre / Année)
   id            String      @id @default(cuid())
   centerId      String
   center        Center      @relation(fields: [centerId], references: [id])
@@ -382,9 +397,14 @@ model Deliberation {
   classe        Classe      @relation(fields: [classeId], references: [id])
   gradePeriodId String
   gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
+  scope         String      // "CC" | "NORMALE" | "SEMESTRE" | "ANNUEL" — quel PV est généré
   juryDate      DateTime
 
   studentResults StudentDeliberation[]
+
+  // Une classe peut avoir plusieurs PV pour la même période (un pour le CC,
+  // un pour la Normale, un pour le Semestre combiné) — jamais deux fois le même périmètre.
+  @@unique([classeId, gradePeriodId, scope])
 }
 
 model StudentDeliberation {
