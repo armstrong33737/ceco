@@ -62,7 +62,19 @@ class PostgresManager {
       await this.pg.initialise();
     }
 
-    await this.pg.start();
+    try {
+      await this.pg.start();
+    } catch (err) {
+      // embedded-postgres rejette parfois SANS objet Error (juste `undefined`)
+      // quand Postgres échoue à démarrer — notamment en cas de port déjà
+      // occupé. On reconstruit un message exploitable dans tous les cas.
+      throw new Error(
+        err?.message ||
+          `PostgreSQL n'a pas pu démarrer sur le port ${this.port}. ` +
+          `Une instance précédente occupe peut-être encore ce port — ` +
+          `vérifiez avec "lsof -i :${this.port}" et arrêtez le processus concerné.`
+      );
+    }
 
     if (isFirstRun) {
       console.log("Premier démarrage PostgreSQL — exécuter les migrations Prisma ici.");

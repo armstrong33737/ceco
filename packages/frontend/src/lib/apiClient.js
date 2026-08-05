@@ -1,0 +1,38 @@
+// Résout l'adresse de l'API : en mode Client, Electron transmet l'adresse
+// du serveur distant via ?apiAddress=... (voir packages/desktop/src/main.js).
+// En mode Serveur (ou en dev web pur), on retombe sur le serveur local.
+const params = new URLSearchParams(window.location.search);
+const remoteAddress = params.get("apiAddress");
+export const API_BASE = remoteAddress ? `http://${remoteAddress}` : "http://localhost:4000";
+
+const TOKEN_KEY = "ceco_token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export async function apiFetch(path, options = {}) {
+  const token = getToken();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Erreur ${res.status}`);
+  }
+
+  return res.json();
+}

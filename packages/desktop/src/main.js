@@ -160,7 +160,7 @@ ipcMain.handle("setup:choose-server", async () => {
     return { ok: true };
   } catch (err) {
     console.error("Échec du démarrage en mode Serveur :", err);
-    return { ok: false, error: err.message };
+    return { ok: false, error: err?.message || "Erreur inconnue." };
   }
 });
 
@@ -173,7 +173,7 @@ ipcMain.handle("setup:choose-client", async (event, address) => {
     createTray();
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: err?.message || "Erreur inconnue." };
   }
 });
 
@@ -203,7 +203,7 @@ app.whenReady().then(async () => {
     console.error("Échec du démarrage des services CECO :", err);
     dialog.showErrorBox(
       "Erreur au démarrage",
-      `CECO n'a pas pu démarrer.\n\n${err.message}\n\nUtilisez "Changer de mode" depuis la barre système pour reconfigurer.`
+      `CECO n'a pas pu démarrer.\n\n${err?.message || "Erreur inconnue."}\n\nUtilisez "Changer de mode" depuis la barre système pour reconfigurer.`
     );
     app.quit();
   }

@@ -3,14 +3,21 @@
 <head>
 <meta charset="UTF-8" />
 <title>CECO — Configuration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
 <style>
   :root {
-    --encre: #1B2A44;
-    --papier: #EFEBE2;
-    --ocre: #B8873A;
-    --sauge: #2F6F5E;
-    --brique: #9A3E2B;
-    --anthracite: #2B2823;
+    --primary: #5E72E4;
+    --violet: #825EE4;
+    --ink: #0B1C30;
+    --ink-variant: #43474F;
+    --surface: #F8F9FF;
+    --outline: #E2E5F1;
+    --success: #2DCE89;
+    --success-light: #E6FAF1;
+    --danger: #F5365C;
+    --danger-light: #FEEBEF;
   }
   * { box-sizing: border-box; }
   body {
@@ -19,103 +26,135 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--papier);
-    font-family: "IBM Plex Sans", -apple-system, sans-serif;
-    color: var(--anthracite);
+    background: var(--surface);
+    font-family: "Inter", -apple-system, sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+    position: relative;
   }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    pointer-events: none;
+  }
+  .blob-1 { width: 260px; height: 260px; background: rgba(94,114,228,0.15); top: -80px; left: -80px; }
+  .blob-2 { width: 300px; height: 300px; background: rgba(130,94,228,0.12); bottom: -100px; right: -100px; }
   .card {
+    position: relative;
+    z-index: 1;
     background: white;
-    border-radius: 12px;
-    padding: 40px;
-    width: 420px;
-    box-shadow: 0 8px 24px rgba(27, 42, 68, 0.15);
+    border-radius: 20px;
+    padding: 36px;
+    width: 400px;
+    box-shadow: 0 12px 40px -12px rgba(94, 114, 228, 0.25);
   }
-  h1 {
-    font-size: 24px;
-    color: var(--encre);
-    margin: 0 0 4px;
-  }
-  p.subtitle {
-    color: #6B6659;
-    margin: 0 0 28px;
-    font-size: 14px;
-  }
-  .choice {
+  .icon-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--primary), var(--violet));
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
   }
+  .icon-badge .material-symbols-outlined { color: white; font-size: 28px; }
+  h1 { font-size: 22px; font-weight: 700; color: var(--ink); margin: 0 0 4px; }
+  p.subtitle { color: var(--ink-variant); margin: 0 0 24px; font-size: 14px; }
+  .choice { display: flex; flex-direction: column; gap: 12px; }
   button.mode-btn {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
     padding: 16px;
-    border-radius: 8px;
-    border: 2px solid #E2DED2;
+    border-radius: 14px;
+    border: 1.5px solid var(--outline);
     background: white;
     text-align: left;
     cursor: pointer;
-    font-size: 15px;
-    color: var(--anthracite);
+    font-size: 14px;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    font-family: inherit;
   }
   button.mode-btn:hover {
-    border-color: var(--ocre);
+    border-color: var(--primary);
+    box-shadow: 0 4px 14px rgba(94,114,228,0.15);
+    transform: translateY(-1px);
   }
-  button.mode-btn strong {
-    display: block;
-    color: var(--encre);
-    margin-bottom: 4px;
+  button.mode-btn .material-symbols-outlined {
+    color: var(--primary);
+    font-size: 22px;
+    flex-shrink: 0;
   }
-  .client-form {
-    display: none;
-    flex-direction: column;
-    gap: 12px;
-    margin-top: 8px;
-  }
+  button.mode-btn strong { display: block; color: var(--ink); margin-bottom: 2px; }
+  .client-form { display: none; flex-direction: column; gap: 12px; margin-top: 4px; }
   .client-form.visible { display: flex; }
+  label { font-size: 13px; font-weight: 500; color: var(--ink-variant); }
   input[type="text"] {
-    padding: 10px 12px;
-    border-radius: 6px;
-    border: 1px solid #D8D3C6;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--outline);
     font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
   }
+  input[type="text"]:focus { border-color: var(--primary); }
   .primary-btn {
-    background: var(--encre);
-    color: var(--papier);
+    background: linear-gradient(135deg, var(--primary), var(--violet));
+    color: white;
     border: none;
-    border-radius: 6px;
-    padding: 10px;
+    border-radius: 10px;
+    padding: 12px;
     font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
+    font-family: inherit;
+    box-shadow: 0 4px 14px rgba(94,114,228,0.3);
   }
+  .primary-btn:hover { box-shadow: 0 6px 18px rgba(94,114,228,0.4); }
   .back-link {
     background: none;
     border: none;
-    color: #6B6659;
+    color: var(--ink-variant);
     font-size: 13px;
     cursor: pointer;
-    text-decoration: underline;
+    text-align: left;
     padding: 0;
+    font-family: inherit;
   }
-  .status {
-    margin-top: 12px;
-    font-size: 13px;
-    min-height: 18px;
-  }
-  .status.error { color: var(--brique); }
-  .status.pending { color: var(--anthracite); }
+  .status { margin-top: 14px; font-size: 13px; min-height: 18px; border-radius: 8px; }
+  .status.error { color: var(--danger); background: var(--danger-light); padding: 8px 12px; }
+  .status.pending { color: var(--ink-variant); display: flex; align-items: center; gap: 6px; }
+  .spin { animation: spin 0.8s linear infinite; font-size: 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
   <div class="card">
+    <div class="icon-badge"><span class="material-symbols-outlined">school</span></div>
     <h1>Bienvenue sur CECO</h1>
     <p class="subtitle">Choisissez comment cette machine doit fonctionner.</p>
 
     <div class="choice" id="choiceView">
       <button class="mode-btn" id="btnServeur">
-        <strong>Mode Serveur</strong>
-        Cette machine héberge la base de données et les services CECO.
+        <span class="material-symbols-outlined">dns</span>
+        <span>
+          <strong>Mode Serveur</strong>
+          Cette machine héberge la base de données et les services CECO.
+        </span>
       </button>
       <button class="mode-btn" id="btnClient">
-        <strong>Mode Client</strong>
-        Se connecter à un serveur CECO déjà actif sur le réseau.
+        <span class="material-symbols-outlined">wifi</span>
+        <span>
+          <strong>Mode Client</strong>
+          Se connecter à un serveur CECO déjà actif sur le réseau.
+        </span>
       </button>
     </div>
 
@@ -135,12 +174,16 @@
     const statusEl = document.getElementById("status");
 
     function setStatus(text, kind) {
-      statusEl.textContent = text || "";
       statusEl.className = "status" + (kind ? " " + kind : "");
+      if (kind === "pending") {
+        statusEl.innerHTML = '<span class="material-symbols-outlined spin">progress_activity</span>' + text;
+      } else {
+        statusEl.textContent = text || "";
+      }
     }
 
     document.getElementById("btnServeur").addEventListener("click", async () => {
-      setStatus("Démarrage des services locaux (PostgreSQL, migrations, API)...", "pending");
+      setStatus("Démarrage des services locaux...", "pending");
       const result = await window.cecoSetup.chooseServer();
       if (!result.ok) setStatus(result.error, "error");
     });

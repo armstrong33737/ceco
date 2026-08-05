@@ -2,9 +2,9 @@
 // visible, jamais caché dans un menu — décision UX du projet CECO.
 export default function StatusBar({ mode = "local", address = "192.168.1.10:4000", connected = true }) {
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-encre text-papier text-sm font-sans">
+    <div className="flex items-center gap-2 px-4 py-2 bg-ink text-white text-sm">
       <span
-        className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-sauge" : "bg-brique"}`}
+        className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-blue-400" : "bg-red-400"}`}
       />
       <span>
         {connected ? "Connecté" : "Hors ligne"} —{" "}
@@ -13,3 +13,4 @@ export default function StatusBar({ mode = "local", address = "192.168.1.10:4000
     </div>
   );
 }
+

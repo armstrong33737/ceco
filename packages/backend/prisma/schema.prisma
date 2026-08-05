@@ -22,6 +22,18 @@ model Center {
   logo             String?
   email            String?
   phone            String?
+
+  // Adresse et identité légale — utiles sur les documents officiels
+  address          String?
+  city             String?
+  postalCode       String?
+  country          String?
+  website          String?
+  registrationNumber String? // numéro d'agrément / immatriculation
+  directorName     String?
+  directorTitle    String?  // "Directeur", "Directrice", "Directeur général"...
+  description      String?  // courte présentation du centre
+
   subscriptionPlan String   @default("local") // "local" | "trial" | "pro" ...
   maxStorage       BigInt?
   storageUsedBytes BigInt   @default(0)

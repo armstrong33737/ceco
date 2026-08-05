@@ -2,6 +2,12 @@ const express = require("express");
 const cors = require("cors");
 const { buildTenantResolver } = require("./middleware/tenantResolver");
 const healthRoutes = require("./routes/health");
+const authRoutes = require("./routes/auth");
+const centerRoutes = require("./routes/center");
+const usersRoutes = require("./routes/users");
+const rolesRoutes = require("./routes/roles");
+const licenseRoutes = require("./routes/license");
+const backupsRoutes = require("./routes/backups");
 
 const app = express();
 const PORT = process.env.CECO_API_PORT || 4000;
@@ -15,8 +21,14 @@ app.use(express.json());
 app.use(buildTenantResolver(MODE));
 
 app.use("/", healthRoutes);
+app.use("/", authRoutes);
+app.use("/", centerRoutes);
+app.use("/", usersRoutes);
+app.use("/", rolesRoutes);
+app.use("/", licenseRoutes);
+app.use("/", backupsRoutes);
 // Les futures routes métier (students, grades, documents, ...) se
-// branchent ici, chacune protégée par l'auth JWT + RBAC (V0/V1).
+// branchent ici, chacune protégée par verifyJwt + RBAC.
 
 app.use((err, req, res, next) => {
   console.error(err);
