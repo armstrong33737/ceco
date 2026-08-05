@@ -44,4 +44,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ceco-installer-${{ matrix.os }}
-          path: packages/desktop/dist/**/*
+          # On cible précisément l'extension finale selon l'OS
+          path: |
+            packages/desktop/dist/*.exe
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.snap
+            packages/desktop/dist/*.AppImage
+          if-no-files-found: error
+          compression-level: 0 # Optionnel : évite que GitHub re-compresse un .exe déjà lourd
+
+
