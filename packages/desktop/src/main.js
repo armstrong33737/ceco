@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
+const url = require("url");
 const http = require("http");
 const ServiceManager = require("./serviceManager");
 const { readConfig, writeConfig, clearConfig } = require("./setup/config");
@@ -59,7 +60,10 @@ function createWindow(clientAddress) {
   });
 
   // En dev : pointe vers le serveur Vite. En prod : charge le build statique.
-  const baseUrl = process.env.CECO_FRONTEND_URL || "http://localhost:5173";
+  const devUrl = process.env.CECO_FRONTEND_URL || "http://localhost:5173";
+  const baseUrl = app.isPackaged
+    ? url.pathToFileURL(path.join(process.resourcesPath, "frontend", "index.html")).toString()
+    : devUrl;
   const finalUrl = clientAddress
     ? `${baseUrl}?apiAddress=${encodeURIComponent(clientAddress)}`
     : baseUrl;
@@ -93,7 +97,10 @@ function createWindow(clientAddress) {
 }
 
 function createTray() {
-  tray = new Tray(path.join(__dirname, "../assets/tray-icon.png"));
+  const trayIconPath = app.isPackaged
+    ? path.join(process.resourcesPath, "assets", "tray-icon.png")
+    : path.join(__dirname, "../assets/tray-icon.png");
+  tray = new Tray(trayIconPath);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Ouvrir CECO", click: () => mainWindow && mainWindow.show() },

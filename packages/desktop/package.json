@@ -5,13 +5,18 @@
   "main": "src/main.js",
   "scripts": {
     "dev": "electron .",
-    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && electron-builder --publish never"
+    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
   },
   "build": {
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
-    "files": ["src/**/*", "package.json"],
+    "files": ["src/**/*", "package.json", "assets/**/*"],
     "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend",
+        "filter": ["**/*"]
+      },
       {
         "from": "../backend/prisma",
         "to": "backend/prisma",
