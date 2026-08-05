@@ -32,13 +32,14 @@ export default function CenterSettings() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    setStatus("loading");
     apiFetch("/center")
       .then((data) => {
         setForm({ ...EMPTY, ...data });
         setStatus("idle");
       })
       .catch((err) => {
-        setError(err.message);
+        setError(err.message || "Erreur de connexion à l'établissement.");
         setStatus("error");
       });
   }, []);
@@ -71,7 +72,17 @@ export default function CenterSettings() {
   }
 
   if (status === "loading") {
-    return <p className="text-sm text-on-surface-variant">Chargement...</p>;
+    return <p className="text-sm text-on-surface-variant font-medium">Chargement des données de l'établissement...</p>;
+  }
+
+  if (status === "error") {
+    return (
+      <div className="rounded-md bg-error-container p-md text-sm text-error">
+        <p className="font-semibold">Erreur de chargement</p>
+        <p className="text-xs mt-1">{error}</p>
+        <button onClick={() => window.location.reload()} className="mt-2 text-xs font-bold underline">Réessayer</button>
+      </div>
+    );
   }
 
   return (

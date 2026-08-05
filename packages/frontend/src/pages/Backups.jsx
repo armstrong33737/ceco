@@ -20,16 +20,23 @@ export default function Backups() {
   const [frequency, setFrequency] = useState("daily");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
 
   async function load() {
     setLoading(true);
-    const [list, config] = await Promise.all([
-      apiFetch("/backups"),
-      apiFetch("/backups/config"),
-    ]);
-    setBackups(list);
-    setFrequency(config.frequency);
-    setLoading(false);
+    setError(null);
+    try {
+      const [list, config] = await Promise.all([
+        apiFetch("/backups"),
+        apiFetch("/backups/config"),
+      ]);
+      setBackups(list);
+      setFrequency(config.frequency);
+    } catch (err) {
+      setError(err.message || "Impossible de récupérer les sauvegardes du serveur.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -39,14 +46,28 @@ export default function Backups() {
     setSaving(true);
     try {
       await apiFetch("/backups/config", { method: "PUT", body: JSON.stringify({ frequency: value }) });
+    } catch (err) {
+      console.error(err);
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading) return <p className="text-sm text-on-surface-variant font-medium">Chargement des données de sauvegarde...</p>;
+
+  if (error) {
+    return (
+      <div className="rounded-md bg-error-container p-md text-sm text-error">
+        <p className="font-semibold">Erreur de chargement</p>
+        <p className="text-xs mt-1">{error}</p>
+        <button onClick={load} className="mt-2 text-xs font-bold underline">Réessayer</button>
+      </div>
+    );
+  }
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="max-w-2xl">
-      <div className="rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      <div className="rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-outline-variant/30">
         <h2 className="text-sm font-semibold text-on-surface mb-md">Fréquence de sauvegarde souhaitée</h2>
         <div className="flex gap-2">
           {FREQUENCIES.map((f) => (
@@ -75,11 +96,9 @@ export default function Backups() {
         </p>
       </div>
 
-      <div className="mt-lg overflow-hidden rounded-md bg-surface-container-lowest shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      <div className="mt-lg overflow-hidden rounded-md bg-surface-container-lowest shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-outline-variant/30">
         <h2 className="px-lg pt-lg pb-md text-sm font-semibold text-on-surface">Archives disponibles</h2>
-        {loading ? (
-          <p className="px-lg pb-lg text-sm text-on-surface-variant">Chargement...</p>
-        ) : backups.length === 0 ? (
+        {backups.length === 0 ? (
           <p className="px-lg pb-lg text-sm text-on-surface-variant">Aucune sauvegarde pour l'instant.</p>
         ) : (
           <table className="w-full text-sm">
@@ -92,7 +111,7 @@ export default function Backups() {
             </thead>
             <tbody>
               {backups.map((b) => (
-                <tr key={b.name} className="border-b border-outline-variant/10 last:border-0">
+                <tr key={b.name} className="border-b border-outline-variant/10 last:border-0 hover:bg-surface-container/20">
                   <td className="px-lg py-3 text-on-surface">{b.name}</td>
                   <td className="px-lg py-3 text-on-surface-variant">{formatSize(b.sizeBytes)}</td>
                   <td className="px-lg py-3 text-on-surface-variant">{new Date(b.createdAt).toLocaleString("fr-FR")}</td>

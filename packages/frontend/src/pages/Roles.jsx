@@ -3,15 +3,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../lib/apiClient";
 import Icon from "../components/Icon";
 
-const KNOWN_ACTIONS = [
-  { action: "center.update", label: "Modifier les informations du centre" },
-  { action: "users.manage", label: "Gérer les utilisateurs" },
-  { action: "roles.manage", label: "Gérer les rôles et permissions" },
+const MODULES = [
+  { key: "center", label: "Configuration du Centre" },
+  { key: "users", label: "Gestion des Utilisateurs" },
+  { key: "roles", label: "Rôles & Permissions" },
+  { key: "students", label: "Dossiers Apprenants" },
+  { key: "grades", label: "Évaluations & Notes" },
+  { key: "bulletins", label: "Bulletins, Diplômes & Relevés" },
+  { key: "backups", label: "Sauvegardes" },
+];
+
+const ACTIONS = [
+  { key: "read", label: "Lire" },
+  { key: "create", label: "Créer" },
+  { key: "update", label: "Modifier" },
+  { key: "delete", label: "Supprimer" },
+  { key: "generate", label: "Générer" },
 ];
 
 export default function Roles() {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [newRoleName, setNewRoleName] = useState("");
   const [savingRoleId, setSavingRoleId] = useState(null);
   const [renamingId, setRenamingId] = useState(null);
@@ -21,27 +34,52 @@ export default function Roles() {
 
   async function load() {
     setLoading(true);
-    setRoles(await apiFetch("/roles"));
-    setLoading(false);
+    setError(null);
+    try {
+      const data = await apiFetch("/roles");
+      setRoles(data);
+    } catch (err) {
+      setError(err.message || "Impossible de charger les rôles.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   async function handleCreateRole(e) {
     e.preventDefault();
     if (!newRoleName.trim()) return;
-    await apiFetch("/roles", { method: "POST", body: JSON.stringify({ name: newRoleName, permissions: [] }) });
-    setNewRoleName("");
-    load();
+    try {
+      await apiFetch("/roles", {
+        method: "POST",
+        body: JSON.stringify({ name: newRoleName.trim(), permissions: [] }),
+      });
+      setNewRoleName("");
+      load();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
-  async function togglePermission(role, action) {
-    const hasIt = role.permissions.includes(action);
-    const nextPermissions = hasIt ? role.permissions.filter((p) => p !== action) : [...role.permissions, action];
+  async function togglePermission(role, permissionKey) {
+    const currentActions = role.permissions.map(p => typeof p === "object" ? p.action : p);
+    const hasIt = currentActions.includes(permissionKey);
+    const nextPermissions = hasIt
+      ? currentActions.filter((p) => p !== permissionKey)
+      : [...currentActions, permissionKey];
+
     setSavingRoleId(role.id);
     try {
-      await apiFetch(`/roles/${role.id}`, { method: "PUT", body: JSON.stringify({ permissions: nextPermissions }) });
+      await apiFetch(`/roles/${role.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ permissions: nextPermissions }),
+      });
       await load();
+    } catch (err) {
+      console.error(err);
     } finally {
       setSavingRoleId(null);
     }
@@ -52,31 +90,49 @@ export default function Roles() {
       setRenamingId(null);
       return;
     }
-    await apiFetch(`/roles/${role.id}`, { method: "PUT", body: JSON.stringify({ name: renameValue.trim() }) });
-    setRenamingId(null);
-    load();
+    try {
+      await apiFetch(`/roles/${role.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: renameValue.trim() }),
+      });
+      setRenamingId(null);
+      load();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function handleDelete() {
+    if (!deleteTarget) return;
     setDeleteError(null);
     try {
       await apiFetch(`/roles/${deleteTarget.id}`, { method: "DELETE" });
       setDeleteTarget(null);
       load();
     } catch (err) {
-      setDeleteError(err.message);
+      setDeleteError(err.message || "Impossible de supprimer ce rôle.");
     }
+  }
+
+  if (loading) return <p className="text-sm text-on-surface-variant font-medium">Chargement de la matrice des permissions...</p>;
+
+  if (error) {
+    return (
+      <div className="rounded-md bg-error-container p-md text-sm text-error">
+        <p className="font-semibold">Erreur</p>
+        <p className="text-xs mt-1">{error}</p>
+        <button onClick={load} className="mt-2 text-xs font-bold underline">Réessayer</button>
+      </div>
+    );
   }
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-on-surface">Rôles &amp; permissions</h2>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            Le rôle Admin possède toujours tous les droits ("*") et n'est pas modifiable.
-          </p>
-        </div>
+      <div>
+        <h2 className="text-lg font-semibold text-on-surface">Rôles &amp; permissions</h2>
+        <p className="mt-1 text-sm text-on-surface-variant">
+          Seul le rôle d'administration principale ("Admin") est protégé. Les profils Secrétaire, Formateur et autres sont modifiables.
+        </p>
       </div>
 
       <form onSubmit={handleCreateRole} className="mt-md flex gap-2">
@@ -88,17 +144,23 @@ export default function Roles() {
         />
         <button type="submit" className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-primary to-violet px-4 text-sm font-semibold text-on-primary transition-shadow hover:shadow-[0_4px_14px_rgba(94,114,228,0.35)]">
           <Icon name="add" className="text-[18px]" />
-          Créer
+          Créer un rôle
         </button>
       </form>
 
-      {loading ? (
-        <p className="mt-lg text-sm text-on-surface-variant">Chargement...</p>
-      ) : (
-        <div className="mt-lg flex flex-col gap-md">
-          {roles.map((role) => (
-            <div key={role.id} className="rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              <div className="flex items-center justify-between">
+      <div className="mt-lg flex flex-col gap-lg">
+        {roles.map((role) => {
+          const currentActions = role.permissions.map(p => typeof p === "object" ? p.action : p);
+          
+          // Détermine si c'est le compte admin racine
+          const isAdminRole = 
+            currentActions.includes("*") || 
+            role.name?.toLowerCase() === "admin" || 
+            role.name?.toLowerCase() === "administrateur";
+
+          return (
+            <div key={role.id} className="rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-outline-variant/30">
+              <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3 mb-4">
                 <div className="flex items-center gap-2">
                   {renamingId === role.id ? (
                     <input
@@ -110,20 +172,16 @@ export default function Roles() {
                       className="h-8 rounded-md bg-surface px-2 text-sm shadow-[inset_0_0_0_1px_theme(colors.outline-variant)] outline-none"
                     />
                   ) : (
-                    <h3 className="font-semibold text-on-surface">{role.name}</h3>
-                  )}
-                  {role.isSystem && (
-                    <span className="rounded-md bg-surface-container-high px-2 py-0.5 text-[10px] uppercase tracking-wide text-on-surface-variant">
-                      Système
-                    </span>
+                    <h3 className="font-semibold text-on-surface text-base">{role.name}</h3>
                   )}
                   {savingRoleId === role.id && (
-                    <Icon name="progress_activity" className="animate-spin text-[16px] text-on-surface-variant" />
+                    <Icon name="progress_activity" className="animate-spin text-[16px] text-primary" />
                   )}
                 </div>
 
-                {!role.isSystem && (
-                  <div className="flex items-center gap-3 text-xs font-medium">
+                {/* S'active pour tout rôle n'étant pas l'administrateur système (Secrétaire & Formateur compris) */}
+                {!isAdminRole && (
+                  <div className="flex items-center gap-3 text-xs font-semibold">
                     <button
                       onClick={() => { setRenamingId(role.id); setRenameValue(role.name); }}
                       className="text-primary hover:underline"
@@ -137,32 +195,54 @@ export default function Roles() {
                 )}
               </div>
 
-              {role.permissions.includes("*") ? (
-                <p className="mt-2 text-sm text-on-surface-variant">Tous les droits (accès administrateur complet).</p>
+              {isAdminRole ? (
+                <div className="flex items-center gap-2 text-sm text-success bg-success-light/40 p-3 rounded-md mt-2">
+                  <Icon name="verified_user" />
+                  <span>Administrateur complet du centre. Toutes les permissions de la matrice sont implicitement activées.</span>
+                </div>
               ) : (
-                <div className="mt-3 flex flex-col gap-2">
-                  {KNOWN_ACTIONS.map(({ action, label }) => (
-                    <label key={action} className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={role.permissions.includes(action)}
-                        disabled={role.isSystem}
-                        onChange={() => togglePermission(role, action)}
-                        className="h-4 w-4 rounded accent-primary"
-                      />
-                      <span className={role.isSystem ? "text-on-surface-variant/60" : "text-on-surface"}>{label}</span>
-                    </label>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-outline-variant/30 text-xs font-semibold uppercase text-on-surface-variant">
+                        <th className="py-2 pr-4">Module Métier</th>
+                        {ACTIONS.map((act) => (
+                          <th key={act.key} className="py-2 px-3 text-center text-[10px]">{act.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MODULES.map((mod) => (
+                        <tr key={mod.key} className="border-b border-outline-variant/10 last:border-0 hover:bg-surface-container/20">
+                          <td className="py-3 pr-4 text-sm font-medium text-on-surface">{mod.label}</td>
+                          {ACTIONS.map((act) => {
+                            const permissionKey = `${mod.key}.${act.key}`;
+                            const isChecked = currentActions.includes(permissionKey);
+                            return (
+                              <td key={act.key} className="py-3 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => togglePermission(role, permissionKey)}
+                                  className="h-4 w-4 rounded accent-primary cursor-pointer"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
 
       <AnimatePresence>
         {deleteTarget && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 px-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -171,7 +251,7 @@ export default function Roles() {
             >
               <h3 className="text-base font-semibold text-on-surface mb-1">Supprimer le rôle "{deleteTarget.name}" ?</h3>
               <p className="text-sm text-on-surface-variant mb-md">
-                Les utilisateurs assignés à ce rôle devront être réassignés avant suppression.
+                Cette action réinitialisera les privilèges associés.
               </p>
               {deleteError && <p className="mb-md rounded-md bg-error-container px-3 py-2 text-sm text-error">{deleteError}</p>}
               <div className="flex justify-end gap-2">

@@ -14,7 +14,7 @@ export default function Header({ user }) {
         <span className="font-semibold text-lg text-on-surface tracking-tight">CECO</span>
       </div>
 
-      {/* Adresse du serveur — toujours visible, jamais cachée dans un menu */}
+      {/* Adresse du serveur — toujours visible */}
       <div className="hidden sm:flex items-center gap-2 rounded-md bg-success-light px-3 py-1.5">
         <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
         <span className="text-xs font-medium text-on-surface">

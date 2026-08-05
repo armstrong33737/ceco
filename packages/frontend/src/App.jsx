@@ -11,10 +11,8 @@ import Users from "./pages/Users";
 import Roles from "./pages/Roles";
 import License from "./pages/License";
 import Backups from "./pages/Backups";
+import About from "./pages/About";
 
-// HashRouter plutôt que BrowserRouter : l'app packagée se charge depuis un
-// fichier local (file://) en production, où le routage "history" de
-// BrowserRouter ne fonctionne pas de façon fiable.
 export default function App() {
   const { token, status, restoreSession } = useAuthStore();
 
@@ -30,7 +28,7 @@ export default function App() {
           transition={{ duration: 1.4, repeat: Infinity }}
           className="text-sm text-on-surface-variant"
         >
-          Connexion à votre espace...
+          Connexion à votre espace de travail...
         </motion.div>
       </div>
     );
@@ -57,6 +55,7 @@ export default function App() {
                   <Route path="roles" element={<Roles />} />
                   <Route path="licence" element={<License />} />
                   <Route path="sauvegarde" element={<Backups />} />
+                  <Route path="apropos" element={<About />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>

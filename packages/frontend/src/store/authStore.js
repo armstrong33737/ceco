@@ -1,60 +1,62 @@
 import { create } from "zustand";
-import { apiFetch, getToken, setToken, clearToken } from "../lib/apiClient";
+import { apiFetch } from "../lib/apiClient";
 
-const useAuthStore = create((set) => ({
-  token: getToken(),
+const useAuthStore = create((set, get) => ({
   user: null,
-  status: "idle", // idle | checking | loading | authenticated | error
+  token: localStorage.getItem("ceco_token") || null,
+  status: "checking", // checking | authenticated | unauthenticated | error | loading
   error: null,
 
-  // Appelé au démarrage de l'app : si un jeton est déjà stocké, on vérifie
-  // qu'il est encore valide plutôt que de redemander les identifiants.
   restoreSession: async () => {
-    const token = getToken();
-    if (!token) return;
-    set({ status: "checking" });
+    const token = get().token;
+    if (!token) {
+      set({ status: "unauthenticated" });
+      return;
+    }
     try {
-      const user = await apiFetch("/auth/me");
-      if (!Array.isArray(user?.permissions)) {
-        // Réponse d'une forme inattendue (ex. backend pas encore redémarré
-        // après une mise à jour) — on ne fait pas confiance à une session
-        // incomplète, on redemande simplement la connexion.
-        throw new Error("Réponse de session invalide.");
-      }
-      set({ user, status: "authenticated" });
-    } catch {
-      clearToken();
-      set({ token: null, user: null, status: "idle" });
+      set({ status: "checking" });
+      const data = await apiFetch("/auth/me");
+      set({ user: data.user, status: "authenticated", error: null });
+    } catch (err) {
+      localStorage.removeItem("ceco_token");
+      set({ token: null, user: null, status: "unauthenticated" });
     }
   },
 
-  login: async (email, password, remember = false) => {
+  login: async (email, password, remember) => {
     set({ status: "loading", error: null });
     try {
       const data = await apiFetch("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password, remember }),
+        body: JSON.stringify({ email, password }),
       });
-      setToken(data.token);
-      set({ token: data.token, user: data.user, status: "authenticated" });
+      
+      // Stocke systématiquement le token pour que apiFetch puisse le lire et l'injecter dans les headers
+      localStorage.setItem("ceco_token", data.token);
+      
+      set({ token: data.token, user: data.user, status: "authenticated", error: null });
     } catch (err) {
-      set({ status: "error", error: err.message });
+      set({ status: "error", error: err.message || "Identifiants invalides." });
     }
   },
 
   logout: () => {
-    clearToken();
-    set({ token: null, user: null, status: "idle" });
+    localStorage.removeItem("ceco_token");
+    set({ token: null, user: null, status: "unauthenticated" });
   },
 
-  // "*" (rôle admin) donne accès à tout ; sinon il faut l'action précise.
-  // Défensif à dessein : ne doit jamais planter, même si la session
-  // restaurée est incomplète ou provient d'une ancienne version du backend.
-  hasPermission: (action) => {
-    const { user } = useAuthStore.getState();
-    const permissions = user?.permissions;
-    if (!Array.isArray(permissions)) return false;
-    return permissions.includes("*") || permissions.includes(action);
+  hasPermission: (permission) => {
+    const { user } = get();
+    if (!user) return false;
+    
+    const permissions = user.role?.permissions || [];
+    const rawPermissions = permissions.map(p => typeof p === "object" ? p.action : p);
+    
+    if (rawPermissions.includes("*") || user.role?.name?.toLowerCase() === "admin" || user.role?.name?.toLowerCase() === "administrateur") {
+      return true;
+    }
+    
+    return rawPermissions.includes(permission);
   },
 }));
 

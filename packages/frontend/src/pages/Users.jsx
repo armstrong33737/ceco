@@ -9,30 +9,37 @@ export default function Users() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ firstName: "", lastName: "", email: "", password: "", roleId: "" });
   const [createError, setCreateError] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  const [editingUser, setEditingUser] = useState(null); // { id, firstName, lastName, roleId }
+  const [editingUser, setEditingUser] = useState(null);
   const [editError, setEditError] = useState(null);
 
-  const [passwordUser, setPasswordUser] = useState(null); // { id, name }
+  const [passwordUser, setPasswordUser] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState(null);
 
-  const [deleteTarget, setDeleteTarget] = useState(null); // { id, name }
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   async function load() {
     setLoading(true);
-    const [usersData, rolesData] = await Promise.all([
-      apiFetch("/users"),
-      apiFetch("/roles").catch(() => []),
-    ]);
-    setUsers(usersData);
-    setRoles(rolesData);
-    setLoading(false);
+    setError(null);
+    try {
+      const [usersData, rolesData] = await Promise.all([
+        apiFetch("/users"),
+        apiFetch("/roles").catch(() => []),
+      ]);
+      setUsers(usersData);
+      setRoles(rolesData);
+    } catch (err) {
+      setError(err.message || "Erreur lors du chargement des utilisateurs.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -88,14 +95,36 @@ export default function Users() {
   }
 
   async function handleToggleActive(user) {
-    await apiFetch(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ isActive: !user.isActive }) });
-    load();
+    try {
+      await apiFetch(`/users/${user.id}`, { method: "PUT", body: JSON.stringify({ isActive: !user.isActive }) });
+      load();
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   async function handleDelete() {
-    await apiFetch(`/users/${deleteTarget.id}`, { method: "DELETE" });
-    setDeleteTarget(null);
-    load();
+    try {
+      await apiFetch(`/users/${deleteTarget.id}`, { method: "DELETE" });
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm text-on-surface-variant">Chargement de la liste des utilisateurs...</p>;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-md bg-error-container p-md text-sm text-error">
+        <p className="font-semibold">Erreur de chargement</p>
+        <p className="text-xs mt-1">{error}</p>
+        <button onClick={load} className="mt-2 text-xs font-bold underline">Réessayer</button>
+      </div>
+    );
   }
 
   return (
@@ -143,10 +172,8 @@ export default function Users() {
       </AnimatePresence>
 
       {/* Liste */}
-      <div className="mt-lg overflow-hidden rounded-md bg-surface-container-lowest shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-        {loading ? (
-          <p className="p-lg text-sm text-on-surface-variant">Chargement...</p>
-        ) : users.length === 0 ? (
+      <div className="mt-lg overflow-hidden rounded-md bg-surface-container-lowest shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-outline-variant/30">
+        {users.length === 0 ? (
           <p className="p-lg text-sm text-on-surface-variant">Aucun utilisateur pour l'instant.</p>
         ) : (
           <table className="w-full text-sm">
@@ -161,17 +188,17 @@ export default function Users() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-outline-variant/10 last:border-0">
+                <tr key={u.id} className="border-b border-outline-variant/10 last:border-0 hover:bg-surface-container/20">
                   <td className="px-lg py-3 text-on-surface">{u.firstName} {u.lastName}</td>
                   <td className="px-lg py-3 text-on-surface-variant">{u.email}</td>
                   <td className="px-lg py-3 text-on-surface-variant">{u.role?.name || "—"}</td>
                   <td className="px-lg py-3">
-                    <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${u.isActive ? "bg-success-light text-success" : "bg-error-container text-error"}`}>
+                    <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${u.isActive ? "bg-success-light text-success" : "bg-error-container text-error"}`}>
                       {u.isActive ? "Actif" : "Désactivé"}
                     </span>
                   </td>
                   <td className="px-lg py-3">
-                    <div className="flex items-center justify-end gap-3 text-xs font-medium">
+                    <div className="flex items-center justify-end gap-3 text-xs font-semibold">
                       <button onClick={() => setEditingUser({ id: u.id, firstName: u.firstName, lastName: u.lastName, roleId: u.role?.id || "" })} className="text-primary hover:underline">
                         Modifier
                       </button>
@@ -193,10 +220,10 @@ export default function Users() {
         )}
       </div>
 
-      {/* Modale édition */}
+      {/* Modale d'édition */}
       <AnimatePresence>
         {editingUser && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 px-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
             <motion.form
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -223,10 +250,10 @@ export default function Users() {
         )}
       </AnimatePresence>
 
-      {/* Modale mot de passe */}
+      {/* Modale de réinitialisation de mot de passe */}
       <AnimatePresence>
         {passwordUser && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 px-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
             <motion.form
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -255,10 +282,10 @@ export default function Users() {
         )}
       </AnimatePresence>
 
-      {/* Confirmation suppression */}
+      {/* Confirmation de suppression */}
       <AnimatePresence>
         {deleteTarget && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 px-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -267,7 +294,7 @@ export default function Users() {
             >
               <h3 className="text-base font-semibold text-on-surface mb-1">Supprimer cet utilisateur ?</h3>
               <p className="text-sm text-on-surface-variant mb-md">
-                {deleteTarget.name} n'aura plus accès à CECO. Cette action peut être annulée par un administrateur en base si besoin.
+                {deleteTarget.name} n'aura plus accès à CECO.
               </p>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setDeleteTarget(null)} className="rounded-md px-4 py-2 text-sm text-on-surface-variant hover:bg-surface-container">Annuler</button>

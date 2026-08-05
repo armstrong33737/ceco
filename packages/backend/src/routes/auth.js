@@ -13,10 +13,16 @@ router.post("/auth/login", async (req, res, next) => {
       return res.status(400).json({ error: "Email et mot de passe requis." });
     }
 
-    // Toujours scopé au centre résolu par le tenant resolver — jamais une
-    // recherche globale par email, même en mode local à un seul centre.
+    // Recherche de l'utilisateur avec chargement de son rôle et de ses permissions associées
     const user = await prisma.user.findFirst({
       where: { centerId: req.centerId, email, isActive: true, deletedAt: null },
+      include: {
+        role: {
+          include: {
+            permissions: true
+          }
+        }
+      }
     });
 
     // Message volontairement identique que l'email existe ou non, pour ne
@@ -43,6 +49,7 @@ router.post("/auth/login", async (req, res, next) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        role: user.role, // Inclus désormais l'objet complet { name, permissions: [...] }
       },
     });
   } catch (err) {
@@ -54,13 +61,31 @@ router.post("/auth/login", async (req, res, next) => {
 // est encore valide — sans redemander les identifiants à chaque lancement.
 router.get("/auth/me", verifyJwt, async (req, res, next) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
-    if (!user) return res.status(404).json({ error: "Utilisateur introuvable." });
+    // Récupération de l'utilisateur avec jointures Prisma sur les permissions du rôle
+    const user = await prisma.user.findUnique({ 
+      where: { id: req.userId },
+      include: {
+        role: {
+          include: {
+            permissions: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Utilisateur introuvable." });
+    }
+
+    // Réponse enveloppée dans { user: { ... } } pour être parfaitement symétrique avec /login et le store Zustand
     res.json({
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role, // Inclus pour l'évaluation directe du RBAC
+      }
     });
   } catch (err) {
     next(err);
