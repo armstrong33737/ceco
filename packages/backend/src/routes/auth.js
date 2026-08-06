@@ -13,7 +13,7 @@ router.post("/auth/login", async (req, res, next) => {
       return res.status(400).json({ error: "Email et mot de passe requis." });
     }
 
-    // Recherche de l'utilisateur avec chargement de son rôle et de ses permissions associées
+    // Récupération de l'utilisateur avec son rôle, ses permissions, et l'abonnement de son centre
     const user = await prisma.user.findFirst({
       where: { centerId: req.centerId, email, isActive: true, deletedAt: null },
       include: {
@@ -21,12 +21,15 @@ router.post("/auth/login", async (req, res, next) => {
           include: {
             permissions: true
           }
+        },
+        center: {
+          include: {
+            subscription: true // Jointure essentielle pour le statut de licence
+          }
         }
       }
     });
 
-    // Message volontairement identique que l'email existe ou non, pour ne
-    // pas révéler quels comptes existent dans le centre.
     if (!user) {
       return res.status(401).json({ error: "Identifiants incorrects." });
     }
@@ -49,7 +52,8 @@ router.post("/auth/login", async (req, res, next) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role, // Inclus désormais l'objet complet { name, permissions: [...] }
+        role: user.role,
+        center: user.center, // Renvoie le centre avec son abonnement
       },
     });
   } catch (err) {
@@ -57,17 +61,19 @@ router.post("/auth/login", async (req, res, next) => {
   }
 });
 
-// Permet au frontend de vérifier, au démarrage, si un jeton déjà stocké
-// est encore valide — sans redemander les identifiants à chaque lancement.
 router.get("/auth/me", verifyJwt, async (req, res, next) => {
   try {
-    // Récupération de l'utilisateur avec jointures Prisma sur les permissions du rôle
     const user = await prisma.user.findUnique({ 
       where: { id: req.userId },
       include: {
         role: {
           include: {
             permissions: true
+          }
+        },
+        center: {
+          include: {
+            subscription: true // Jointure essentielle pour le statut de licence
           }
         }
       }
@@ -77,14 +83,14 @@ router.get("/auth/me", verifyJwt, async (req, res, next) => {
       return res.status(404).json({ error: "Utilisateur introuvable." });
     }
 
-    // Réponse enveloppée dans { user: { ... } } pour être parfaitement symétrique avec /login et le store Zustand
     res.json({
       user: {
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        role: user.role, // Inclus pour l'évaluation directe du RBAC
+        role: user.role,
+        center: user.center,
       }
     });
   } catch (err) {

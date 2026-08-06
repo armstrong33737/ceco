@@ -31,7 +31,6 @@ const useAuthStore = create((set, get) => ({
         body: JSON.stringify({ email, password }),
       });
       
-      // Stocke systématiquement le token pour que apiFetch puisse le lire et l'injecter dans les headers
       localStorage.setItem("ceco_token", data.token);
       
       set({ token: data.token, user: data.user, status: "authenticated", error: null });
@@ -43,6 +42,22 @@ const useAuthStore = create((set, get) => ({
   logout: () => {
     localStorage.removeItem("ceco_token");
     set({ token: null, user: null, status: "unauthenticated" });
+  },
+
+  // Action pour rafraîchir dynamiquement l'abonnement du centre et déverrouiller l'écran
+  updateSubscription: (newSubscription) => {
+    const { user } = get();
+    if (user && user.center) {
+      set({
+        user: {
+          ...user,
+          center: {
+            ...user.center,
+            subscription: newSubscription
+          }
+        }
+      });
+    }
   },
 
   hasPermission: (permission) => {

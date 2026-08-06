@@ -4,6 +4,12 @@ const bcrypt = require("bcryptjs");
 const prisma = new PrismaClient();
 
 async function main() {
+  const existing = await prisma.center.findFirst();
+  if (existing) {
+    console.log(`Centre déjà initialisé : ${existing.name} (${existing.id}). Rien à faire.`);
+    return;
+  }
+  
   console.log("Démarrage du peuplement de la base de données (Seed)...");
 
   // 1. Création ou mise à jour du centre local par défaut
