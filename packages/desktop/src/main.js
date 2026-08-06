@@ -98,7 +98,7 @@ function createWindow(clientAddress) {
 
 function createTray() {
   const trayIconPath = app.isPackaged
-    ? path.join(process.resourcesPath, "assets", "tray-icon.png")
+    ? path.join(process.resourcesPath, "app.asar.unpacked", "assets", "tray-icon.png")
     : path.join(__dirname, "../assets/tray-icon.png");
   tray = new Tray(trayIconPath);
   tray.setContextMenu(

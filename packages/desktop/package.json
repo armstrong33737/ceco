@@ -10,7 +10,8 @@
   "build": {
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
-    "files": ["src/**/*", "package.json", "assets/**/*"],
+    "files": ["src/**/*", "package.json", "assets/**/*", "node_modules/**/*"],
+    "asarUnpack": ["assets/**", "node_modules/embedded-postgres/**", "node_modules/pg/**"],
     "extraResources": [
       {
         "from": "../frontend/dist",
@@ -46,6 +47,7 @@
   },
   "dependencies": {
     "embedded-postgres": "17.10.0-beta.17",
+    "pg": "^8.22.0",
     "prisma": "5.20.0"
   },
   "devDependencies": {
