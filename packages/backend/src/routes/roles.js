@@ -14,7 +14,7 @@ function serializeRole(role) {
   };
 }
 
-router.get("/roles", verifyJwt, requirePermission("roles.manage"), async (req, res, next) => {
+router.get("/roles", verifyJwt, requirePermission("roles.read"), async (req, res, next) => {
   try {
     const roles = await prisma.role.findMany({
       where: { centerId: req.centerId },
@@ -27,7 +27,7 @@ router.get("/roles", verifyJwt, requirePermission("roles.manage"), async (req, r
   }
 });
 
-router.post("/roles", verifyJwt, requirePermission("roles.manage"), async (req, res, next) => {
+router.post("/roles", verifyJwt, requirePermission("roles.create"), async (req, res, next) => {
   try {
     const { name, permissions } = req.body || {};
     if (!name || !name.trim()) {
@@ -55,7 +55,7 @@ router.post("/roles", verifyJwt, requirePermission("roles.manage"), async (req, 
 
 // Remplace entièrement la liste de permissions d'un rôle — plus simple et
 // moins source d'erreur qu'un diff partiel côté serveur.
-router.put("/roles/:id", verifyJwt, requirePermission("roles.manage"), async (req, res, next) => {
+router.put("/roles/:id", verifyJwt, requirePermission("roles.update"), async (req, res, next) => {
   try {
     const { name, permissions } = req.body || {};
 
@@ -84,7 +84,7 @@ router.put("/roles/:id", verifyJwt, requirePermission("roles.manage"), async (re
   }
 });
 
-router.delete("/roles/:id", verifyJwt, requirePermission("roles.manage"), async (req, res, next) => {
+router.delete("/roles/:id", verifyJwt, requirePermission("roles.delete"), async (req, res, next) => {
   try {
     const role = await prisma.role.findFirst({ where: { id: req.params.id, centerId: req.centerId } });
     if (!role) return res.status(404).json({ error: "Rôle introuvable." });

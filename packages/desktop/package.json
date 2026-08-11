@@ -10,8 +10,8 @@
   "build": {
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
+    "asar": false,
     "files": ["src/**/*", "package.json", "assets/**/*", "node_modules/**/*"],
-    "asarUnpack": ["assets/**", "node_modules/embedded-postgres/**", "node_modules/pg/**"],
     "extraResources": [
       {
         "from": "../frontend/dist",

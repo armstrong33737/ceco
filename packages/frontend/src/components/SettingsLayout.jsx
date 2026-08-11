@@ -3,10 +3,10 @@ import useAuthStore from "../store/authStore";
 
 const TABS = [
   { to: "centre", label: "Centre", permission: "center.update" },
-  { to: "utilisateurs", label: "Utilisateurs", permission: "users.manage" },
-  { to: "roles", label: "Rôles & permissions", permission: "roles.manage" },
+  { to: "utilisateurs", label: "Utilisateurs", permission: "users.read" },
+  { to: "roles", label: "Rôles & permissions", permission: "roles.read" },
   { to: "licence", label: "Licence", permission: "center.update" },
-  { to: "sauvegarde", label: "Sauvegarde", permission: "center.update" },
+  { to: "sauvegarde", label: "Sauvegarde", permission: "backups.read" },
   { to: "apropos", label: "À propos", permission: "center.update" },
 ];
 

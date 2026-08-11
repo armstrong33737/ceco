@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Icon from "../components/Icon";
 import useAuthStore from "../store/authStore";
+import maPhoto from '/assets/illustration.png';
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -18,14 +19,15 @@ export default function Login() {
   return (
     <div className="flex min-h-screen w-full bg-paper">
       {/* Panneau illustration — masqué sur petit écran, gradient Argon */}
-      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br from-primary to-violet lg:flex lg:flex-col lg:items-center lg:justify-center">
+      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br lg:flex lg:flex-col lg:items-center lg:justify-center">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
           <div className="absolute bottom-0 right-0 h-96 w-96 translate-x-1/3 translate-y-1/3 rounded-full bg-white/10 blur-3xl" />
           <div className="absolute top-1/3 right-10 h-40 w-40 rounded-full bg-info/20 blur-2xl" />
         </div>
+            <img src={maPhoto} alt="image" className="w-500" />
 
-        <motion.div
+        {/* <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
@@ -56,7 +58,7 @@ export default function Login() {
               </div>
             ))}
           </div>
-        </motion.div>
+        </motion.div> */}
       </div>
 
       {/* Panneau formulaire */}
@@ -74,8 +76,8 @@ export default function Login() {
             <span className="text-lg font-bold text-on-surface">CECO</span>
           </div>
 
-          <h1 className="text-2xl font-bold tracking-tight text-on-surface">Bienvenue</h1>
-          <p className="mt-1 text-sm text-on-surface-variant">
+          <h1 className="text-center text-2xl font-bold tracking-tight text-on-surface">Bienvenue</h1>
+          <p className="text-center text-sm text-on-surface-variant">
             Connectez-vous à votre espace CECO
           </p>
 

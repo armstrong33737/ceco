@@ -36,3 +36,17 @@ export async function apiFetch(path, options = {}) {
 
   return res.json();
 }
+
+// Pour les fichiers binaires (ex. logo du centre) : une balise <img src="...">
+// ne peut pas envoyer l'en-tête Authorization, donc on récupère le fichier
+// via fetch() authentifié et on le transforme en URL locale affichable.
+// Pensez à appeler URL.revokeObjectURL(url) quand elle n'est plus utilisée.
+export async function apiFetchImageUrl(path) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}

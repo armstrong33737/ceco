@@ -10,7 +10,7 @@ const MAIN_ITEMS = [
   { to: "/planning", label: "Planning", icon: "calendar_today", disabled: true },
 ];
 
-const SETTINGS_PERMISSIONS = ["center.update", "users.manage", "roles.manage"];
+const SETTINGS_PERMISSIONS = ["center.update", "users.read", "roles.read", "backups.read"];
 
 export default function Sidebar() {
   const hasPermission = useAuthStore((s) => s.hasPermission);

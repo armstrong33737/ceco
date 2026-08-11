@@ -18,7 +18,7 @@ function serializeUser(user) {
   };
 }
 
-router.get("/users", verifyJwt, requirePermission("users.manage"), async (req, res, next) => {
+router.get("/users", verifyJwt, requirePermission("users.read"), async (req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       where: { centerId: req.centerId, deletedAt: null },
@@ -31,7 +31,7 @@ router.get("/users", verifyJwt, requirePermission("users.manage"), async (req, r
   }
 });
 
-router.post("/users", verifyJwt, requirePermission("users.manage"), async (req, res, next) => {
+router.post("/users", verifyJwt, requirePermission("users.create"), async (req, res, next) => {
   try {
     const { email, password, firstName, lastName, roleId } = req.body || {};
     if (!email || !password || !firstName || !lastName) {
@@ -58,7 +58,7 @@ router.post("/users", verifyJwt, requirePermission("users.manage"), async (req, 
   }
 });
 
-router.put("/users/:id", verifyJwt, requirePermission("users.manage"), async (req, res, next) => {
+router.put("/users/:id", verifyJwt, requirePermission("users.update"), async (req, res, next) => {
   try {
     const { firstName, lastName, roleId, isActive } = req.body || {};
     const users = scopedRepository("user", req.centerId);
@@ -85,7 +85,7 @@ router.put("/users/:id", verifyJwt, requirePermission("users.manage"), async (re
 router.put(
   "/users/:id/password",
   verifyJwt,
-  requirePermission("users.manage"),
+  requirePermission("users.update"),
   async (req, res, next) => {
     try {
       const { password } = req.body || {};
@@ -107,7 +107,7 @@ router.put(
 
 // Suppression douce : jamais de destruction réelle, conforme au principe
 // de non-destruction retenu pour tout le projet (audit, historique).
-router.delete("/users/:id", verifyJwt, requirePermission("users.manage"), async (req, res, next) => {
+router.delete("/users/:id", verifyJwt, requirePermission("users.delete"), async (req, res, next) => {
   try {
     if (req.params.id === req.userId) {
       return res.status(400).json({ error: "Vous ne pouvez pas supprimer votre propre compte." });
