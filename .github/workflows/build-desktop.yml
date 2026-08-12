@@ -1,16 +1,7 @@
-name: Build CECO Desktop
-
-# Chaque installateur DOIT être construit sur son OS natif : embedded-postgres
-# télécharge un binaire PostgreSQL différent par plateforme, et pnpm install
-# ne récupère que celui correspondant à la machine qui exécute la commande.
-# Construire le .exe depuis Ubuntu embarquerait un binaire Postgres Linux
-# inutilisable sur Windows.
+name: Build CECO Desktop (Test)
 
 on:
-  workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch: # Permet le déclenchement manuel en un clic
 
 jobs:
   build:
@@ -31,7 +22,7 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Installer les dépendances (récupère le binaire Postgres natif à cet OS)
+      - name: Installer les dépendances
         run: pnpm install --frozen-lockfile
 
       - name: Générer le client Prisma
@@ -40,18 +31,17 @@ jobs:
       - name: Construire l'installateur pour ${{ matrix.os }}
         run: pnpm --filter @ceco/desktop run build:installer
 
-      - name: Publier l'installateur en artefact
-        uses: actions/upload-artifact@v4
+      - name: Publier dans les Releases (Gratuit)
+        uses: softprops/action-gh-release@v2
         with:
-          name: ceco-installer-${{ matrix.os }}
-          # On cible précisément l'extension finale selon l'OS
-          path: |
+          tag_name: "v-test" # Tag temporaire automatique
+          name: "Test de build - Installer"
+          draft: true # Reste masqué du public tant que vous ne validez pas
+          files: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.dmg
             packages/desktop/dist/*.deb
             packages/desktop/dist/*.snap
             packages/desktop/dist/*.AppImage
-          if-no-files-found: error
-          compression-level: 0 # Optionnel : évite que GitHub re-compresse un .exe déjà lourd
-
-
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
