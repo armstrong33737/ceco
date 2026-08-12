@@ -3,6 +3,8 @@
   "version": "0.0.1-v0",
   "private": true,
   "main": "src/main.js",
+  "description": "CECO - client desktop Electron",
+  "author": "CECO",
   "scripts": {
     "dev": "electron .",
     "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
@@ -11,7 +13,13 @@
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
     "asar": false,
-    "files": ["src/**/*", "package.json", "assets/**/*", "node_modules/**/*"],
+    "electronVersion": "31.7.7",
+    "files": [
+      "src/**/*",
+      "package.json",
+      "assets/**/*",
+      { "from": "../../node_modules", "to": "node_modules", "filter": ["**/*"] }
+    ],
     "extraResources": [
       {
         "from": "../frontend/dist",
@@ -51,7 +59,7 @@
     "prisma": "5.20.0"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
+    "electron": "31.7.7",
     "electron-builder": "^24.13.3"
   }
 }
