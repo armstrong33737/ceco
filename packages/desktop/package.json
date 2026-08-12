@@ -4,7 +4,7 @@
   "private": true,
   "main": "src/main.js",
   "description": "CECO - client desktop Electron",
-  "author": "CECO",
+  "author": "Armstrong Euclador ngaleu",
   "scripts": {
     "dev": "electron .",
     "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
