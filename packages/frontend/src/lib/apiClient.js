@@ -34,6 +34,13 @@ export async function apiFetch(path, options = {}) {
     throw new Error(body.error || `Erreur ${res.status}`);
   }
 
+  // 204 No Content (ex. DELETE réussi) n'a pas de corps — res.json() planterait
+  // en essayant de parser une chaîne vide. Idem si le serveur ne renvoie
+  // explicitement aucun contenu (Content-Length: 0).
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return null;
+  }
+
   return res.json();
 }
 

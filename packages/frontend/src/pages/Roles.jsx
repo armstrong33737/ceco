@@ -21,6 +21,17 @@ const ACTIONS = [
   { key: "generate", label: "Générer" },
 ];
 
+function sameSet(a, b) {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((v, i) => v === sortedB[i]);
+}
+
+function actionsOf(role) {
+  return role.permissions.map((p) => (typeof p === "object" ? p.action : p));
+}
+
 export default function Roles() {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,12 +43,18 @@ export default function Roles() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Brouillon local des permissions par rôle — les cases à cocher modifient
+  // UNIQUEMENT ce state, jamais le serveur directement. L'enregistrement
+  // est une action explicite (bouton "Enregistrer"), pas automatique.
+  const [drafts, setDrafts] = useState({});
+
   async function load() {
     setLoading(true);
     setError(null);
     try {
       const data = await apiFetch("/roles");
       setRoles(data);
+      setDrafts(Object.fromEntries(data.map((r) => [r.id, actionsOf(r)])));
     } catch (err) {
       setError(err.message || "Impossible de charger les rôles.");
     } finally {
@@ -64,18 +81,30 @@ export default function Roles() {
     }
   }
 
-  async function togglePermission(role, permissionKey) {
-    const currentActions = role.permissions.map(p => typeof p === "object" ? p.action : p);
-    const hasIt = currentActions.includes(permissionKey);
-    const nextPermissions = hasIt
-      ? currentActions.filter((p) => p !== permissionKey)
-      : [...currentActions, permissionKey];
+  function toggleDraftPermission(role, permissionKey) {
+    setDrafts((prev) => {
+      const current = prev[role.id] || [];
+      const hasIt = current.includes(permissionKey);
+      const next = hasIt ? current.filter((p) => p !== permissionKey) : [...current, permissionKey];
+      return { ...prev, [role.id]: next };
+    });
+  }
 
+  function hasUnsavedChanges(role) {
+    const draft = drafts[role.id] || [];
+    return !sameSet(draft, actionsOf(role));
+  }
+
+  function handleDiscard(role) {
+    setDrafts((prev) => ({ ...prev, [role.id]: actionsOf(role) }));
+  }
+
+  async function handleSavePermissions(role) {
     setSavingRoleId(role.id);
     try {
       await apiFetch(`/roles/${role.id}`, {
         method: "PUT",
-        body: JSON.stringify({ permissions: nextPermissions }),
+        body: JSON.stringify({ permissions: drafts[role.id] || [] }),
       });
       await load();
     } catch (err) {
@@ -131,7 +160,8 @@ export default function Roles() {
       <div>
         <h2 className="text-lg font-semibold text-on-surface">Rôles &amp; permissions</h2>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Seul le rôle d'administration principale ("Admin") est protégé. Les profils Secrétaire, Formateur et autres sont modifiables.
+          Seul le rôle d'administration principale ("Admin") est protégé. Cochez les cases souhaitées
+          puis cliquez sur "Enregistrer" pour appliquer les changements.
         </p>
       </div>
 
@@ -150,16 +180,17 @@ export default function Roles() {
 
       <div className="mt-lg flex flex-col gap-lg">
         {roles.map((role) => {
-          const currentActions = role.permissions.map(p => typeof p === "object" ? p.action : p);
-          
-          // Détermine si c'est le compte admin racine
-          const isAdminRole = 
-            currentActions.includes("*") || 
-            role.name?.toLowerCase() === "admin" || 
+          const savedActions = actionsOf(role);
+          const draftActions = drafts[role.id] || savedActions;
+          const isAdminRole =
+            savedActions.includes("*") ||
+            role.name?.toLowerCase() === "admin" ||
             role.name?.toLowerCase() === "administrateur";
+          const dirty = hasUnsavedChanges(role);
+          const isSaving = savingRoleId === role.id;
 
           return (
-            <div key={role.id} className="rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-outline-variant/30">
+            <div key={role.id} className={`rounded-md bg-surface-container-lowest p-lg shadow-[0_1px_3px_rgba(0,0,0,0.04)] border ${dirty ? "border-primary" : "border-outline-variant/30"}`}>
               <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3 mb-4">
                 <div className="flex items-center gap-2">
                   {renamingId === role.id ? (
@@ -174,12 +205,14 @@ export default function Roles() {
                   ) : (
                     <h3 className="font-semibold text-on-surface text-base">{role.name}</h3>
                   )}
-                  {savingRoleId === role.id && (
-                    <Icon name="progress_activity" className="animate-spin text-[16px] text-primary" />
+                  {dirty && !isAdminRole && (
+                    <span className="rounded-md bg-primary-light px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                      Modifications non enregistrées
+                    </span>
                   )}
+                  {isSaving && <Icon name="progress_activity" className="animate-spin text-[16px] text-primary" />}
                 </div>
 
-                {/* S'active pour tout rôle n'étant pas l'administrateur système (Secrétaire & Formateur compris) */}
                 {!isAdminRole && (
                   <div className="flex items-center gap-3 text-xs font-semibold">
                     <button
@@ -201,39 +234,69 @@ export default function Roles() {
                   <span>Administrateur complet du centre. Toutes les permissions de la matrice sont implicitement activées.</span>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-outline-variant/30 text-xs font-semibold uppercase text-on-surface-variant">
-                        <th className="py-2 pr-4">Module Métier</th>
-                        {ACTIONS.map((act) => (
-                          <th key={act.key} className="py-2 px-3 text-center text-[10px]">{act.label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {MODULES.map((mod) => (
-                        <tr key={mod.key} className="border-b border-outline-variant/10 last:border-0 hover:bg-surface-container/20">
-                          <td className="py-3 pr-4 text-sm font-medium text-on-surface">{mod.label}</td>
-                          {ACTIONS.map((act) => {
-                            const permissionKey = `${mod.key}.${act.key}`;
-                            const isChecked = currentActions.includes(permissionKey);
-                            return (
-                              <td key={act.key} className="py-3 px-3 text-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => togglePermission(role, permissionKey)}
-                                  className="h-4 w-4 rounded accent-primary cursor-pointer"
-                                />
-                              </td>
-                            );
-                          })}
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-outline-variant/30 text-xs font-semibold uppercase text-on-surface-variant">
+                          <th className="py-2 pr-4">Module Métier</th>
+                          {ACTIONS.map((act) => (
+                            <th key={act.key} className="py-2 px-3 text-center text-[10px]">{act.label}</th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {MODULES.map((mod) => (
+                          <tr key={mod.key} className="border-b border-outline-variant/10 last:border-0 hover:bg-surface-container/20">
+                            <td className="py-3 pr-4 text-sm font-medium text-on-surface">{mod.label}</td>
+                            {ACTIONS.map((act) => {
+                              const permissionKey = `${mod.key}.${act.key}`;
+                              const isChecked = draftActions.includes(permissionKey);
+                              return (
+                                <td key={act.key} className="py-3 px-3 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleDraftPermission(role, permissionKey)}
+                                    className="h-4 w-4 rounded accent-primary cursor-pointer"
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <AnimatePresence>
+                    {dirty && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-md flex items-center gap-2 overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleSavePermissions(role)}
+                          className="rounded-md bg-gradient-to-r from-primary to-violet px-4 py-2 text-sm font-semibold text-on-primary transition-shadow hover:shadow-[0_4px_14px_rgba(94,114,228,0.35)] disabled:opacity-60"
+                        >
+                          {isSaving ? "Enregistrement..." : "Enregistrer"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleDiscard(role)}
+                          className="rounded-md px-4 py-2 text-sm text-on-surface-variant hover:bg-surface-container"
+                        >
+                          Annuler
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
               )}
             </div>
           );
