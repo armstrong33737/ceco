@@ -13,11 +13,6 @@ const PostgresManager = require("./postgresManager");
 // Séquence d'arrêt : Backup -> API -> PostgreSQL -> fermeture Electron.
 // ------------------------------------------------------------------
 
-// En dev (monorepo) : le schéma et le backend vivent dans packages/backend.
-// En version installée : le schéma est copié dans les ressources embarquées
-// (voir `extraResources` dans packages/desktop/package.json). Le backend
-// lui-même (src/ + node_modules) N'EST PAS ENCORE embarqué pour la version
-// packagée — voir la note en bas de ce fichier.
 const PRISMA_SCHEMA_PATH = app.isPackaged
   ? path.join(process.resourcesPath, "backend/prisma/schema.prisma")
   : path.join(__dirname, "../../../backend/prisma/schema.prisma");
@@ -37,19 +32,52 @@ const API_PORT = Number(process.env.CECO_API_PORT) || 4000;
 // nouvelles. Sûr à exécuter à CHAQUE démarrage — no-op si déjà à jour.
 function runMigrations(databaseUrl) {
   return new Promise((resolve, reject) => {
-    execFile(
-      process.platform === "win32" ? "npx.cmd" : "npx",
-      ["prisma", "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
-      { env: { ...process.env, DATABASE_URL: databaseUrl } },
-      (error, stdout, stderr) => {
-        if (error) {
-          console.error("Échec des migrations Prisma :", stderr || error.message);
-          return reject(new Error(`Migrations Prisma échouées : ${stderr || error.message}`));
+    let prismaCliPath;
+    try {
+      prismaCliPath = require.resolve("prisma/build/index.js");
+    } catch {
+      prismaCliPath = null;
+    }
+
+    if (prismaCliPath) {
+      execFile(
+        process.execPath,
+        [prismaCliPath, "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: databaseUrl,
+            ELECTRON_RUN_AS_NODE: "1",
+          },
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error("Échec des migrations Prisma :", stderr || error.message);
+            return reject(new Error(`Migrations Prisma échouées : ${stderr || error.message}`));
+          }
+          console.log("Migrations Prisma appliquées avec succès :\n", stdout);
+          resolve();
         }
-        console.log("Migrations Prisma appliquées avec succès :\n", stdout);
-        resolve();
-      }
-    );
+      );
+    } else {
+      const isWin = process.platform === "win32";
+      execFile(
+        isWin ? "npx.cmd" : "npx",
+        ["prisma", "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
+        {
+          env: { ...process.env, DATABASE_URL: databaseUrl },
+          shell: isWin,
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            console.error("Échec des migrations Prisma :", stderr || error.message);
+            return reject(new Error(`Migrations Prisma échouées : ${stderr || error.message}`));
+          }
+          console.log("Migrations Prisma appliquées avec succès :\n", stdout);
+          resolve();
+        }
+      );
+    }
   });
 }
 
@@ -187,9 +215,7 @@ class ServiceManager {
   }
 
   async stopServer() {
-    // Séquence contrôlée, jamais un arrêt brutal simultané.
     this.status.backup = "stopping";
-    // TODO : déclencher une sauvegarde pg_dump avant extinction si configuré
     this.status.backup = "stopped";
 
     this.status.api = "stopping";
@@ -197,7 +223,7 @@ class ServiceManager {
       await new Promise((resolve) => {
         this.apiProcess.once("exit", resolve);
         this.apiProcess.kill("SIGTERM");
-        setTimeout(resolve, 5000); // filet de sécurité si l'API ne répond pas au signal
+        setTimeout(resolve, 5000);
       });
       this.apiProcess = null;
     }
@@ -214,15 +240,3 @@ class ServiceManager {
 }
 
 module.exports = ServiceManager;
-
-// ------------------------------------------------------------------
-// PACKAGING DU BACKEND (résolu) :
-// packages/backend est bundlé en un seul fichier CommonJS via esbuild
-// (`pnpm --filter @ceco/backend run build:bundle`, déclenché automatiquement
-// par `pnpm --filter @ceco/desktop run build:installer`). @prisma/client
-// reste EXTERNE au bundle (contient des binaires natifs par plateforme) et
-// est copié tel quel via `extraResources`, avec le client généré
-// (node_modules/.prisma). bcryptjs a remplacé bcrypt (module natif) pour
-// éviter un second binaire à gérer par plateforme — bcryptjs est bundlé
-// normalement, sans traitement particulier.
-// ------------------------------------------------------------------
