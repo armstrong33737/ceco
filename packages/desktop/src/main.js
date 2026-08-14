@@ -1,8 +1,48 @@
+// ============================================================================
+// PATCH GLOBAL ASAR POUR EMBEDDED-POSTGRES (EXECUTION DES PROCESSUS & DROITS)
+// Redirige automatiquement les appels vers le répertoire physique app.asar.unpacked
+// ============================================================================
+const childProcess = require("child_process");
+const fs = require("fs");
+
+function rewriteAsarPath(p) {
+  if (typeof p === "string" && p.includes("app.asar") && !p.includes("app.asar.unpacked")) {
+    return p.replace(/app\.asar([/\\\\])/g, "app.asar.unpacked$1");
+  }
+  return p;
+}
+
+// 1. Interception de child_process.spawn pour exécuter les binaires PostgreSQL décompressés
+const _spawn = childProcess.spawn.bind(childProcess);
+childProcess.spawn = function spawn(cmd, args, opts) {
+  return _spawn(rewriteAsarPath(cmd), args, opts);
+};
+
+// 2. Interception des appels de permissions (fs.chmod) requis pour Mac & Linux
+const _chmod = fs.chmod.bind(fs);
+fs.chmod = function chmod(path, mode, callback) {
+  return _chmod(rewriteAsarPath(path), mode, callback);
+};
+
+const _chmodSync = fs.chmodSync.bind(fs);
+fs.chmodSync = function chmodSync(path, mode) {
+  return _chmodSync(rewriteAsarPath(path), mode);
+};
+
+if (fs.promises) {
+  const _promisesChmod = fs.promises.chmod.bind(fs.promises);
+  fs.promises.chmod = function chmod(path, mode) {
+    return _promisesChmod(rewriteAsarPath(path), mode);
+  };
+}
+// ============================================================================
+// FIN DU PATCH GLOBAL (CYCLE DE VIE INITIAL CI-DESSOUS)
+// ============================================================================
+
 const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
 const url = require("url");
 const http = require("http");
-const fs = require("fs");
 const ServiceManager = require("./serviceManager");
 const { readConfig, writeConfig, clearConfig } = require("./setup/config");
 
@@ -190,7 +230,7 @@ ipcMain.handle("setup:choose-client", async (event, address) => {
 });
 
 app.whenReady().then(async () => {
-  if (!gotSingleInstanceLock) return; // app.quit() déjà appelé plus haut
+  if (!gotSingleInstanceLock) return;
 
   const config = readConfig();
 

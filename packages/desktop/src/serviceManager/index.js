@@ -27,29 +27,55 @@ const SEED_ENTRY = app.isPackaged
 
 const API_PORT = Number(process.env.CECO_API_PORT) || 4000;
 
+// Résolution déterministe des chemins CLI et binaire Prisma décompressés dans app.asar.unpacked
+function getUnpackedPrismaPaths() {
+  if (!app.isPackaged) {
+    let cliPath = null;
+    try {
+      cliPath = require.resolve("prisma/build/index.js");
+    } catch {
+      cliPath = null;
+    }
+    return { cliPath, engineBinary: undefined };
+  }
+
+  const baseUnpacked = path.join(process.resourcesPath, "app.asar.unpacked", "node_modules");
+  const cliPath = path.join(baseUnpacked, "prisma", "build", "index.js");
+  const enginesDir = path.join(baseUnpacked, "@prisma", "engines");
+
+  let engineBinary = undefined;
+  if (fs.existsSync(enginesDir)) {
+    const files = fs.readdirSync(enginesDir);
+    const file = files.find(
+      (f) => f.startsWith("schema-engine") || f.startsWith("migration-engine")
+    );
+    if (file) {
+      engineBinary = path.join(enginesDir, file);
+    }
+  }
+
+  return { cliPath, engineBinary };
+}
+
 // `migrate deploy` (jamais `migrate dev`) : applique uniquement les
 // migrations déjà commitées, sans poser de question, sans en générer de
 // nouvelles. Sûr à exécuter à CHAQUE démarrage — no-op si déjà à jour.
 function runMigrations(databaseUrl) {
   return new Promise((resolve, reject) => {
-    let prismaCliPath;
-    try {
-      prismaCliPath = require.resolve("prisma/build/index.js");
-    } catch {
-      prismaCliPath = null;
-    }
+    const { cliPath, engineBinary } = getUnpackedPrismaPaths();
 
-    if (prismaCliPath) {
+    const env = {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      ELECTRON_RUN_AS_NODE: "1",
+      ...(engineBinary && { PRISMA_SCHEMA_ENGINE_BINARY: engineBinary }),
+    };
+
+    if (cliPath && fs.existsSync(cliPath)) {
       execFile(
         process.execPath,
-        [prismaCliPath, "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
-        {
-          env: {
-            ...process.env,
-            DATABASE_URL: databaseUrl,
-            ELECTRON_RUN_AS_NODE: "1",
-          },
-        },
+        [cliPath, "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
+        { env },
         (error, stdout, stderr) => {
           if (error) {
             console.error("Échec des migrations Prisma :", stderr || error.message);
@@ -65,7 +91,7 @@ function runMigrations(databaseUrl) {
         isWin ? "npx.cmd" : "npx",
         ["prisma", "migrate", "deploy", "--schema", PRISMA_SCHEMA_PATH],
         {
-          env: { ...process.env, DATABASE_URL: databaseUrl },
+          env,
           shell: isWin,
         },
         (error, stdout, stderr) => {
@@ -82,9 +108,7 @@ function runMigrations(databaseUrl) {
 }
 
 // Idempotent (seed.js vérifie déjà si un centre existe) — sûr à exécuter
-// à CHAQUE démarrage, comme les migrations. C'est ce qui crée le centre
-// local par défaut, ses rôles système et son arborescence de stockage
-// au tout premier lancement.
+// à CHAQUE démarrage, comme les migrations.
 function runSeed(databaseUrl, storageRoot) {
   return new Promise((resolve, reject) => {
     execFile(
@@ -154,7 +178,7 @@ function startApiProcess({ databaseUrl, storageRoot, jwtSecret }) {
       CECO_API_PORT: String(API_PORT),
       CECO_STORAGE_ROOT: storageRoot,
       JWT_SECRET: jwtSecret,
-      ELECTRON_RUN_AS_NODE: "1", // exécute ce script comme du Node pur, pas comme Electron
+      ELECTRON_RUN_AS_NODE: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

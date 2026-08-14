@@ -13,7 +13,14 @@
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
     "npmRebuild": false,
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "assets/**/*",
+      "node_modules/embedded-postgres/**/*",
+      "node_modules/@embedded-postgres/**/*",
+      "node_modules/prisma/**/*",
+      "node_modules/@prisma/**/*"
+    ],
     "files": [
       "src/**/*",
       "package.json",
