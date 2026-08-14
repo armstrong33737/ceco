@@ -1,3 +1,44 @@
+// ============================================================================
+// PATCH DE REDIRECTION GLOBALE ASAR POUR EMBEDDED-POSTGRES (EXECUTION & DROITS)
+// Intercepte les appels système avant exécution pour dévier vers app.asar.unpacked
+// ============================================================================
+const childProcess = require("child_process");
+const fs = require("fs");
+
+function rewriteAsarPath(p) {
+  if (typeof p === "string" && p.includes("app.asar") && !p.includes("app.asar.unpacked")) {
+    return p.replace(/app\.asar([/\\\\])/g, "app.asar.unpacked$1");
+  }
+  return p;
+}
+
+// 1. Interception de child_process.spawn pour exécuter les binaires décompressés
+const _spawn = childProcess.spawn.bind(childProcess);
+childProcess.spawn = function spawn(cmd, args, opts) {
+  return _spawn(rewriteAsarPath(cmd), args, opts);
+};
+
+// 2. Interception des appels de permissions (fs.chmod) requis pour Mac & Linux
+const _chmod = fs.chmod.bind(fs);
+fs.chmod = function chmod(path, mode, callback) {
+  return _chmod(rewriteAsarPath(path), mode, callback);
+};
+
+const _chmodSync = fs.chmodSync.bind(fs);
+fs.chmodSync = function chmodSync(path, mode) {
+  return _chmodSync(rewriteAsarPath(path), mode);
+};
+
+if (fs.promises) {
+  const _promisesChmod = fs.promises.chmod.bind(fs.promises);
+  fs.promises.chmod = function chmod(path, mode) {
+    return _promisesChmod(rewriteAsarPath(path), mode);
+  };
+}
+// ============================================================================
+// FIN DU PATCH GLOBAL (VOTRE CYCLE DE VIE INITIAL COMMENCE CI-DESSOUS)
+// ============================================================================
+
 const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
 const url = require("url");
