@@ -12,9 +12,9 @@
   "build": {
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
-    "asar": false,
-    "electronVersion": "31.7.7",
     "npmRebuild": false,
+    "electronVersion": "31.7.7",
+    "asarUnpack": ["node_modules/**/*", "assets/**/*"],
     "files": [
       "src/**/*",
       "package.json",
