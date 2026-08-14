@@ -6,6 +6,15 @@ const useAuthStore = create((set, get) => ({
   token: localStorage.getItem("ceco_token") || null,
   status: "checking", // checking | authenticated | unauthenticated | error | loading
   error: null,
+  
+  // État de repliement de la barre latérale (Sidebar)
+  isSidebarCollapsed: localStorage.getItem("ceco_sidebar_collapsed") === "true",
+
+  toggleSidebar: () => {
+    const nextState = !get().isSidebarCollapsed;
+    localStorage.setItem("ceco_sidebar_collapsed", nextState.toString());
+    set({ isSidebarCollapsed: nextState });
+  },
 
   restoreSession: async () => {
     const token = get().token;
@@ -32,7 +41,6 @@ const useAuthStore = create((set, get) => ({
       });
       
       localStorage.setItem("ceco_token", data.token);
-      
       set({ token: data.token, user: data.user, status: "authenticated", error: null });
     } catch (err) {
       set({ status: "error", error: err.message || "Identifiants invalides." });
@@ -44,7 +52,6 @@ const useAuthStore = create((set, get) => ({
     set({ token: null, user: null, status: "unauthenticated" });
   },
 
-  // Action pour rafraîchir dynamiquement l'abonnement du centre et déverrouiller l'écran
   updateSubscription: (newSubscription) => {
     const { user } = get();
     if (user && user.center) {

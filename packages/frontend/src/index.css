@@ -1,3 +1,50 @@
+@import "@fontsource/inter";
+@import "@fontsource/material-symbols-outlined";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Configuration pour l'affichage correct des ligatures Material Symbols */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   PERSONNALISATION GLOBALE DE LA BARRE DE DÉFILEMENT (SCROLLBAR)
+   ========================================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F8F9FF;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #C3C6D1;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #5E72E4;
+}
+
+/* Sélection de texte stylisée */
+::selection {
+  background: rgba(94, 114, 228, 0.2);
+  color: #0B1C30;
+}

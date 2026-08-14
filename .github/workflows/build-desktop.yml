@@ -1,7 +1,13 @@
-name: Build CECO Desktop (Test)
+name: Build & Release CECO Desktop
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -11,13 +17,16 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Récupérer le code source
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Configurer pnpm
+        uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - name: Configurer Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "pnpm"
@@ -28,17 +37,20 @@ jobs:
       - name: Générer le client Prisma
         run: pnpm --filter @ceco/backend prisma:generate
 
-      - name: Construire l'installateur pour ${{ matrix.os }}
+      - name: Construire l'application pour ${{ matrix.os }}
         env:
           USE_HARD_LINKS: "false"
         run: pnpm --filter @ceco/desktop run build:installer
 
-      - name: Publier dans les Releases (Gratuit)
+      - name: Publier les installateurs dans la Release GitHub
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: "v-test"
-          name: "Test de build - Installer"
-          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
           files: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.dmg

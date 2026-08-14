@@ -1,45 +1,70 @@
 import { NavLink, Outlet } from "react-router-dom";
 import useAuthStore from "../store/authStore";
+import Icon from "./Icon";
 
 const TABS = [
-  { to: "centre", label: "Centre", permission: "center.update" },
-  { to: "utilisateurs", label: "Utilisateurs", permission: "users.read" },
-  { to: "roles", label: "Rôles & permissions", permission: "roles.read" },
-  { to: "licence", label: "Licence", permission: "center.update" },
-  { to: "sauvegarde", label: "Sauvegarde", permission: "backups.read" },
-  { to: "apropos", label: "À propos", permission: "center.update" },
+  { to: "centre", label: "Centre", icon: "storefront", permission: "center.update" },
+  { to: "utilisateurs", label: "Utilisateurs", icon: "group", permission: "users.read" },
+  { to: "roles", label: "Rôles & permissions", icon: "badge", permission: "roles.read" },
+  { to: "licence", label: "Licence", icon: "verified_user", permission: "center.update" },
+  { to: "sauvegarde", label: "Sauvegarde", icon: "archive", permission: "backups.read" },
+  { to: "apropos", label: "À propos", icon: "bookmark", permission: "center.update" },
 ];
 
 export default function SettingsLayout() {
-  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const { user, hasPermission } = useAuthStore();
   const visibleTabs = TABS.filter((tab) => hasPermission(tab.permission));
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-on-surface">Paramètres</h1>
-      <p className="mt-1 text-sm text-on-surface-variant">
-        Configuration du centre, des comptes, des services et des informations système.
-      </p>
+    <div className="space-y-md max-w-5xl mx-auto">
+      {/* En-tête des paramètres aligné sur la charte du Dashboard */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-primary uppercase tracking-wider">
+              Administration
+            </span>
+            <span className="text-outline-variant">•</span>
+            <span className="text-xs text-on-surface-variant font-medium">
+              {user?.center?.name || "Configuration générale"}
+            </span>
+          </div>
+          <h1 className="text-xl font-bold text-on-surface mt-1">Paramètres du Système</h1>
+          <p className="text-xs text-on-surface-variant mt-0.5">
+            Gestion de l'identité du centre, contrôle d'accès, permissions, sauvegardes et licence.
+          </p>
+        </div>
 
-      <div className="mt-md flex gap-1 overflow-x-auto border-b border-outline-variant/40">
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-surface border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface">
+            <Icon name="verified" className="text-primary text-[16px]" />
+            <span>Mode Local (V1)</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Barre de navigation d'onglets segmentée */}
+      <div className="flex gap-1.5 p-1 bg-surface-container-lowest rounded-md border border-outline-variant/30 shadow-xs overflow-x-auto">
         {visibleTabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             className={({ isActive }) =>
-              `whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+              `flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
                 isActive
-                  ? "border-primary text-primary"
-                  : "border-transparent text-on-surface-variant hover:text-on-surface"
+                  ? "bg-primary text-on-primary shadow-xs"
+                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60"
               }`
             }
           >
-            {tab.label}
+            <Icon name={tab.icon} className="text-[16px]" />
+            <span>{tab.label}</span>
           </NavLink>
         ))}
       </div>
 
-      <div className="mt-lg">
+      {/* Rendu dynamique de la sous-page sélectionnée */}
+      <div>
         <Outlet />
       </div>
     </div>

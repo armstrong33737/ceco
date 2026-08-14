@@ -1,7 +1,3 @@
-// ============================================================================
-// PATCH GLOBAL ASAR POUR EMBEDDED-POSTGRES (EXECUTION DES PROCESSUS & DROITS)
-// Redirige automatiquement les appels vers le répertoire physique app.asar.unpacked
-// ============================================================================
 const childProcess = require("child_process");
 const fs = require("fs");
 
@@ -12,13 +8,11 @@ function rewriteAsarPath(p) {
   return p;
 }
 
-// 1. Interception de child_process.spawn pour exécuter les binaires PostgreSQL décompressés
 const _spawn = childProcess.spawn.bind(childProcess);
 childProcess.spawn = function spawn(cmd, args, opts) {
   return _spawn(rewriteAsarPath(cmd), args, opts);
 };
 
-// 2. Interception des appels de permissions (fs.chmod) requis pour Mac & Linux
 const _chmod = fs.chmod.bind(fs);
 fs.chmod = function chmod(path, mode, callback) {
   return _chmod(rewriteAsarPath(path), mode, callback);
@@ -35,31 +29,23 @@ if (fs.promises) {
     return _promisesChmod(rewriteAsarPath(path), mode);
   };
 }
-// ============================================================================
-// FIN DU PATCH GLOBAL (CYCLE DE VIE INITIAL CI-DESSOUS)
-// ============================================================================
 
 const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
 const url = require("url");
 const http = require("http");
+const os = require("os");
 const ServiceManager = require("./serviceManager");
 const { readConfig, writeConfig, clearConfig } = require("./setup/config");
 
-// Fixe explicitement le dossier userData. app.setName() seul peut ne pas
-// suffire selon le moment où Electron résout ce chemin en interne — on le
-// force donc directement pour garantir un emplacement stable et prévisible.
 app.setName("CECO");
 app.setPath("userData", path.join(app.getPath("appData"), "CECO"));
 
-// Évite le bruit gbm_wrapper/GTK sur certaines configs Linux (VM, pilotes
-// graphiques limités) — sans impact sur le fonctionnement de l'app.
 app.disableHardwareAcceleration();
 
-// Empêche deux instances de CECO de tourner en même temps : sans ça, une
-// seconde fenêtre lancée par erreur tenterait de démarrer son propre
-// PostgreSQL/API sur les mêmes ports, provoquant des conflits en cascade
-// (EADDRINUSE) au lieu d'un message clair.
+// DÉSACTIVATION GLOBALE DU MENU PAR DÉFAUT (File, Edit, View, Window...)
+Menu.setApplicationMenu(null);
+
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -78,9 +64,77 @@ let setupWindow;
 let tray;
 const serviceManager = new ServiceManager();
 
-// Test de connexion ponctuel (pas une boucle de polling comme au démarrage
-// du mode Serveur) : l'utilisateur vient de saisir une adresse, on vérifie
-// une fois avec un délai raisonnable avant de lui répondre.
+const APP_ICON_PATH = path.join(__dirname, "../assets/icon.png");
+
+function getLocalSubnets() {
+  const interfaces = os.networkInterfaces();
+  const subnets = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        const parts = iface.address.split(".");
+        if (parts.length === 4) {
+          const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+          if (!subnets.includes(prefix)) {
+            subnets.push(prefix);
+          }
+        }
+      }
+    }
+  }
+  return subnets;
+}
+
+function probeServer(ip, port = 4000, timeout = 500) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://${ip}:${port}/health`, { timeout }, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        if (res.statusCode === 200) {
+          try {
+            const json = JSON.parse(data);
+            if (json.status === "ok") {
+              return resolve({
+                ip,
+                port,
+                address: `${ip}:${port}`,
+                name: json.centerId ? `Serveur CECO (${ip})` : `Serveur local (${ip})`
+              });
+            }
+          } catch {
+            return resolve(null);
+          }
+        }
+        resolve(null);
+      });
+    });
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+    req.on("error", () => resolve(null));
+  });
+}
+
+async function discoverServers() {
+  const subnets = getLocalSubnets();
+  const candidateIps = ["127.0.0.1", "localhost"];
+
+  for (const prefix of subnets) {
+    for (let i = 1; i <= 254; i++) {
+      candidateIps.push(`${prefix}.${i}`);
+    }
+  }
+
+  const results = [];
+  const batchSize = 35;
+  for (let i = 0; i < candidateIps.length; i += batchSize) {
+    const batch = candidateIps.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map((ip) => probeServer(ip, 4000)));
+    results.push(...batchResults.filter(Boolean));
+  }
+
+  return results;
+}
+
 function testConnection(address, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const req = http.get(`http://${address}/health`, { timeout: timeoutMs }, (res) => {
@@ -97,10 +151,15 @@ function createWindow(clientAddress) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    title: "CECO",
+    icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
-  // En dev : pointe vers le serveur Vite. En prod : charge le build statique.
+  mainWindow.setMenuBarVisibility(false);
+
   const devUrl = process.env.CECO_FRONTEND_URL || "http://localhost:5173";
   const baseUrl = app.isPackaged
     ? url.pathToFileURL(path.join(process.resourcesPath, "frontend", "index.html")).toString()
@@ -110,7 +169,6 @@ function createWindow(clientAddress) {
     : baseUrl;
   mainWindow.loadURL(finalUrl);
 
-  // À la fermeture : proposer Minimiser (services actifs) ou Arrêter (séquence propre).
   mainWindow.on("close", async (e) => {
     if (app.isQuitting) return;
     e.preventDefault();
@@ -183,15 +241,13 @@ function createTray() {
   tray.setToolTip("CECO — services actifs en arrière-plan");
 }
 
-// ------------------------------------------------------------------
-// Écran de choix Serveur/Client — affiché uniquement au premier lancement
-// (tant qu'aucune configuration n'est encore enregistrée).
-// ------------------------------------------------------------------
 function createSetupWindow() {
   setupWindow = new BrowserWindow({
-    width: 480,
-    height: 420,
+    width: 500,
+    height: 620,
     resizable: false,
+    title: "CECO — Configuration",
+    icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -229,19 +285,20 @@ ipcMain.handle("setup:choose-client", async (event, address) => {
   }
 });
 
+ipcMain.handle("setup:discover-servers", async () => {
+  return await discoverServers();
+});
+
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
 
   const config = readConfig();
 
   if (!config) {
-    // Premier lancement : l'utilisateur doit choisir.
     createSetupWindow();
     return;
   }
 
-  // Lancements suivants : le choix est déjà connu, on saute directement
-  // à l'étape correspondante sans redemander.
   try {
     if (config.mode === "server") {
       await serviceManager.startServer();
@@ -261,17 +318,10 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("window-all-closed", () => {
-  // Ne quitte jamais silencieusement sur macOS/Windows tant que les
-  // services tournent — la décision passe par le dialogue de fermeture.
-});
+app.on("window-all-closed", () => {});
 
-// Ctrl+C dans le terminal (ou un arrêt système) envoie SIGINT/SIGTERM
-// directement au processus, en contournant le dialogue de fermeture de
-// la fenêtre. Sans ceci, PostgreSQL est tué brutalement et son dossier
-// de données peut se retrouver dans un état bloqué au redémarrage suivant.
 async function gracefulShutdown() {
-  console.log("Arrêt demandé (signal système) — arrêt propre des services...");
+  console.log("Arrêt demandé — arrêt propre des services...");
   try {
     await serviceManager.stopServer();
   } catch (err) {

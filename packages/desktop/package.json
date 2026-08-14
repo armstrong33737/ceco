@@ -1,17 +1,24 @@
 {
   "name": "@ceco/desktop",
-  "version": "0.0.1-v0",
+  "version": "1.0.0",
   "private": true,
   "main": "src/main.js",
-  "description": "CECO - client desktop Electron",
-  "author": "CECO",
+  "description": "CECO — ERP de gestion des centres de formation professionnelle",
+  "author": {
+    "name": "Armstrong Euclador NGALEU",
+    "email": "armstrongngaleu@gmail.com",
+    "url": "https://armstrongngaleu.netlify.app"
+  },
+  "homepage": "https://ceco.cm",
+  "copyright": "Copyright © 2026 CECO. Tous droits réservés.",
   "scripts": {
     "dev": "electron .",
     "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
   },
   "build": {
-    "appId": "africa.ceco.desktop",
+    "appId": "cm.ceco.desktop",
     "productName": "CECO",
+    "copyright": "Copyright © 2026 CECO",
     "npmRebuild": false,
     "asar": true,
     "asarUnpack": [
@@ -54,10 +61,46 @@
         "to": "backend/node_modules/.prisma"
       }
     ],
-    "directories": { "output": "dist" },
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "legalTrademarks": "CECO"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "CECO",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "category": "public.app-category.education",
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "category": "Education",
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "synopsis": "ERP pour centres de formation professionnelle",
+      "description": "Solution complète pour la gestion pédagogique, administrative et financière des centres de formation.",
+      "desktop": {
+        "StartupWMClass": "CECO"
+      }
+    }
   },
   "dependencies": {
     "embedded-postgres": "17.10.0-beta.17",
