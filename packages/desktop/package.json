@@ -7,19 +7,22 @@
   "author": "CECO",
   "scripts": {
     "dev": "electron .",
-    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
+    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && node -e \"const fs=require('fs'); if(fs.existsSync('node_modules')) fs.rmSync('node_modules', {recursive:true,force:true})\" && npm install --production --no-package-lock && electron-builder --publish never"
   },
   "build": {
     "appId": "africa.ceco.desktop",
     "productName": "CECO",
     "npmRebuild": false,
-    "electronVersion": "31.7.7",
-    "asarUnpack": ["node_modules/**/*", "assets/**/*"],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/embedded-postgres/**/*",
+      "node_modules/@embedded-postgres/**/*"
+    ],
     "files": [
       "src/**/*",
       "package.json",
       "assets/**/*",
-      { "from": "../../node_modules", "to": "node_modules", "filter": ["**/*"] }
+      "node_modules/**/*"
     ],
     "extraResources": [
       {
@@ -41,11 +44,11 @@
         "to": "backend/seed.bundle.js"
       },
       {
-        "from": "../backend/node_modules/@prisma/client",
+        "from": "../../node_modules/@prisma/client",
         "to": "backend/node_modules/@prisma/client"
       },
       {
-        "from": "../backend/node_modules/.prisma",
+        "from": "../../node_modules/.prisma",
         "to": "backend/node_modules/.prisma"
       }
     ],
