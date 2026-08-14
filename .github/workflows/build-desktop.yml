@@ -1,7 +1,7 @@
 name: Build CECO Desktop (Test)
 
 on:
-  workflow_dispatch: # Permet le déclenchement manuel en un clic
+  workflow_dispatch:
 
 jobs:
   build:
@@ -29,14 +29,16 @@ jobs:
         run: pnpm --filter @ceco/backend prisma:generate
 
       - name: Construire l'installateur pour ${{ matrix.os }}
+        env:
+          USE_HARD_LINKS: "false"
         run: pnpm --filter @ceco/desktop run build:installer
 
       - name: Publier dans les Releases (Gratuit)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v-test" # Tag temporaire automatique
+          tag_name: "v-test"
           name: "Test de build - Installer"
-          draft: true # Reste masqué du public tant que vous ne validez pas
+          draft: true
           files: |
             packages/desktop/dist/*.exe
             packages/desktop/dist/*.dmg

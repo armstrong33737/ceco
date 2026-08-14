@@ -7,7 +7,7 @@
   "author": "CECO",
   "scripts": {
     "dev": "electron .",
-    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && node -e \"const fs=require('fs'); if(fs.existsSync('node_modules')) fs.rmSync('node_modules', {recursive:true,force:true})\" && npm install --production --no-package-lock && electron-builder --publish never"
+    "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
   },
   "build": {
     "appId": "africa.ceco.desktop",
@@ -17,8 +17,7 @@
     "files": [
       "src/**/*",
       "package.json",
-      "assets/**/*",
-      "node_modules/**/*"
+      "assets/**/*"
     ],
     "extraResources": [
       {
