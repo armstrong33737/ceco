@@ -93,7 +93,7 @@
     },
     "linux": {
       "category": "Education",
-      "target": ["AppImage", "deb"],
+      "target": ["AppImage"],
       "icon": "assets/icon.png",
       "synopsis": "ERP pour centres de formation professionnelle",
       "description": "Solution complète pour la gestion pédagogique, administrative et financière des centres de formation.",
