@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Layout from "./components/Layout";
 import SettingsLayout from "./components/SettingsLayout";
 import Dashboard from "./pages/Dashboard";
+import Formations from "./pages/Formations"; // V2 - Formations & Structure Académique
 import CenterSettings from "./pages/CenterSettings";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
@@ -15,7 +16,6 @@ import License from "./pages/License";
 import Backups from "./pages/Backups";
 import About from "./pages/About";
 
-// ÉCRAN DE VERROUILLAGE ET D'ACTIVATION PLEIN ÉCRAN
 function LicenseLockout() {
   const { user, updateSubscription, logout } = useAuthStore();
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -36,7 +36,6 @@ function LicenseLockout() {
     setPaymentStep("connecting");
 
     try {
-      // Appel direct de l'API de paiement réelle du backend
       const result = await apiFetch("/license/pay", {
         method: "POST",
         body: JSON.stringify({ operator, phoneNumber, months })
@@ -45,7 +44,6 @@ function LicenseLockout() {
       setPaymentStep("waiting_pin");
 
       setTimeout(() => {
-        // Met à jour l'état global et déverrouille l'application instantanément
         updateSubscription(result);
         setPaymentStep("success");
       }, 4000);
@@ -65,7 +63,7 @@ function LicenseLockout() {
     <div className="min-h-screen flex items-center justify-center bg-surface p-md">
       <div className="w-full max-w-lg bg-white rounded-md p-lg shadow-xl border border-outline-variant/40 flex flex-col justify-between">
         <div className="text-center mb-md">
-          <div className="w-16 h-16 bg-error-container text-error rounded-full flex items-center justify-center mx-auto mb-3">
+          <div className="w-16 h-16 bg-error-container text-error rounded-md flex items-center justify-center mx-auto mb-3">
             <Icon name="lock" className="text-3xl" />
           </div>
           <h1 className="text-xl font-bold text-on-surface">Application CECO Verrouillée</h1>
@@ -129,7 +127,7 @@ function LicenseLockout() {
 
             <button
               type="submit"
-              className="w-full h-11 rounded-md bg-gradient-to-r from-primary to-violet font-semibold text-on-primary text-sm shadow-md hover:opacity-95"
+              className="w-full h-11 rounded-md bg-primary font-semibold text-on-primary text-sm shadow-md hover:bg-primary-dark transition-colors"
             >
               Recharger pour {formatCurrency(months * MONTHLY_PRICE)}
             </button>
@@ -156,7 +154,7 @@ function LicenseLockout() {
 
             {paymentStep === "success" && (
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-success-light rounded-full flex items-center justify-center mx-auto text-success">
+                <div className="w-12 h-12 bg-success-light rounded-md flex items-center justify-center mx-auto text-success">
                   <Icon name="check_circle" className="text-3xl" />
                 </div>
                 <h3 className="text-sm font-bold text-success">Déverrouillage Système</h3>
@@ -200,7 +198,6 @@ export default function App() {
 
   const isAuthenticated = token && status === "authenticated";
 
-  // Analyse réelle de la date d'expiration
   const isLicenseExpired = user?.center?.subscription?.expiresAt
     ? new Date(user.center.subscription.expiresAt).getTime() < Date.now()
     : false;
@@ -211,12 +208,11 @@ export default function App() {
         {!isAuthenticated ? (
           <Route path="*" element={<Login />} />
         ) : isLicenseExpired ? (
-          // Si la licence a expiré, l'accès à toute l'application est bloqué par cet écran d'activation
           <Route path="*" element={<LicenseLockout />} />
         ) : (
-          // Routes standard de l'application disponibles uniquement si la licence est valide
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
+            <Route path="formations" element={<Formations />} />
             <Route path="parametres" element={<SettingsLayout />}>
               <Route index element={<Navigate to="centre" replace />} />
               <Route path="centre" element={<CenterSettings />} />
