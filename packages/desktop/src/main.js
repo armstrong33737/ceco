@@ -1,56 +1,25 @@
-// ============================================================================
-// PATCH DE REDIRECTION GLOBALE ASAR POUR EMBEDDED-POSTGRES (EXECUTION & DROITS)
-// Intercepte les appels système avant exécution pour dévier vers app.asar.unpacked
-// ============================================================================
-const childProcess = require("child_process");
-const fs = require("fs");
-
-function rewriteAsarPath(p) {
-  if (typeof p === "string" && p.includes("app.asar") && !p.includes("app.asar.unpacked")) {
-    return p.replace(/app\.asar([/\\\\])/g, "app.asar.unpacked$1");
-  }
-  return p;
-}
-
-// 1. Interception de child_process.spawn pour exécuter les binaires décompressés
-const _spawn = childProcess.spawn.bind(childProcess);
-childProcess.spawn = function spawn(cmd, args, opts) {
-  return _spawn(rewriteAsarPath(cmd), args, opts);
-};
-
-// 2. Interception des appels de permissions (fs.chmod) requis pour Mac & Linux
-const _chmod = fs.chmod.bind(fs);
-fs.chmod = function chmod(path, mode, callback) {
-  return _chmod(rewriteAsarPath(path), mode, callback);
-};
-
-const _chmodSync = fs.chmodSync.bind(fs);
-fs.chmodSync = function chmodSync(path, mode) {
-  return _chmodSync(rewriteAsarPath(path), mode);
-};
-
-if (fs.promises) {
-  const _promisesChmod = fs.promises.chmod.bind(fs.promises);
-  fs.promises.chmod = function chmod(path, mode) {
-    return _promisesChmod(rewriteAsarPath(path), mode);
-  };
-}
-// ============================================================================
-// FIN DU PATCH GLOBAL (CYCLE DE VIE INITIAL CI-DESSOUS)
-// ============================================================================
-
 const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 const path = require("path");
 const url = require("url");
 const http = require("http");
+const fs = require("fs");
 const ServiceManager = require("./serviceManager");
 const { readConfig, writeConfig, clearConfig } = require("./setup/config");
 
+// Fixe explicitement le dossier userData. app.setName() seul peut ne pas
+// suffire selon le moment où Electron résout ce chemin en interne — on le
+// force donc directement pour garantir un emplacement stable et prévisible.
 app.setName("CECO");
 app.setPath("userData", path.join(app.getPath("appData"), "CECO"));
 
+// Évite le bruit gbm_wrapper/GTK sur certaines configs Linux (VM, pilotes
+// graphiques limités) — sans impact sur le fonctionnement de l'app.
 app.disableHardwareAcceleration();
 
+// Empêche deux instances de CECO de tourner en même temps : sans ça, une
+// seconde fenêtre lancée par erreur tenterait de démarrer son propre
+// PostgreSQL/API sur les mêmes ports, provoquant des conflits en cascade
+// (EADDRINUSE) au lieu d'un message clair.
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -69,6 +38,9 @@ let setupWindow;
 let tray;
 const serviceManager = new ServiceManager();
 
+// Test de connexion ponctuel (pas une boucle de polling comme au démarrage
+// du mode Serveur) : l'utilisateur vient de saisir une adresse, on vérifie
+// une fois avec un délai raisonnable avant de lui répondre.
 function testConnection(address, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const req = http.get(`http://${address}/health`, { timeout: timeoutMs }, (res) => {
@@ -88,6 +60,7 @@ function createWindow(clientAddress) {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
+  // En dev : pointe vers le serveur Vite. En prod : charge le build statique.
   const devUrl = process.env.CECO_FRONTEND_URL || "http://localhost:5173";
   const baseUrl = app.isPackaged
     ? url.pathToFileURL(path.join(process.resourcesPath, "frontend", "index.html")).toString()
@@ -97,6 +70,7 @@ function createWindow(clientAddress) {
     : baseUrl;
   mainWindow.loadURL(finalUrl);
 
+  // À la fermeture : proposer Minimiser (services actifs) ou Arrêter (séquence propre).
   mainWindow.on("close", async (e) => {
     if (app.isQuitting) return;
     e.preventDefault();
@@ -169,6 +143,10 @@ function createTray() {
   tray.setToolTip("CECO — services actifs en arrière-plan");
 }
 
+// ------------------------------------------------------------------
+// Écran de choix Serveur/Client — affiché uniquement au premier lancement
+// (tant qu'aucune configuration n'est encore enregistrée).
+// ------------------------------------------------------------------
 function createSetupWindow() {
   setupWindow = new BrowserWindow({
     width: 480,
@@ -212,15 +190,18 @@ ipcMain.handle("setup:choose-client", async (event, address) => {
 });
 
 app.whenReady().then(async () => {
-  if (!gotSingleInstanceLock) return;
+  if (!gotSingleInstanceLock) return; // app.quit() déjà appelé plus haut
 
   const config = readConfig();
 
   if (!config) {
+    // Premier lancement : l'utilisateur doit choisir.
     createSetupWindow();
     return;
   }
 
+  // Lancements suivants : le choix est déjà connu, on saute directement
+  // à l'étape correspondante sans redemander.
   try {
     if (config.mode === "server") {
       await serviceManager.startServer();
@@ -240,8 +221,15 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on("window-all-closed", () => {});
+app.on("window-all-closed", () => {
+  // Ne quitte jamais silencieusement sur macOS/Windows tant que les
+  // services tournent — la décision passe par le dialogue de fermeture.
+});
 
+// Ctrl+C dans le terminal (ou un arrêt système) envoie SIGINT/SIGTERM
+// directement au processus, en contournant le dialogue de fermeture de
+// la fenêtre. Sans ceci, PostgreSQL est tué brutalement et son dossier
+// de données peut se retrouver dans un état bloqué au redémarrage suivant.
 async function gracefulShutdown() {
   console.log("Arrêt demandé (signal système) — arrêt propre des services...");
   try {
