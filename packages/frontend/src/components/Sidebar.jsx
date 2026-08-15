@@ -5,7 +5,7 @@ import useAuthStore from "../store/authStore";
 const MAIN_ITEMS = [
   { to: "/", label: "Tableau de bord", icon: "dashboard", end: true },
   { to: "/formations", label: "Formations", icon: "menu_book", disabled: false },
-  { to: "/etudiants", label: "Étudiants", icon: "group", disabled: true },
+  { to: "/etudiants", label: "Étudiants", icon: "group", disabled: false }, // Actif V2.2
   { to: "/formateurs", label: "Formateurs", icon: "badge", disabled: true },
   { to: "/planning", label: "Planning", icon: "calendar_today", disabled: true },
 ];
@@ -45,15 +45,14 @@ export default function Sidebar() {
               {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
               {!isSidebarCollapsed && item.disabled && (
                 <span className="ml-auto text-[10px] uppercase tracking-wider font-semibold text-on-surface-variant/50 bg-surface px-1.5 py-0.5 rounded-md">
-                  V2
+                  V3
                 </span>
               )}
             </NavLink>
 
-            {/* Infobulle unique personnalisée en mode réduit */}
             {isSidebarCollapsed && (
               <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3.5 px-3 py-1.5 bg-ink text-white text-xs font-semibold rounded-md shadow-xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 whitespace-nowrap z-[100] border border-white/10">
-                {item.label} {item.disabled ? "(Bientôt V2)" : ""}
+                {item.label} {item.disabled ? "(Bientôt)" : ""}
               </div>
             )}
           </div>
@@ -86,7 +85,7 @@ export default function Sidebar() {
         )}
       </nav>
 
-      {/* Bouton de Déconnexion */}
+      {/* Déconnexion */}
       <div className={`p-2 border-t border-outline-variant/30 bg-surface-container-lowest ${isSidebarCollapsed ? "overflow-visible" : "overflow-x-hidden"}`}>
         <div className="relative group">
           <button

@@ -8,10 +8,12 @@ import Login from "./pages/Login";
 import Layout from "./components/Layout";
 import SettingsLayout from "./components/SettingsLayout";
 import Dashboard from "./pages/Dashboard";
-import Formations from "./pages/Formations"; // V2 - Formations & Structure Académique
+import Formations from "./pages/Formations";
+import Students from "./pages/Students";
 import CenterSettings from "./pages/CenterSettings";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
+import DocumentTemplatesSettings from "./pages/DocumentTemplatesSettings"; // Import obligatoire
 import License from "./pages/License";
 import Backups from "./pages/Backups";
 import About from "./pages/About";
@@ -154,7 +156,7 @@ function LicenseLockout() {
 
             {paymentStep === "success" && (
               <div className="space-y-4">
-                <div className="w-12 h-12 bg-success-light rounded-md flex items-center justify-center mx-auto text-success">
+                <div className="w-12 h-12 bg-success-light rounded-full flex items-center justify-center mx-auto text-success">
                   <Icon name="check_circle" className="text-3xl" />
                 </div>
                 <h3 className="text-sm font-bold text-success">Déverrouillage Système</h3>
@@ -213,11 +215,13 @@ export default function App() {
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="formations" element={<Formations />} />
+            <Route path="etudiants" element={<Students />} />
             <Route path="parametres" element={<SettingsLayout />}>
               <Route index element={<Navigate to="centre" replace />} />
               <Route path="centre" element={<CenterSettings />} />
               <Route path="utilisateurs" element={<Users />} />
               <Route path="roles" element={<Roles />} />
+              <Route path="modeles" element={<DocumentTemplatesSettings />} />
               <Route path="licence" element={<License />} />
               <Route path="sauvegarde" element={<Backups />} />
               <Route path="apropos" element={<About />} />

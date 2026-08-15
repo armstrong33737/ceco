@@ -5,7 +5,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Configuration pour l'affichage correct des ligatures Material Symbols */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';
   font-weight: normal;
@@ -21,9 +20,6 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* ==========================================================================
-   PERSONNALISATION GLOBALE DE LA BARRE DE DÉFILEMENT (SCROLLBAR)
-   ========================================================================== */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -43,8 +39,27 @@
   background: #5E72E4;
 }
 
-/* Sélection de texte stylisée */
-::selection {
-  background: rgba(94, 114, 228, 0.2);
-  color: #0B1C30;
+/* ==========================================================================
+   ISOLATION STRICTE POUR L'IMPRESSION HAUTE DÉFINITION (PRINT ENGINE)
+   ========================================================================== */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printableDocumentRoot, #printableDocumentRoot * {
+    visibility: visible;
+  }
+  #printableDocumentRoot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+  }
+  .page-break {
+    page-break-after: always;
+    break-after: page;
+  }
 }

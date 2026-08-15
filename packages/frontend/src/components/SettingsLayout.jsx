@@ -6,6 +6,7 @@ const TABS = [
   { to: "centre", label: "Centre", icon: "storefront", permission: "center.update" },
   { to: "utilisateurs", label: "Utilisateurs", icon: "group", permission: "users.read" },
   { to: "roles", label: "Rôles & permissions", icon: "badge", permission: "roles.read" },
+  { to: "modeles", label: "Gabarits & Modèles", icon: "palette", permission: "center.update" },
   { to: "licence", label: "Licence", icon: "verified_user", permission: "center.update" },
   { to: "sauvegarde", label: "Sauvegarde", icon: "archive", permission: "backups.read" },
   { to: "apropos", label: "À propos", icon: "bookmark", permission: "center.update" },
@@ -17,7 +18,6 @@ export default function SettingsLayout() {
 
   return (
     <div className="space-y-md max-w-5xl mx-auto">
-      {/* En-tête des paramètres aligné sur la charte du Dashboard */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -31,19 +31,18 @@ export default function SettingsLayout() {
           </div>
           <h1 className="text-xl font-bold text-on-surface mt-1">Paramètres du Système</h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Gestion de l'identité du centre, contrôle d'accès, permissions, sauvegardes et licence.
+            Identité du centre, gabarits de documents avec filigrane, sécurité, sauvegardes et licence.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-surface border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface">
             <Icon name="verified" className="text-primary text-[16px]" />
-            <span>Mode Local (V1)</span>
+            <span>Mode Local (V2)</span>
           </span>
         </div>
       </div>
 
-      {/* Barre de navigation d'onglets segmentée */}
       <div className="flex gap-1.5 p-1 bg-surface-container-lowest rounded-md border border-outline-variant/30 shadow-xs overflow-x-auto">
         {visibleTabs.map((tab) => (
           <NavLink
@@ -63,7 +62,6 @@ export default function SettingsLayout() {
         ))}
       </div>
 
-      {/* Rendu dynamique de la sous-page sélectionnée */}
       <div>
         <Outlet />
       </div>

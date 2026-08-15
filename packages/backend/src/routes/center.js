@@ -27,8 +27,10 @@ function brandingDir(centerId) {
   return centerStoragePath(centerId, "settings/branding");
 }
 
-// Supprime tout fichier logo.* existant, quelle que soit son extension —
-// évite d'accumuler d'anciens formats si l'utilisateur change de logo.
+function signaturesDir(centerId) {
+  return centerStoragePath(centerId, "settings/signatures");
+}
+
 function removeExistingLogoFiles(centerId) {
   const dir = brandingDir(centerId);
   if (!fs.existsSync(dir)) return;
@@ -37,22 +39,40 @@ function removeExistingLogoFiles(centerId) {
   }
 }
 
-// Décode un data URL (data:image/png;base64,...) envoyé par le frontend et
-// écrit l'image comme un VRAI fichier sur disque, scopé au centre — jamais
-// stockée en base64 en base de données (voir storage/{centerId}/settings/branding).
+function removeExistingSealFiles(centerId) {
+  const dir = brandingDir(centerId);
+  if (!fs.existsSync(dir)) return;
+  for (const file of fs.readdirSync(dir)) {
+    if (file.startsWith("seal.")) fs.unlinkSync(path.join(dir, file));
+  }
+}
+
 function saveLogoFromDataUrl(centerId, dataUrl) {
   const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(dataUrl);
   if (!match) throw new Error("Format d'image invalide.");
   const [, mime, base64Payload] = match;
   const ext = MIME_TO_EXT[mime];
-  if (!ext) throw new Error("Format d'image non supporté (PNG, JPEG, WEBP ou SVG uniquement).");
+  if (!ext) throw new Error("Format d'image non supporté (PNG, JPEG, WEBP ou SVG).");
 
   const buffer = Buffer.from(base64Payload, "base64");
-  const MAX_SIZE = 2 * 1024 * 1024; // 2 Mo — un logo n'a pas besoin d'être plus lourd
-  if (buffer.length > MAX_SIZE) throw new Error("Image trop volumineuse (2 Mo maximum).");
+  if (buffer.length > 3 * 1024 * 1024) throw new Error("Image trop volumineuse (3 Mo max).");
 
   removeExistingLogoFiles(centerId);
   fs.writeFileSync(path.join(brandingDir(centerId), `logo.${ext}`), buffer);
+  return ext;
+}
+
+function saveSealFromDataUrl(centerId, dataUrl) {
+  const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) throw new Error("Format de sceau invalide.");
+  const [, mime, base64Payload] = match;
+  const ext = MIME_TO_EXT[mime] || "png";
+
+  const buffer = Buffer.from(base64Payload, "base64");
+  if (buffer.length > 3 * 1024 * 1024) throw new Error("Image du sceau trop volumineuse (3 Mo max).");
+
+  removeExistingSealFiles(centerId);
+  fs.writeFileSync(path.join(brandingDir(centerId), `seal.${ext}`), buffer);
   return ext;
 }
 
@@ -60,23 +80,30 @@ function serializeCenter(center) {
   const out = {};
   for (const field of EDITABLE_FIELDS) out[field] = center[field];
   out.id = center.id;
-  out.hasLogo = !!center.logo; // center.logo ne stocke plus qu'une extension ("png", "svg"...)
+  out.hasLogo = !!center.logo;
   return out;
 }
 
-router.get("/center", verifyJwt, async (req, res, next) => {
+router.get("/center", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
   try {
     const center = await prisma.center.findUnique({ where: { id: req.centerId } });
     if (!center) return res.status(404).json({ error: "Centre introuvable." });
-    res.json(serializeCenter(center));
+    
+    // Vérification de la présence physique du sceau d'État
+    const branding = brandingDir(req.centerId);
+    let hasSeal = false;
+    if (fs.existsSync(branding)) {
+      hasSeal = fs.readdirSync(branding).some((f) => f.startsWith("seal."));
+    }
+
+    const payload = serializeCenter(center);
+    payload.hasSeal = hasSeal;
+    res.json(payload);
   } catch (err) {
     next(err);
   }
 });
 
-// Sert le fichier logo réel — appelé via fetch() authentifié côté frontend
-// (pas un <img src> direct, puisqu'une balise <img> ne peut pas envoyer
-// l'en-tête Authorization).
 router.get("/center/logo", verifyJwt, async (req, res, next) => {
   try {
     const center = await prisma.center.findUnique({ where: { id: req.centerId } });
@@ -93,9 +120,28 @@ router.get("/center/logo", verifyJwt, async (req, res, next) => {
   }
 });
 
+router.get("/center/seal", verifyJwt, async (req, res, next) => {
+  try {
+    const dir = brandingDir(req.centerId);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: "Aucun sceau." });
+
+    const file = fs.readdirSync(dir).find((f) => f.startsWith("seal."));
+    if (!file) return res.status(404).json({ error: "Aucun sceau." });
+
+    const filePath = path.join(dir, file);
+    const ext = path.extname(file).replace(".", "").toLowerCase();
+
+    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
+    res.setHeader("Cache-Control", "private, max-age=60");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.put("/center", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
-    const { name, logo } = req.body || {};
+    const { name, logo, seal } = req.body || {};
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Le nom du centre est requis." });
     }
@@ -108,10 +154,6 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
     }
     data.name = name.trim();
 
-    // logo : trois cas possibles.
-    // - non fourni (undefined)  -> on ne touche à rien.
-    // - chaîne vide ("")        -> suppression explicite du logo.
-    // - data URL (data:image/…)  -> nouvel upload, écrit comme fichier réel.
     if (logo === "") {
       removeExistingLogoFiles(req.centerId);
       data.logo = null;
@@ -119,12 +161,78 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
       data.logo = saveLogoFromDataUrl(req.centerId, logo);
     }
 
+    if (seal === "") {
+      removeExistingSealFiles(req.centerId);
+    } else if (typeof seal === "string" && seal.startsWith("data:image/")) {
+      saveSealFromDataUrl(req.centerId, seal);
+    }
+
     const center = await prisma.center.update({ where: { id: req.centerId }, data });
     res.json(serializeCenter(center));
   } catch (err) {
-    if (err.message?.includes("Image trop volumineuse") || err.message?.includes("Format d'image")) {
+    if (err.message?.includes("Image trop volumineuse") || err.message?.includes("Format")) {
       return res.status(400).json({ error: err.message });
     }
+    next(err);
+  }
+});
+
+// Gestion des signatures indexées par rôle
+router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+  try {
+    const dir = signaturesDir(req.centerId);
+    await ensureStorageTree(req.centerId);
+
+    const signatures = {};
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        const roleKey = path.basename(file, path.extname(file));
+        signatures[roleKey] = true;
+      }
+    }
+
+    res.json(signatures);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/center/signatures", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { roleKey, signatureDataUrl } = req.body || {};
+    if (!roleKey || !signatureDataUrl || !signatureDataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ error: "Rôle institutionnel et image de signature requis." });
+    }
+
+    await ensureStorageTree(req.centerId);
+    const dir = signaturesDir(req.centerId);
+
+    const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(signatureDataUrl);
+    if (!match) return res.status(400).json({ error: "Format invalide." });
+
+    const [, , base64Payload] = match;
+    const buffer = Buffer.from(base64Payload, "base64");
+    const safeKey = roleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+
+    fs.writeFileSync(path.join(dir, `${safeKey}.png`), buffer);
+    res.json({ success: true, roleKey: safeKey });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/center/signatures/:roleKey", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const dir = signaturesDir(req.centerId);
+    const safeKey = req.params.roleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const filePath = path.join(dir, `${safeKey}.png`);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    res.status(204).send();
+  } catch (err) {
     next(err);
   }
 });

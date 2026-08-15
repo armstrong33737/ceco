@@ -1,32 +1,31 @@
+// packages/backend/src/routes/formations.js
 const express = require("express");
 const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
+const { requirePermission } = require("../middleware/permissions");
 
 const router = express.Router();
 
-// Vérifie que l'année académique ciblée est bien active (isCurrent === true)
 async function ensureAcademicYearActive(academicYearId, centerId) {
   const year = await prisma.academicYear.findFirst({
-    where: { id: academicYearId, centerId }
+    where: { id: academicYearId, centerId },
   });
   if (!year) throw new Error("Année académique introuvable.");
   if (!year.isCurrent) {
-    throw new Error(`L'année académique "${year.label}" est clôturée. Aucune modification n'est autorisée.`);
+    throw new Error(`La session "${year.label}" est clôturée. Les modifications sont restreintes.`);
   }
   return year;
 }
 
 // ============================================================================
-// 1. TYPES DE PROGRAMMES / CYCLES (DQP, CQP...)
+// 1. CYCLES / TYPES DE PROGRAMMES (DQP, CQP...)
 // ============================================================================
-router.get("/program-types", verifyJwt, async (req, res, next) => {
+router.get("/program-types", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
   try {
     const types = await prisma.programType.findMany({
       where: { centerId: req.centerId },
-      include: {
-        _count: { select: { filieres: true } }
-      },
-      orderBy: { code: "asc" }
+      include: { _count: { select: { filieres: true } } },
+      orderBy: { code: "asc" },
     });
     res.json(types);
   } catch (err) {
@@ -34,41 +33,28 @@ router.get("/program-types", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.post("/program-types", verifyJwt, async (req, res, next) => {
+router.post("/program-types", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
   try {
     const { code, label } = req.body || {};
-    if (!code || !label) {
-      return res.status(400).json({ error: "Le code (ex: DQP) et l'intitulé sont requis." });
-    }
+    if (!code || !label) return res.status(400).json({ error: "Code et libellé requis." });
 
     const created = await prisma.programType.create({
-      data: {
-        centerId: req.centerId,
-        code: code.trim().toUpperCase(),
-        label: label.trim()
-      }
+      data: { centerId: req.centerId, code: code.trim().toUpperCase(), label: label.trim() },
     });
     res.status(201).json(created);
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Un type de programme avec ce code existe déjà." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Ce code de cycle existe déjà." });
     next(err);
   }
 });
 
-router.put("/program-types/:id", verifyJwt, async (req, res, next) => {
+router.put("/program-types/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { code, label } = req.body || {};
-    const updated = await prisma.programType.updateMany({
+    await prisma.programType.updateMany({
       where: { id: req.params.id, centerId: req.centerId },
-      data: {
-        ...(code && { code: code.trim().toUpperCase() }),
-        ...(label && { label: label.trim() })
-      }
+      data: { ...(code && { code: code.trim().toUpperCase() }), ...(label && { label: label.trim() }) },
     });
-    if (updated.count === 0) return res.status(404).json({ error: "Cycle introuvable." });
-    
     const result = await prisma.programType.findUnique({ where: { id: req.params.id } });
     res.json(result);
   } catch (err) {
@@ -76,19 +62,11 @@ router.put("/program-types/:id", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.delete("/program-types/:id", verifyJwt, async (req, res, next) => {
+router.delete("/program-types/:id", verifyJwt, requirePermission("center.delete", "center.update"), async (req, res, next) => {
   try {
-    const filieresCount = await prisma.filiere.count({
-      where: { programTypeId: req.params.id, centerId: req.centerId }
-    });
-    if (filieresCount > 0) {
-      return res.status(409).json({ error: "Impossible de supprimer : des filières sont rattachées à ce cycle." });
-    }
-
-    const deleted = await prisma.programType.deleteMany({
-      where: { id: req.params.id, centerId: req.centerId }
-    });
-    if (deleted.count === 0) return res.status(404).json({ error: "Cycle introuvable." });
+    const count = await prisma.filiere.count({ where: { programTypeId: req.params.id, centerId: req.centerId } });
+    if (count > 0) return res.status(409).json({ error: "Des filières sont rattachées à ce cycle." });
+    await prisma.programType.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -96,18 +74,18 @@ router.delete("/program-types/:id", verifyJwt, async (req, res, next) => {
 });
 
 // ============================================================================
-// 2. FILIÈRES & NIVEAUX DU PARCOURS (1 À 3 ANS)
+// 2. FILIÈRES & NIVEAUX
 // ============================================================================
-router.get("/filieres", verifyJwt, async (req, res, next) => {
+router.get("/filieres", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
   try {
     const filieres = await prisma.filiere.findMany({
       where: { centerId: req.centerId },
       include: {
         programType: true,
         niveaux: { orderBy: { order: "asc" } },
-        _count: { select: { classes: true } }
+        _count: { select: { classes: true } },
       },
-      orderBy: { name: "asc" }
+      orderBy: { name: "asc" },
     });
     res.json(filieres);
   } catch (err) {
@@ -115,37 +93,25 @@ router.get("/filieres", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.post("/filieres", verifyJwt, async (req, res, next) => {
+router.post("/filieres", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
   try {
     const { programTypeId, name, durationInYears } = req.body || {};
     const duration = Math.max(1, Math.min(3, parseInt(durationInYears) || 1));
+    if (!programTypeId || !name) return res.status(400).json({ error: "Cycle et nom requis." });
 
-    if (!programTypeId || !name) {
-      return res.status(400).json({ error: "Le cycle de formation et le nom de la filière sont requis." });
-    }
-
-    // 1. Création de la filière et de ses niveaux associés (1..duration)
     const filiere = await prisma.filiere.create({
       data: {
         centerId: req.centerId,
         programTypeId,
         name: name.trim(),
         durationInYears: duration,
-        niveaux: {
-          create: Array.from({ length: duration }, (_, i) => ({ order: i + 1 }))
-        }
+        niveaux: { create: Array.from({ length: duration }, (_, i) => ({ order: i + 1 })) },
       },
-      include: {
-        programType: true,
-        niveaux: { orderBy: { order: "asc" } }
-      }
+      include: { programType: true, niveaux: { orderBy: { order: "asc" } } },
     });
 
-    // 2. Si une session académique active existe déjà, on génère automatiquement la classe de Niveau 1
-    const currentYear = await prisma.academicYear.findFirst({
-      where: { centerId: req.centerId, isCurrent: true }
-    });
-
+    // Création automatique de la classe Niveau 1 sur la session active
+    const currentYear = await prisma.academicYear.findFirst({ where: { centerId: req.centerId, isCurrent: true } });
     if (currentYear) {
       const niveau1 = filiere.niveaux.find((n) => n.order === 1);
       if (niveau1) {
@@ -155,53 +121,44 @@ router.post("/filieres", verifyJwt, async (req, res, next) => {
             filiereId: filiere.id,
             niveauId: niveau1.id,
             academicYearId: currentYear.id,
-            label: `${filiere.name} - Niveau 1 (${currentYear.label})`
-          }
+            label: `${filiere.name} - Niveau 1 (${currentYear.label})`,
+          },
         });
       }
     }
-
     res.status(201).json(filiere);
   } catch (err) {
     next(err);
   }
 });
 
-router.put("/filieres/:id", verifyJwt, async (req, res, next) => {
+router.put("/filieres/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { programTypeId, name, durationInYears } = req.body || {};
     const existing = await prisma.filiere.findFirst({
       where: { id: req.params.id, centerId: req.centerId },
-      include: { niveaux: true }
+      include: { niveaux: true },
     });
     if (!existing) return res.status(404).json({ error: "Filière introuvable." });
 
     const newDuration = durationInYears ? Math.max(1, Math.min(3, parseInt(durationInYears))) : existing.durationInYears;
-
     await prisma.filiere.update({
       where: { id: req.params.id },
-      data: {
-        ...(name && { name: name.trim() }),
-        ...(programTypeId && { programTypeId }),
-        durationInYears: newDuration
-      }
+      data: { ...(name && { name: name.trim() }), ...(programTypeId && { programTypeId }), durationInYears: newDuration },
     });
 
-    // Si la durée a augmenté, on crée les niveaux manquants
+    // Ajustement dynamique des niveaux
     if (newDuration > existing.niveaux.length) {
       const missingCount = newDuration - existing.niveaux.length;
       const startOrder = existing.niveaux.length + 1;
       await prisma.niveau.createMany({
-        data: Array.from({ length: missingCount }, (_, i) => ({
-          filiereId: req.params.id,
-          order: startOrder + i
-        }))
+        data: Array.from({ length: missingCount }, (_, i) => ({ filiereId: req.params.id, order: startOrder + i })),
       });
     }
 
     const updated = await prisma.filiere.findUnique({
       where: { id: req.params.id },
-      include: { programType: true, niveaux: { orderBy: { order: "asc" } } }
+      include: { programType: true, niveaux: { orderBy: { order: "asc" } } },
     });
     res.json(updated);
   } catch (err) {
@@ -209,15 +166,10 @@ router.put("/filieres/:id", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.delete("/filieres/:id", verifyJwt, async (req, res, next) => {
+router.delete("/filieres/:id", verifyJwt, requirePermission("center.delete", "center.update"), async (req, res, next) => {
   try {
-    const classesCount = await prisma.classe.count({
-      where: { filiereId: req.params.id, centerId: req.centerId }
-    });
-    if (classesCount > 0) {
-      return res.status(409).json({ error: "Impossible de supprimer : des classes existent pour cette filière." });
-    }
-
+    const classesCount = await prisma.classe.count({ where: { filiereId: req.params.id, centerId: req.centerId } });
+    if (classesCount > 0) return res.status(409).json({ error: "Des classes existent pour cette filière." });
     await prisma.niveau.deleteMany({ where: { filiereId: req.params.id } });
     await prisma.filiere.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
     res.status(204).send();
@@ -227,16 +179,14 @@ router.delete("/filieres/:id", verifyJwt, async (req, res, next) => {
 });
 
 // ============================================================================
-// 3. ANNÉES ACADÉMIQUES & AUTO-GÉNÉRATION DES CLASSES DE NIVEAU 1
+// 3. SESSIONS ACADÉMIQUES & TRANSITION
 // ============================================================================
-router.get("/academic-years", verifyJwt, async (req, res, next) => {
+router.get("/academic-years", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
   try {
     const years = await prisma.academicYear.findMany({
       where: { centerId: req.centerId },
-      include: {
-        _count: { select: { classes: true, inscriptions: true } }
-      },
-      orderBy: { startDate: "desc" }
+      include: { _count: { select: { classes: true, inscriptions: true } } },
+      orderBy: { startDate: "desc" },
     });
     res.json(years);
   } catch (err) {
@@ -244,74 +194,32 @@ router.get("/academic-years", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.post("/academic-years", verifyJwt, async (req, res, next) => {
+router.post("/academic-years", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
   try {
     const { label, startDate, endDate, isCurrent } = req.body || {};
-    if (!label || !startDate || !endDate) {
-      return res.status(400).json({ error: "L'intitulé (ex: 2026-2027) et les dates de début/fin sont requis." });
-    }
+    if (!label || !startDate || !endDate) return res.status(400).json({ error: "Intitulé et dates requis." });
 
     if (isCurrent) {
       await prisma.academicYear.updateMany({
         where: { centerId: req.centerId },
-        data: { isCurrent: false }
+        data: { isCurrent: false },
       });
     }
 
-    // 1. Création de la session
     const createdYear = await prisma.academicYear.create({
       data: {
         centerId: req.centerId,
         label: label.trim(),
         startDate: new Date(startDate),
         endDate: new Date(endDate),
-        isCurrent: Boolean(isCurrent)
-      }
+        isCurrent: Boolean(isCurrent),
+      },
     });
 
-    // 2. Découpage temporel par défaut (Semestre 1, Semestre 2, Annuel)
-    const sem1End = new Date(startDate);
-    sem1End.setMonth(sem1End.getMonth() + 5);
-
-    const sem2Start = new Date(startDate);
-    sem2Start.setMonth(sem2Start.getMonth() + 6);
-
-    await prisma.gradePeriod.createMany({
-      data: [
-        {
-          centerId: req.centerId,
-          academicYearId: createdYear.id,
-          type: "SEMESTRE",
-          order: 1,
-          label: "Semestre 1",
-          startDate: new Date(startDate),
-          endDate: sem1End
-        },
-        {
-          centerId: req.centerId,
-          academicYearId: createdYear.id,
-          type: "SEMESTRE",
-          order: 2,
-          label: "Semestre 2",
-          startDate: sem2Start,
-          endDate: new Date(endDate)
-        },
-        {
-          centerId: req.centerId,
-          academicYearId: createdYear.id,
-          type: "ANNUEL",
-          order: 1,
-          label: `Année ${label.trim()}`,
-          startDate: new Date(startDate),
-          endDate: new Date(endDate)
-        }
-      ]
-    });
-
-    // 3. RÈGLE MÉTIER V2.1 : Création automatique des classes de Niveau 1 pour chaque filière
+    // Auto-création systématique des classes Niveau 1 pour chaque filière
     const filieres = await prisma.filiere.findMany({
       where: { centerId: req.centerId },
-      include: { niveaux: { where: { order: 1 } } }
+      include: { niveaux: { where: { order: 1 } } },
     });
 
     for (const f of filieres) {
@@ -323,126 +231,165 @@ router.post("/academic-years", verifyJwt, async (req, res, next) => {
             filiereId: f.id,
             niveauId: niveau1.id,
             academicYearId: createdYear.id,
-            label: `${f.name} - Niveau 1 (${createdYear.label})`
-          }
+            label: `${f.name} - Niveau 1 (${createdYear.label})`,
+          },
         });
       }
     }
 
     res.status(201).json(createdYear);
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Une année académique porte déjà cet intitulé." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Cette session existe déjà." });
     next(err);
   }
 });
 
-router.put("/academic-years/:id/set-current", verifyJwt, async (req, res, next) => {
+router.put("/academic-years/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { label, startDate, endDate } = req.body || {};
+    const updated = await prisma.academicYear.update({
+      where: { id: req.params.id },
+      data: {
+        ...(label && { label: label.trim() }),
+        ...(startDate && { startDate: new Date(startDate) }),
+        ...(endDate && { endDate: new Date(endDate) }),
+      },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/academic-years/:id/set-current", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     await prisma.academicYear.updateMany({
       where: { centerId: req.centerId },
-      data: { isCurrent: false }
+      data: { isCurrent: false },
     });
-
-    await prisma.academicYear.updateMany({
-      where: { id: req.params.id, centerId: req.centerId },
-      data: { isCurrent: true }
+    const updated = await prisma.academicYear.update({
+      where: { id: req.params.id },
+      data: { isCurrent: true },
     });
-
-    const result = await prisma.academicYear.findUnique({ where: { id: req.params.id } });
-    res.json(result);
+    res.json(updated);
   } catch (err) {
     next(err);
   }
 });
 
-router.delete("/academic-years/:id", verifyJwt, async (req, res, next) => {
+// Moteur de transition annuelle (Promotion des admis, réinscription des redoublants)
+router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
-    const inscriptionsCount = await prisma.inscription.count({
-      where: { academicYearId: req.params.id, centerId: req.centerId }
+    const { previousYearId } = req.body || {};
+    const { newYearId } = req.params;
+
+    const newYear = await ensureAcademicYearActive(newYearId, req.centerId);
+
+    const pastInscriptions = await prisma.inscription.findMany({
+      where: { centerId: req.centerId, academicYearId: previousYearId },
+      include: {
+        student: true,
+        classe: {
+          include: {
+            filiere: { include: { niveaux: { orderBy: { order: "asc" } } } },
+            niveau: true,
+          },
+        },
+      },
     });
-    if (inscriptionsCount > 0) {
-      return res.status(409).json({ error: "Impossible de supprimer : des inscriptions existent pour cette année." });
+
+    let promotedCount = 0;
+    let repeatedCount = 0;
+    let graduatedCount = 0;
+
+    for (const insc of pastInscriptions) {
+      const currentNiveauOrder = insc.classe.niveau.order;
+      const filiere = insc.classe.filiere;
+
+      let targetNiveauOrder = null;
+      if (insc.status === "admis") {
+        if (currentNiveauOrder + 1 <= filiere.durationInYears) {
+          targetNiveauOrder = currentNiveauOrder + 1; // Montée en classe supérieure
+        } else {
+          graduatedCount++; // Diplômé en fin de cycle
+        }
+      } else if (insc.status === "redouble") {
+        targetNiveauOrder = currentNiveauOrder; // Répétition même niveau
+      }
+
+      if (targetNiveauOrder !== null) {
+        const targetNiveau = filiere.niveaux.find((n) => n.order === targetNiveauOrder);
+        if (targetNiveau) {
+          let targetClass = await prisma.classe.findFirst({
+            where: {
+              centerId: req.centerId,
+              filiereId: filiere.id,
+              niveauId: targetNiveau.id,
+              academicYearId: newYear.id,
+            },
+          });
+
+          if (!targetClass) {
+            targetClass = await prisma.classe.create({
+              data: {
+                centerId: req.centerId,
+                filiereId: filiere.id,
+                niveauId: targetNiveau.id,
+                academicYearId: newYear.id,
+                label: `${filiere.name} - Niveau ${targetNiveauOrder} (${newYear.label})`,
+              },
+            });
+          }
+
+          const existingInsc = await prisma.inscription.findUnique({
+            where: {
+              studentId_academicYearId: {
+                studentId: insc.studentId,
+                academicYearId: newYear.id,
+              },
+            },
+          });
+
+          if (!existingInsc) {
+            await prisma.inscription.create({
+              data: {
+                centerId: req.centerId,
+                studentId: insc.studentId,
+                classeId: targetClass.id,
+                academicYearId: newYear.id,
+                status: "en_cours",
+              },
+            });
+
+            if (insc.status === "admis") promotedCount++;
+            if (insc.status === "redouble") repeatedCount++;
+          }
+        }
+      }
     }
 
-    await prisma.gradePeriod.deleteMany({ where: { academicYearId: req.params.id } });
-    await prisma.classe.deleteMany({ where: { academicYearId: req.params.id } });
-    await prisma.academicYear.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
-    res.status(204).send();
+    // Clôture formelle de la session passée
+    await prisma.academicYear.updateMany({
+      where: { id: previousYearId, centerId: req.centerId },
+      data: { isCurrent: false },
+    });
+
+    res.json({
+      success: true,
+      promotedCount,
+      repeatedCount,
+      graduatedCount,
+      message: `Transition effectuée avec succès : ${promotedCount} admis promus en niveau supérieur, ${repeatedCount} redoublants réinscrits, ${graduatedCount} lauréats diplômés.`,
+    });
   } catch (err) {
     next(err);
   }
 });
 
 // ============================================================================
-// 4. SALLES DE COURS
+// 4. CLASSES PROMOTIONNELLES
 // ============================================================================
-router.get("/salles", verifyJwt, async (req, res, next) => {
-  try {
-    const salles = await prisma.salle.findMany({
-      where: { centerId: req.centerId },
-      include: { _count: { select: { classes: true } } },
-      orderBy: { name: "asc" }
-    });
-    res.json(salles);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/salles", verifyJwt, async (req, res, next) => {
-  try {
-    const { name, capacity } = req.body || {};
-    if (!name) return res.status(400).json({ error: "Le nom de la salle est requis." });
-
-    const created = await prisma.salle.create({
-      data: {
-        centerId: req.centerId,
-        name: name.trim(),
-        capacity: capacity ? parseInt(capacity) : null
-      }
-    });
-    res.status(201).json(created);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.put("/salles/:id", verifyJwt, async (req, res, next) => {
-  try {
-    const { name, capacity } = req.body || {};
-    await prisma.salle.updateMany({
-      where: { id: req.params.id, centerId: req.centerId },
-      data: {
-        ...(name && { name: name.trim() }),
-        capacity: capacity !== undefined ? (capacity ? parseInt(capacity) : null) : undefined
-      }
-    });
-    const result = await prisma.salle.findUnique({ where: { id: req.params.id } });
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.delete("/salles/:id", verifyJwt, async (req, res, next) => {
-  try {
-    await prisma.classe.updateMany({
-      where: { salleId: req.params.id },
-      data: { salleId: null }
-    });
-    await prisma.salle.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
-    res.status(204).send();
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ============================================================================
-// 5. CLASSES PROMOTIONNELLES
-// ============================================================================
-router.get("/classes", verifyJwt, async (req, res, next) => {
+router.get("/classes", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
   try {
     const classes = await prisma.classe.findMany({
       where: { centerId: req.centerId },
@@ -451,13 +398,13 @@ router.get("/classes", verifyJwt, async (req, res, next) => {
         niveau: true,
         academicYear: true,
         salle: true,
-        _count: { select: { inscriptions: true } }
+        _count: { select: { inscriptions: true } },
       },
       orderBy: [
         { academicYear: { startDate: "desc" } },
         { filiere: { name: "asc" } },
-        { niveau: { order: "asc" } }
-      ]
+        { niveau: { order: "asc" } },
+      ],
     });
     res.json(classes);
   } catch (err) {
@@ -465,15 +412,33 @@ router.get("/classes", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.post("/classes", verifyJwt, async (req, res, next) => {
+// Détail et effectif complet d'une classe
+router.get("/classes/:id/students", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
+  try {
+    const classe = await prisma.classe.findFirst({
+      where: { id: req.params.id, centerId: req.centerId },
+      include: {
+        filiere: { include: { programType: true } },
+        niveau: true,
+        academicYear: true,
+        salle: true,
+        inscriptions: {
+          where: { student: { deletedAt: null } },
+          include: { student: true },
+          orderBy: { student: { lastName: "asc" } },
+        },
+      },
+    });
+    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
+    res.json(classe);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/classes", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
   try {
     const { filiereId, niveauId, academicYearId, salleId, label } = req.body || {};
-
-    if (!filiereId || !niveauId || !academicYearId) {
-      return res.status(400).json({ error: "Filière, niveau et session académique requis." });
-    }
-
-    // Protection : impossible de créer une classe dans une année clôturée
     await ensureAcademicYearActive(academicYearId, req.centerId);
 
     let classLabel = label ? label.trim() : null;
@@ -481,7 +446,7 @@ router.post("/classes", verifyJwt, async (req, res, next) => {
       const [filiere, niveau, year] = await Promise.all([
         prisma.filiere.findUnique({ where: { id: filiereId } }),
         prisma.niveau.findUnique({ where: { id: niveauId } }),
-        prisma.academicYear.findUnique({ where: { id: academicYearId } })
+        prisma.academicYear.findUnique({ where: { id: academicYearId } }),
       ]);
       classLabel = `${filiere.name} - Niveau ${niveau.order} (${year.label})`;
     }
@@ -493,54 +458,40 @@ router.post("/classes", verifyJwt, async (req, res, next) => {
         niveauId,
         academicYearId,
         salleId: salleId || null,
-        label: classLabel
+        label: classLabel,
       },
       include: {
         filiere: { include: { programType: true } },
         niveau: true,
         academicYear: true,
         salle: true,
-        _count: { select: { inscriptions: true } }
-      }
+        _count: { select: { inscriptions: true } },
+      },
     });
 
     res.status(201).json(created);
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Une classe existe déjà pour cette filière, ce niveau et cette session." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Cette classe existe déjà." });
     next(err);
   }
 });
 
-router.put("/classes/:id", verifyJwt, async (req, res, next) => {
+router.put("/classes/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { salleId, label } = req.body || {};
-    const existing = await prisma.classe.findFirst({
-      where: { id: req.params.id, centerId: req.centerId }
-    });
+    const existing = await prisma.classe.findFirst({ where: { id: req.params.id, centerId: req.centerId } });
     if (!existing) return res.status(404).json({ error: "Classe introuvable." });
 
-    // Protection de modification sur année clôturée
     await ensureAcademicYearActive(existing.academicYearId, req.centerId);
 
     await prisma.classe.update({
       where: { id: req.params.id },
-      data: {
-        ...(label && { label: label.trim() }),
-        ...(salleId !== undefined && { salleId: salleId || null })
-      }
+      data: { ...(label && { label: label.trim() }), ...(salleId !== undefined && { salleId: salleId || null }) },
     });
 
     const updated = await prisma.classe.findUnique({
       where: { id: req.params.id },
-      include: {
-        filiere: { include: { programType: true } },
-        niveau: true,
-        academicYear: true,
-        salle: true,
-        _count: { select: { inscriptions: true } }
-      }
+      include: { filiere: { include: { programType: true } }, niveau: true, academicYear: true, salle: true, _count: { select: { inscriptions: true } } },
     });
     res.json(updated);
   } catch (err) {
@@ -548,23 +499,70 @@ router.put("/classes/:id", verifyJwt, async (req, res, next) => {
   }
 });
 
-router.delete("/classes/:id", verifyJwt, async (req, res, next) => {
+router.delete("/classes/:id", verifyJwt, requirePermission("center.delete", "center.update"), async (req, res, next) => {
   try {
-    const existing = await prisma.classe.findFirst({
-      where: { id: req.params.id, centerId: req.centerId }
-    });
+    const existing = await prisma.classe.findFirst({ where: { id: req.params.id, centerId: req.centerId } });
     if (!existing) return res.status(404).json({ error: "Classe introuvable." });
 
     await ensureAcademicYearActive(existing.academicYearId, req.centerId);
 
-    const inscriptionsCount = await prisma.inscription.count({
-      where: { classeId: req.params.id, centerId: req.centerId }
-    });
-    if (inscriptionsCount > 0) {
-      return res.status(409).json({ error: "Impossible de supprimer : des apprenants sont inscrits dans cette classe." });
-    }
+    const count = await prisma.inscription.count({ where: { classeId: req.params.id, centerId: req.centerId } });
+    if (count > 0) return res.status(409).json({ error: "Des apprenants sont inscrits dans cette classe." });
 
     await prisma.classe.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============================================================================
+// 5. SALLES & ESPACES
+// ============================================================================
+router.get("/salles", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+  try {
+    const salles = await prisma.salle.findMany({
+      where: { centerId: req.centerId },
+      include: { _count: { select: { classes: true } } },
+      orderBy: { name: "asc" },
+    });
+    res.json(salles);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/salles", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
+  try {
+    const { name, capacity } = req.body || {};
+    if (!name) return res.status(400).json({ error: "Nom requis." });
+    const created = await prisma.salle.create({
+      data: { centerId: req.centerId, name: name.trim(), capacity: capacity ? parseInt(capacity) : null },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/salles/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { name, capacity } = req.body || {};
+    await prisma.salle.updateMany({
+      where: { id: req.params.id, centerId: req.centerId },
+      data: { ...(name && { name: name.trim() }), capacity: capacity !== undefined ? (capacity ? parseInt(capacity) : null) : undefined },
+    });
+    const result = await prisma.salle.findUnique({ where: { id: req.params.id } });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/salles/:id", verifyJwt, requirePermission("center.delete", "center.update"), async (req, res, next) => {
+  try {
+    await prisma.classe.updateMany({ where: { salleId: req.params.id }, data: { salleId: null } });
+    await prisma.salle.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
     res.status(204).send();
   } catch (err) {
     next(err);

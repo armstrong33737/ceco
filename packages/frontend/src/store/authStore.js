@@ -4,10 +4,9 @@ import { apiFetch } from "../lib/apiClient";
 const useAuthStore = create((set, get) => ({
   user: null,
   token: localStorage.getItem("ceco_token") || null,
-  status: "checking", // checking | authenticated | unauthenticated | error | loading
+  status: "checking",
   error: null,
   
-  // État de repliement de la barre latérale (Sidebar)
   isSidebarCollapsed: localStorage.getItem("ceco_sidebar_collapsed") === "true",
 
   toggleSidebar: () => {
@@ -67,6 +66,7 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  // Vérifie si l'utilisateur possède la permission (ou l'une des permissions de la liste passée)
   hasPermission: (permission) => {
     const { user } = get();
     if (!user) return false;
@@ -74,8 +74,13 @@ const useAuthStore = create((set, get) => ({
     const permissions = user.role?.permissions || [];
     const rawPermissions = permissions.map(p => typeof p === "object" ? p.action : p);
     
+    // Super-administrateur
     if (rawPermissions.includes("*") || user.role?.name?.toLowerCase() === "admin" || user.role?.name?.toLowerCase() === "administrateur") {
       return true;
+    }
+    
+    if (Array.isArray(permission)) {
+      return permission.some(p => rawPermissions.includes(p));
     }
     
     return rawPermissions.includes(permission);

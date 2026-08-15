@@ -14,18 +14,20 @@ const usersRoutes = require("./routes/users");
 const rolesRoutes = require("./routes/roles");
 const licenseRoutes = require("./routes/license");
 const backupsRoutes = require("./routes/backups");
-const formationsRoutes = require("./routes/formations"); // V2 - Formations & Structure Académique
+const formationsRoutes = require("./routes/formations");
+const studentsRoutes = require("./routes/students");
+const documentsRoutes = require("./routes/documents"); // V2.3 - Moteur de documents
 
 const app = express();
 const PORT = process.env.CECO_API_PORT || 4000;
 const MODE = process.env.CECO_MODE || "local";
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.use(buildTenantResolver(MODE));
 
-// 1. Routes accessibles même en licence échue
+// 1. Routes ouvertes
 app.use("/", healthRoutes);
 app.use("/", authRoutes);
 app.use("/", licenseRoutes);
@@ -39,10 +41,14 @@ app.use("/", usersRoutes);
 app.use("/", rolesRoutes);
 app.use("/", backupsRoutes);
 app.use("/", formationsRoutes);
+app.use("/", studentsRoutes);
+app.use("/", documentsRoutes);
 
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Erreur interne du serveur." });
+  console.error("[Backend Error]", err);
+  res.status(err.status || 500).json({
+    error: err.message || "Erreur interne du serveur.",
+  });
 });
 
 app.listen(PORT, () => {

@@ -1,12 +1,14 @@
 const jwt = require("jsonwebtoken");
 
-// Vérifie le jeton JWT ET s'assure qu'il a été émis pour CE centre — un
-// jeton par ailleurs valide mais émis pour un autre centre est refusé.
-// C'est le filet de sécurité multi-tenant côté authentification, symétrique
-// à scopedRepository côté données.
+// Vérifie le jeton JWT (via l'en-tête Authorization ou via le query param ?token= pour les exports)
 function verifyJwt(req, res, next) {
   const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  let token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+  // Permet l'authentification directe lors du téléchargement de fichiers dans le navigateur
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({ error: "Authentification requise." });

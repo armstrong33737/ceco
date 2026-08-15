@@ -26,7 +26,9 @@
       "node_modules/embedded-postgres/**/*",
       "node_modules/@embedded-postgres/**/*",
       "node_modules/prisma/**/*",
-      "node_modules/@prisma/**/*"
+      "node_modules/@prisma/**/*",
+      "node_modules/pdfkit/**/*",
+      "node_modules/qrcode/**/*"
     ],
     "files": [
       "src/**/*",
@@ -37,12 +39,17 @@
       {
         "from": "../frontend/dist",
         "to": "frontend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "../backend/prisma",
         "to": "backend/prisma",
-        "filter": ["schema.prisma", "migrations/**/*"]
+        "filter": [
+          "schema.prisma",
+          "migrations/**/*"
+        ]
       },
       {
         "from": "../backend/dist/server.bundle.js",
@@ -68,7 +75,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -85,7 +94,9 @@
     },
     "mac": {
       "category": "public.app-category.education",
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.icns",
       "darkModeSupport": true,
       "hardenedRuntime": true,
@@ -93,7 +104,9 @@
     },
     "linux": {
       "category": "Education",
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "assets/icon.png",
       "synopsis": "ERP pour centres de formation professionnelle",
       "description": "Solution complète pour la gestion pédagogique, administrative et financière des centres de formation.",
@@ -104,8 +117,10 @@
   },
   "dependencies": {
     "embedded-postgres": "17.10.0-beta.17",
+    "pdfkit": "^0.19.1",
     "pg": "^8.22.0",
-    "prisma": "5.20.0"
+    "prisma": "5.20.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "electron": "31.7.7",
