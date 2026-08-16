@@ -17,10 +17,15 @@ async function ensureAcademicYearActive(academicYearId, centerId) {
   return year;
 }
 
-// ============================================================================
-// 1. CYCLES / TYPES DE PROGRAMMES (DQP, CQP...)
-// ============================================================================
-router.get("/program-types", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+function computePromotionLabel(yearLabel, durationInYears) {
+  const parts = yearLabel.split("-");
+  const startYear = parseInt(parts[0]) || new Date().getFullYear();
+  const endYear = startYear + durationInYears;
+  return `Promotion ${startYear}-${endYear}`;
+}
+
+// 1. CYCLES (Lecture autorisée pour la gestion des étudiants)
+router.get("/program-types", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const types = await prisma.programType.findMany({
       where: { centerId: req.centerId },
@@ -73,17 +78,15 @@ router.delete("/program-types/:id", verifyJwt, requirePermission("center.delete"
   }
 });
 
-// ============================================================================
-// 2. FILIÈRES & NIVEAUX
-// ============================================================================
-router.get("/filieres", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+// 2. FILIÈRES (Lecture autorisée pour la gestion des étudiants)
+router.get("/filieres", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const filieres = await prisma.filiere.findMany({
       where: { centerId: req.centerId },
       include: {
         programType: true,
         niveaux: { orderBy: { order: "asc" } },
-        _count: { select: { classes: true } },
+        _count: { select: { classes: true, promotions: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -110,7 +113,6 @@ router.post("/filieres", verifyJwt, requirePermission("center.create", "center.u
       include: { programType: true, niveaux: { orderBy: { order: "asc" } } },
     });
 
-    // Création automatique de la classe Niveau 1 sur la session active
     const currentYear = await prisma.academicYear.findFirst({ where: { centerId: req.centerId, isCurrent: true } });
     if (currentYear) {
       const niveau1 = filiere.niveaux.find((n) => n.order === 1);
@@ -125,7 +127,18 @@ router.post("/filieres", verifyJwt, requirePermission("center.create", "center.u
           },
         });
       }
+
+      await prisma.promotion.create({
+        data: {
+          centerId: req.centerId,
+          filiereId: filiere.id,
+          academicYearId: currentYear.id,
+          label: computePromotionLabel(currentYear.label, duration),
+          expectedEndYear: String((parseInt(currentYear.label.split("-")[0]) || 2026) + duration),
+        },
+      });
     }
+
     res.status(201).json(filiere);
   } catch (err) {
     next(err);
@@ -147,7 +160,6 @@ router.put("/filieres/:id", verifyJwt, requirePermission("center.update"), async
       data: { ...(name && { name: name.trim() }), ...(programTypeId && { programTypeId }), durationInYears: newDuration },
     });
 
-    // Ajustement dynamique des niveaux
     if (newDuration > existing.niveaux.length) {
       const missingCount = newDuration - existing.niveaux.length;
       const startOrder = existing.niveaux.length + 1;
@@ -170,6 +182,7 @@ router.delete("/filieres/:id", verifyJwt, requirePermission("center.delete", "ce
   try {
     const classesCount = await prisma.classe.count({ where: { filiereId: req.params.id, centerId: req.centerId } });
     if (classesCount > 0) return res.status(409).json({ error: "Des classes existent pour cette filière." });
+    await prisma.promotion.deleteMany({ where: { filiereId: req.params.id, centerId: req.centerId } });
     await prisma.niveau.deleteMany({ where: { filiereId: req.params.id } });
     await prisma.filiere.deleteMany({ where: { id: req.params.id, centerId: req.centerId } });
     res.status(204).send();
@@ -178,14 +191,80 @@ router.delete("/filieres/:id", verifyJwt, requirePermission("center.delete", "ce
   }
 });
 
-// ============================================================================
-// 3. SESSIONS ACADÉMIQUES & TRANSITION
-// ============================================================================
-router.get("/academic-years", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+// 3. PROMOTIONS / COHORTES (Lecture autorisée pour les gestionnaires d'étudiants)
+router.get("/promotions", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
+  try {
+    const promotions = await prisma.promotion.findMany({
+      where: { centerId: req.centerId },
+      include: {
+        filiere: { include: { programType: true } },
+        academicYear: true,
+        _count: { select: { inscriptions: true } },
+      },
+      orderBy: { academicYear: { startDate: "desc" } },
+    });
+    res.json(promotions);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/promotions", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
+  try {
+    const { filiereId, academicYearId, label, expectedEndYear } = req.body || {};
+    if (!filiereId || !academicYearId || !label) return res.status(400).json({ error: "Filière, session et libellé requis." });
+
+    const created = await prisma.promotion.create({
+      data: {
+        centerId: req.centerId,
+        filiereId,
+        academicYearId,
+        label: label.trim(),
+        expectedEndYear: expectedEndYear ? expectedEndYear.trim() : null,
+      },
+      include: { filiere: true, academicYear: true },
+    });
+    res.status(201).json(created);
+  } catch (err) {
+    if (err.code === "P2002") return res.status(409).json({ error: "Une promotion existe déjà pour cette filière et session." });
+    next(err);
+  }
+});
+
+router.put("/promotions/:id", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { label, expectedEndYear } = req.body || {};
+    const updated = await prisma.promotion.update({
+      where: { id: req.params.id },
+      data: {
+        ...(label && { label: label.trim() }),
+        ...(expectedEndYear !== undefined && { expectedEndYear: expectedEndYear ? expectedEndYear.trim() : null }),
+      },
+      include: { filiere: true, academicYear: true, _count: { select: { inscriptions: true } } },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/promotions/:id", verifyJwt, requirePermission("center.delete", "center.update"), async (req, res, next) => {
+  try {
+    const count = await prisma.inscription.count({ where: { promotionId: req.params.id, centerId: req.centerId } });
+    if (count > 0) return res.status(409).json({ error: "Des apprenants sont rattachés à cette promotion." });
+    await prisma.promotion.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 4. SESSIONS ACADÉMIQUES (Lecture autorisée pour les gestionnaires d'étudiants)
+router.get("/academic-years", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const years = await prisma.academicYear.findMany({
       where: { centerId: req.centerId },
-      include: { _count: { select: { classes: true, inscriptions: true } } },
+      include: { _count: { select: { classes: true, inscriptions: true, promotions: true } } },
       orderBy: { startDate: "desc" },
     });
     res.json(years);
@@ -216,7 +295,6 @@ router.post("/academic-years", verifyJwt, requirePermission("center.create", "ce
       },
     });
 
-    // Auto-création systématique des classes Niveau 1 pour chaque filière
     const filieres = await prisma.filiere.findMany({
       where: { centerId: req.centerId },
       include: { niveaux: { where: { order: 1 } } },
@@ -235,6 +313,16 @@ router.post("/academic-years", verifyJwt, requirePermission("center.create", "ce
           },
         });
       }
+
+      await prisma.promotion.create({
+        data: {
+          centerId: req.centerId,
+          filiereId: f.id,
+          academicYearId: createdYear.id,
+          label: computePromotionLabel(createdYear.label, f.durationInYears),
+          expectedEndYear: String((parseInt(createdYear.label.split("-")[0]) || 2026) + f.durationInYears),
+        },
+      });
     }
 
     res.status(201).json(createdYear);
@@ -277,7 +365,57 @@ router.put("/academic-years/:id/set-current", verifyJwt, requirePermission("cent
   }
 });
 
-// Moteur de transition annuelle (Promotion des admis, réinscription des redoublants)
+router.post("/academic-years/:targetYearId/duplicate-classes", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { sourceYearId } = req.body || {};
+    const { targetYearId } = req.params;
+
+    const [targetYear, sourceClasses] = await Promise.all([
+      prisma.academicYear.findFirst({ where: { id: targetYearId, centerId: req.centerId } }),
+      prisma.classe.findMany({
+        where: { academicYearId: sourceYearId, centerId: req.centerId },
+        include: { niveau: true, filiere: true },
+      }),
+    ]);
+
+    if (!targetYear) return res.status(404).json({ error: "Session cible introuvable." });
+
+    let createdCount = 0;
+    for (const sc of sourceClasses) {
+      const exists = await prisma.classe.findFirst({
+        where: {
+          centerId: req.centerId,
+          filiereId: sc.filiereId,
+          niveauId: sc.niveauId,
+          academicYearId: targetYear.id,
+        },
+      });
+
+      if (!exists) {
+        await prisma.classe.create({
+          data: {
+            centerId: req.centerId,
+            filiereId: sc.filiereId,
+            niveauId: sc.niveauId,
+            academicYearId: targetYear.id,
+            salleId: sc.salleId,
+            label: `${sc.filiere.name} - Niveau ${sc.niveau.order} (${targetYear.label})`,
+          },
+        });
+        createdCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      createdCount,
+      message: `${createdCount} classe(s) préparée(s) pour la session ${targetYear.label}.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { previousYearId } = req.body || {};
@@ -289,6 +427,7 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
       where: { centerId: req.centerId, academicYearId: previousYearId },
       include: {
         student: true,
+        promotion: true,
         classe: {
           include: {
             filiere: { include: { niveaux: { orderBy: { order: "asc" } } } },
@@ -309,12 +448,16 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
       let targetNiveauOrder = null;
       if (insc.status === "admis") {
         if (currentNiveauOrder + 1 <= filiere.durationInYears) {
-          targetNiveauOrder = currentNiveauOrder + 1; // Montée en classe supérieure
+          targetNiveauOrder = currentNiveauOrder + 1;
         } else {
-          graduatedCount++; // Diplômé en fin de cycle
+          await prisma.inscription.update({
+            where: { id: insc.id },
+            data: { status: "diplome" },
+          });
+          graduatedCount++;
         }
       } else if (insc.status === "redouble") {
-        targetNiveauOrder = currentNiveauOrder; // Répétition même niveau
+        targetNiveauOrder = currentNiveauOrder;
       }
 
       if (targetNiveauOrder !== null) {
@@ -357,6 +500,7 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
                 studentId: insc.studentId,
                 classeId: targetClass.id,
                 academicYearId: newYear.id,
+                promotionId: insc.promotionId,
                 status: "en_cours",
               },
             });
@@ -368,7 +512,6 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
       }
     }
 
-    // Clôture formelle de la session passée
     await prisma.academicYear.updateMany({
       where: { id: previousYearId, centerId: req.centerId },
       data: { isCurrent: false },
@@ -379,17 +522,15 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
       promotedCount,
       repeatedCount,
       graduatedCount,
-      message: `Transition effectuée avec succès : ${promotedCount} admis promus en niveau supérieur, ${repeatedCount} redoublants réinscrits, ${graduatedCount} lauréats diplômés.`,
+      message: `Transition effectuée : ${promotedCount} admis promus en Niveau supérieur, ${repeatedCount} redoublants réinscrits, ${graduatedCount} lauréats diplômés de leur promotion.`,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// ============================================================================
-// 4. CLASSES PROMOTIONNELLES
-// ============================================================================
-router.get("/classes", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+// 5. CLASSES (Lecture autorisée pour la gestion des étudiants)
+router.get("/classes", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const classes = await prisma.classe.findMany({
       where: { centerId: req.centerId },
@@ -412,7 +553,6 @@ router.get("/classes", verifyJwt, requirePermission("center.read", "center.updat
   }
 });
 
-// Détail et effectif complet d'une classe
 router.get("/classes/:id/students", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const classe = await prisma.classe.findFirst({
@@ -424,7 +564,7 @@ router.get("/classes/:id/students", verifyJwt, requirePermission("students.read"
         salle: true,
         inscriptions: {
           where: { student: { deletedAt: null } },
-          include: { student: true },
+          include: { student: true, promotion: true },
           orderBy: { student: { lastName: "asc" } },
         },
       },
@@ -516,10 +656,8 @@ router.delete("/classes/:id", verifyJwt, requirePermission("center.delete", "cen
   }
 });
 
-// ============================================================================
-// 5. SALLES & ESPACES
-// ============================================================================
-router.get("/salles", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+// 6. SALLES (Lecture autorisée pour la gestion des étudiants)
+router.get("/salles", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const salles = await prisma.salle.findMany({
       where: { centerId: req.centerId },

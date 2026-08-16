@@ -33,7 +33,27 @@ function drawWatermark(doc, tmpl, logoBuf, sealBuf, x, y, size) {
   doc.opacity(Number(tmpl.watermarkOpacity) || 0.08);
   safeDrawImage(doc, wmBuf, x, y, { width: size, fit: [size, size], align: "center", valign: "center" });
   doc.restore();
-  doc.opacity(1.0); // Réinitialisation stricte
+  doc.opacity(1.0);
+}
+
+function drawCropMarks(doc, x, y, w, h) {
+  const markLen = 6;
+  doc.save();
+  doc.lineWidth(0.4).strokeColor("#94A3B8");
+
+  doc.moveTo(x - markLen, y).lineTo(x, y).stroke();
+  doc.moveTo(x, y - markLen).lineTo(x, y).stroke();
+
+  doc.moveTo(x + w, y - markLen).lineTo(x + w, y).stroke();
+  doc.moveTo(x + w, y).lineTo(x + w + markLen, y).stroke();
+
+  doc.moveTo(x - markLen, y + h).lineTo(x, y + h).stroke();
+  doc.moveTo(x, y + h).lineTo(x, y + h + markLen).stroke();
+
+  doc.moveTo(x + w + markLen, y + h).lineTo(x + w, y + h).stroke();
+  doc.moveTo(x + w, y + h).lineTo(x + w + markLen, y + h).stroke();
+
+  doc.restore();
 }
 
 function renderSignatoryBlocks(doc, signatories = [], signatures = {}, startY = 460) {
@@ -45,7 +65,7 @@ function renderSignatoryBlocks(doc, signatories = [], signatures = {}, startY = 
   }
 
   const count = signatories.length;
-  const totalWidth = 525; // Largeur utile A4
+  const totalWidth = 525;
   const colWidth = totalWidth / count;
 
   signatories.forEach((sig, idx) => {
@@ -89,24 +109,17 @@ async function generateStudentCardPdf(snapshot, qrUrl, outputPath) {
       const themeColor = tmpl.themeColor || "#0B1C30";
       const accentColor = tmpl.accentColor || "#5E72E4";
 
-      // ==================== RECTO ====================
+      // RECTO
       doc.rect(0, 0, 243, 153).fill("#FFFFFF");
       doc.rect(0, 0, 243, 28).fill(themeColor);
 
-      // Filigrane fond
       drawWatermark(doc, tmpl, logoBuf, sealBuf, 75, 40, 95);
 
-      // En-tête
-      if (tmpl.showLogo !== false && logoBuf) {
-        safeDrawImage(doc, logoBuf, 8, 4, { fit: [20, 20] });
-      }
+      if (tmpl.showLogo !== false && logoBuf) safeDrawImage(doc, logoBuf, 8, 4, { fit: [20, 20] });
       doc.fillColor("#FFFFFF").fontSize(7).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), 32, 6, { width: 175, truncate: true });
       doc.fillColor("#CBD5E1").fontSize(5.5).font("Helvetica-Bold").text(tmpl.cardTitle || "CARTE D'APPRENANT OFFICIELLE", 32, 16);
-      if (tmpl.showSeal !== false && sealBuf) {
-        safeDrawImage(doc, sealBuf, 216, 4, { fit: [20, 20] });
-      }
+      if (tmpl.showSeal !== false && sealBuf) safeDrawImage(doc, sealBuf, 216, 4, { fit: [20, 20] });
 
-      // Photo
       const photoX = 10;
       const photoY = 36;
       const photoW = 48;
@@ -119,7 +132,6 @@ async function generateStudentCardPdf(snapshot, qrUrl, outputPath) {
         );
       }
 
-      // Informations
       const ix = 66;
       let iy = 36;
       doc.fillColor("#64748B").fontSize(5.5).font("Helvetica-Bold").text("NOM :", ix, iy);
@@ -142,16 +154,15 @@ async function generateStudentCardPdf(snapshot, qrUrl, outputPath) {
       doc.fillColor("#0F172A").fontSize(6).font("Helvetica-Bold").text(`Niveau ${insc.niveauOrder || 1} (${insc.programTypeCode || "DQP"})`, ix + 28, iy);
 
       iy += 9;
-      doc.fillColor("#64748B").fontSize(5.5).font("Helvetica-Bold").text("SESSION :", ix, iy);
-      doc.fillColor("#0F172A").fontSize(6).font("Helvetica").text(insc.academicYearLabel || "—", ix + 28, iy);
+      doc.fillColor("#64748B").fontSize(5.5).font("Helvetica-Bold").text("COHORTE :", ix, iy);
+      doc.fillColor("#0F172A").fontSize(6).font("Helvetica").text(insc.promotionLabel || insc.academicYearLabel || "—", ix + 28, iy);
 
-      // Pied
       doc.rect(0, 137, 243, 16).fill("#F8FAFC");
       doc.rect(0, 137, 243, 0.5).stroke("#E2E8F0");
       doc.fillColor("#475569").fontSize(5).font("Helvetica").text(`Agrément : ${center.registrationNumber || "MINEFOP"}`, 8, 142);
       doc.fillColor(accentColor).fontSize(5.5).font("Helvetica-Bold").text("CECO ID-PASS", 195, 142);
 
-      // ==================== VERSO ====================
+      // VERSO
       doc.addPage({ size: [243, 153], margins: { top: 6, bottom: 6, left: 8, right: 8 } });
       doc.rect(0, 0, 243, 153).fill("#FFFFFF");
 
@@ -166,7 +177,6 @@ async function generateStudentCardPdf(snapshot, qrUrl, outputPath) {
       doc.fillColor("#334155").fontSize(5).font("Helvetica-Bold").text(`Centre : ${center.phone || ""} • ${center.email || ""}`, 8, 38);
       doc.text(`Adresse : ${center.address || ""}, ${center.city || ""}`, 8, 46);
 
-      // QR Code
       safeDrawImage(doc, qrBuf, 8, 60, { width: 44, height: 44 });
       doc.fillColor("#64748B").fontSize(4.5).font("Helvetica-Bold").text("Scan pour vérification :", 56, 62);
       doc.fillColor(accentColor).fontSize(4.5).font("Courier").text(snapshot.qrToken || "", 56, 70, { width: 175 });
@@ -187,7 +197,7 @@ async function generateStudentCardPdf(snapshot, qrUrl, outputPath) {
   });
 }
 
-// 2. PLANCHE A4 DUPLEX (Impression groupée avec découpe miroir)
+// 2. PLANCHE A4 DUPLEX AVEC REPÈRES DE COUPE
 async function generateBatchCardsSheetPdf(snapshotsList, qrUrlsList, outputPath) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -216,12 +226,14 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrUrlsList, outputPath)
 
         if (p > 0) doc.addPage({ size: "A4", margins: { top: 20, bottom: 20, left: 20, right: 20 } });
 
-        // RECTO
+        // PLANCHE RECTO
         for (let i = 0; i < pageItems.length; i++) {
           const row = Math.floor(i / 2);
           const col = i % 2;
           const x = startX + col * (cardW + gapX);
           const y = startY + row * (cardH + gapY);
+
+          drawCropMarks(doc, x, y, cardW, cardH);
 
           const snap = pageItems[i];
           const tmpl = snap.templateConfig || {};
@@ -264,18 +276,20 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrUrlsList, outputPath)
           doc.fillColor("#0F172A").fontSize(6).font("Helvetica-Bold").text(`Niveau ${snap.inscription.niveauOrder || 1} (${snap.inscription.programTypeCode || "DQP"})`, ix + 30, iy);
 
           doc.rect(x, y + 146, cardW, 19).fill("#F8FAFC");
-          doc.fillColor("#64748B").fontSize(5).font("Helvetica").text(`Session : ${snap.inscription.academicYearLabel || "—"}`, x + 8, y + 152);
+          doc.fillColor("#64748B").fontSize(5).font("Helvetica").text(`Cohorte : ${snap.inscription.promotionLabel || snap.inscription.academicYearLabel || "—"}`, x + 8, y + 152);
           doc.fillColor(tmpl.accentColor || "#5E72E4").fontSize(6).font("Helvetica-Bold").text("CECO ID-PASS", x + 195, y + 152);
         }
 
-        // VERSO (Miroir exact)
+        // PLANCHE VERSO (Miroir exact)
         doc.addPage({ size: "A4", margins: { top: 20, bottom: 20, left: 20, right: 20 } });
 
         for (let i = 0; i < pageItems.length; i++) {
           const row = Math.floor(i / 2);
-          const col = 1 - (i % 2); // Décalage miroir
+          const col = 1 - (i % 2);
           const x = startX + col * (cardW + gapX);
           const y = startY + row * (cardH + gapY);
+
+          drawCropMarks(doc, x, y, cardW, cardH);
 
           const snap = pageItems[i];
           const qrUrl = pageQrUrls[i];
@@ -313,7 +327,90 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrUrlsList, outputPath)
   });
 }
 
-// 3. CERTIFICAT DE SCOLARITÉ / ATTESTATION D'INSCRIPTION A4
+// 3. CERTIFICAT DE SCOLARITÉ INDIVIDUEL A4
+function renderSingleAttestationPage(doc, snapshot, qrBuf) {
+  const { center = {}, student = {}, inscription: insc = {}, templateConfig: tmpl = {} } = snapshot;
+
+  const logoBuf = bufferFromDataUrl(center.logoDataUrl);
+  const sealBuf = bufferFromDataUrl(center.sealDataUrl);
+  const primaryColor = tmpl.primaryColor || "#0B1C30";
+
+  drawWatermark(doc, tmpl, logoBuf, sealBuf, 130, 240, 330);
+
+  const headerLeft = tmpl.headerLeft || "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE";
+  const headerRight = tmpl.headerRight || "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING";
+
+  doc.fillColor("#0F172A").fontSize(7.5).font("Helvetica-Bold").text(headerLeft, 35, 30, { width: 190, align: "center", lineGap: 1.5 });
+  doc.text(headerRight, 370, 30, { width: 190, align: "center", lineGap: 1.5 });
+
+  if (tmpl.showLogo !== false && logoBuf) safeDrawImage(doc, logoBuf, 240, 30, { fit: [50, 50], align: "center" });
+  if (tmpl.showSeal !== false && sealBuf) safeDrawImage(doc, sealBuf, 300, 30, { fit: [50, 50], align: "center" });
+
+  if (tmpl.subHeaderCenter) {
+    doc.fillColor("#475569").fontSize(7).font("Helvetica").text(tmpl.subHeaderCenter.toUpperCase(), 35, 95, { width: 525, align: "center" });
+  }
+  doc.fillColor(primaryColor).fontSize(13).font("Helvetica-Bold").text((center.name || "CENTRE D'EXCELLENCE").toUpperCase(), 35, 112, { width: 525, align: "center" });
+  doc.fillColor("#64748B").fontSize(7.5).font("Helvetica").text(
+    `Agrément : ${center.registrationNumber || "MINEFOP"} • ${center.address || ""}, ${center.city || ""} • Tél : ${center.phone || ""}`,
+    35, 128, { width: 525, align: "center" }
+  );
+
+  doc.moveTo(35, 142).lineTo(560, 142).lineWidth(1.5).strokeColor(primaryColor).stroke();
+
+  doc.fillColor("#0F172A").fontSize(13).font("Helvetica-Bold").text(tmpl.documentTitle || "CERTIFICAT DE SCOLARITÉ & D'INSCRIPTION", 35, 165, { width: 525, align: "center", underline: true });
+  if (tmpl.subTitle) {
+    doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text(tmpl.subTitle, 35, 182, { width: 525, align: "center" });
+  }
+
+  doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica").text(
+    `Je soussigné, ${center.directorName ? center.directorName : "La Direction Générale"}, en qualité de ${center.directorTitle || "Directeur Général"} de l'établissement susmentionné, certifie par la présente que :`,
+    35, 215, { width: 525, lineGap: 3 }
+  );
+
+  doc.rect(35, 245, 525, 95).fillAndStroke("#F8FAFC", "#CBD5E1");
+  doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("L'Apprenant(e) :", 50, 258);
+  doc.fillColor("#0F172A").fontSize(11).font("Helvetica-Bold").text(`${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`, 145, 256);
+
+  doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Matricule Officiel :", 50, 275);
+  doc.fillColor(primaryColor).fontSize(9.5).font("Courier-Bold").text(student.matricule || "—", 145, 275);
+
+  doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Date / Lieu Naissance :", 50, 292);
+  const birthStr = `${student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "Non renseignée"}${student.birthPlace ? ` à ${student.birthPlace}` : ""}`;
+  doc.fillColor("#0F172A").fontSize(9).font("Helvetica").text(birthStr, 145, 292);
+
+  doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Filière d'Études :", 50, 309);
+  doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica-Bold").text(`${insc.filiereName || "—"} (${insc.programTypeCode || "DQP"})`, 145, 309);
+
+  doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Niveau / Promotion :", 50, 324);
+  doc.fillColor("#0F172A").fontSize(9).font("Helvetica").text(`Niveau ${insc.niveauOrder || 1} • ${insc.promotionLabel || `Session ${insc.academicYearLabel}`}`, 145, 324);
+
+  doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica").text(
+    "Est régulièrement inscrit(e) et poursuit avec assiduité son cycle de formation professionnelle au sein de notre établissement pour la session académique en cours.",
+    35, 360, { width: 525, lineGap: 3.5 }
+  );
+  doc.text("En foi de quoi, la présente attestation lui est délivrée pour servir et valoir ce que de droit.", 35, 395, { width: 525 });
+
+  const qrY = 460;
+  safeDrawImage(doc, qrBuf, 35, qrY, { width: 68, height: 68 });
+  doc.fillColor("#64748B").fontSize(6.5).font("Helvetica-Bold").text("VÉRIFICATION D'AUTHENTICITÉ", 35, qrY + 72);
+  doc.fillColor(primaryColor).fontSize(5.5).font("Courier").text(snapshot.qrToken || "", 35, qrY + 80, { width: 140 });
+
+  doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica").text(
+    `Fait à ${center.city || "Bafoussam"}, le ${new Date().toLocaleDateString("fr-FR")}`,
+    350, 442, { width: 210, align: "right" }
+  );
+
+  const signatories = tmpl.signatories || [
+    { title: tmpl.signatoryTitleLeft || "Le Chef de Département", roleKey: "directeur_pedagogique" },
+    { title: tmpl.signatoryTitleRight || "Le Directeur Général", roleKey: "directeur" },
+  ];
+  renderSignatoryBlocks(doc, signatories, center.signatures || {}, 460);
+
+  doc.rect(35, 765, 525, 0.5).stroke("#CBD5E1");
+  doc.fillColor("#64748B").fontSize(6.5).font("Helvetica").text(tmpl.footerLegal || "Document officiel scellé. Toute falsification expose son auteur à des poursuites judiciaires.", 35, 772, { width: 440 });
+  doc.fillColor(primaryColor).fontSize(6.5).font("Helvetica-Bold").text("PROPULSÉ PAR CECO", 480, 772, { align: "right" });
+}
+
 async function generateAttestationPdf(snapshot, qrUrl, outputPath) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -326,95 +423,8 @@ async function generateAttestationPdf(snapshot, qrUrl, outputPath) {
       const writeStream = fs.createWriteStream(outputPath);
       doc.pipe(writeStream);
 
-      const { center = {}, student = {}, inscription: insc = {}, templateConfig: tmpl = {} } = snapshot;
-
-      const logoBuf = bufferFromDataUrl(center.logoDataUrl);
-      const sealBuf = bufferFromDataUrl(center.sealDataUrl);
       const qrBuf = await QRCode.toBuffer(qrUrl, { margin: 0, width: 85 });
-
-      const primaryColor = tmpl.primaryColor || "#0B1C30";
-
-      // 1. Filigrane de fond
-      drawWatermark(doc, tmpl, logoBuf, sealBuf, 130, 240, 330);
-
-      // 2. En-tête officiel
-      const headerLeft = tmpl.headerLeft || "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE";
-      const headerRight = tmpl.headerRight || "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING";
-
-      doc.fillColor("#0F172A").fontSize(7.5).font("Helvetica-Bold").text(headerLeft, 35, 30, { width: 190, align: "center", lineGap: 1.5 });
-      doc.text(headerRight, 370, 30, { width: 190, align: "center", lineGap: 1.5 });
-
-      if (tmpl.showLogo !== false && logoBuf) safeDrawImage(doc, logoBuf, 240, 30, { fit: [50, 50], align: "center" });
-      if (tmpl.showSeal !== false && sealBuf) safeDrawImage(doc, sealBuf, 300, 30, { fit: [50, 50], align: "center" });
-
-      if (tmpl.subHeaderCenter) {
-        doc.fillColor("#475569").fontSize(7).font("Helvetica").text(tmpl.subHeaderCenter.toUpperCase(), 35, 95, { width: 525, align: "center" });
-      }
-      doc.fillColor(primaryColor).fontSize(13).font("Helvetica-Bold").text((center.name || "CENTRE D'EXCELLENCE").toUpperCase(), 35, 112, { width: 525, align: "center" });
-      doc.fillColor("#64748B").fontSize(7.5).font("Helvetica").text(
-        `Agrément : ${center.registrationNumber || "MINEFOP"} • ${center.address || ""}, ${center.city || ""} • Tél : ${center.phone || ""}`,
-        35, 128, { width: 525, align: "center" }
-      );
-
-      doc.moveTo(35, 142).lineTo(560, 142).lineWidth(1.5).strokeColor(primaryColor).stroke();
-
-      // 3. Titre
-      doc.fillColor("#0F172A").fontSize(13).font("Helvetica-Bold").text(tmpl.documentTitle || "CERTIFICAT DE SCOLARITÉ & D'INSCRIPTION", 35, 165, { width: 525, align: "center", underline: true });
-      if (tmpl.subTitle) {
-        doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text(tmpl.subTitle, 35, 182, { width: 525, align: "center" });
-      }
-
-      // 4. Corps
-      doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica").text(
-        `Je soussigné, ${center.directorName ? center.directorName : "La Direction Générale"}, en qualité de ${center.directorTitle || "Directeur Général"} de l'établissement susmentionné, certifie par la présente que :`,
-        35, 215, { width: 525, lineGap: 3 }
-      );
-
-      // Encadré
-      doc.rect(35, 245, 525, 95).fillAndStroke("#F8FAFC", "#CBD5E1");
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("L'Apprenant(e) :", 50, 258);
-      doc.fillColor("#0F172A").fontSize(11).font("Helvetica-Bold").text(`${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`, 145, 256);
-
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Matricule Officiel :", 50, 275);
-      doc.fillColor(primaryColor).fontSize(9.5).font("Courier-Bold").text(student.matricule || "—", 145, 275);
-
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Date de Naissance :", 50, 292);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica").text(student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "Non renseignée", 145, 292);
-
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Filière d'Études :", 50, 309);
-      doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica-Bold").text(`${insc.filiereName || "—"} (${insc.programTypeCode || "DQP"})`, 145, 309);
-
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Niveau / Session :", 50, 324);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica").text(`Niveau ${insc.niveauOrder || 1} • Session ${insc.academicYearLabel || "—"}`, 145, 324);
-
-      doc.fillColor("#0F172A").fontSize(9.5).font("Helvetica").text(
-        "Est régulièrement inscrit(e) et poursuit avec assiduité son cycle de formation professionnelle au sein de notre établissement pour la session académique en cours.",
-        35, 360, { width: 525, lineGap: 3.5 }
-      );
-      doc.text("En foi de quoi, la présente attestation lui est délivrée pour servir et valoir ce que de droit.", 35, 395, { width: 525 });
-
-      // 5. QR Code & Pied avec Signatures Dynamiques
-      const qrY = 460;
-      safeDrawImage(doc, qrBuf, 35, qrY, { width: 68, height: 68 });
-      doc.fillColor("#64748B").fontSize(6.5).font("Helvetica-Bold").text("VÉRIFICATION D'AUTHENTICITÉ", 35, qrY + 72);
-      doc.fillColor(primaryColor).fontSize(5.5).font("Courier").text(snapshot.qrToken || "", 35, qrY + 80, { width: 140 });
-
-      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica").text(
-        `Fait à ${center.city || "Bafoussam"}, le ${new Date().toLocaleDateString("fr-FR")}`,
-        350, 442, { width: 210, align: "right" }
-      );
-
-      // Signataires configurables
-      const signatories = tmpl.signatories || [
-        { title: tmpl.signatoryTitleLeft || "Le Chef de Département", roleKey: "directeur_pedagogique" },
-        { title: tmpl.signatoryTitleRight || "Le Directeur Général", roleKey: "directeur" },
-      ];
-      renderSignatoryBlocks(doc, signatories, center.signatures || {}, 460);
-
-      // Pied
-      doc.rect(35, 765, 525, 0.5).stroke("#CBD5E1");
-      doc.fillColor("#64748B").fontSize(6.5).font("Helvetica").text(tmpl.footerLegal || "Document officiel scellé. Toute falsification expose son auteur à des poursuites judiciaires.", 35, 772, { width: 440 });
-      doc.fillColor(primaryColor).fontSize(6.5).font("Helvetica-Bold").text("PROPULSÉ PAR CECO", 480, 772, { align: "right" });
+      renderSingleAttestationPage(doc, snapshot, qrBuf);
 
       doc.end();
       writeStream.on("finish", () => resolve(outputPath));
@@ -425,7 +435,35 @@ async function generateAttestationPdf(snapshot, qrUrl, outputPath) {
   });
 }
 
-// 4. FICHE INDIVIDUELLE D'INSCRIPTION & D'ENGAGEMENT A4
+// 4. ATTESTATIONS EN LOT PAR CLASSE (MULTI-PAGES A4)
+async function generateBatchAttestationsPdf(snapshotsList, qrUrlsList, outputPath) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: "A4",
+        margins: { top: 30, bottom: 30, left: 35, right: 35 },
+        autoFirstPage: true,
+      });
+
+      const writeStream = fs.createWriteStream(outputPath);
+      doc.pipe(writeStream);
+
+      for (let i = 0; i < snapshotsList.length; i++) {
+        if (i > 0) doc.addPage({ size: "A4", margins: { top: 30, bottom: 30, left: 35, right: 35 } });
+        const qrBuf = await QRCode.toBuffer(qrUrlsList[i], { margin: 0, width: 85 });
+        renderSingleAttestationPage(doc, snapshotsList[i], qrBuf);
+      }
+
+      doc.end();
+      writeStream.on("finish", () => resolve(outputPath));
+      writeStream.on("error", reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// 5. FICHE INDIVIDUELLE D'INSCRIPTION A4
 async function generateFicheInscriptionPdf(snapshot, qrUrl, outputPath) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -447,10 +485,8 @@ async function generateFicheInscriptionPdf(snapshot, qrUrl, outputPath) {
 
       const primaryColor = tmpl.primaryColor || "#0B1C30";
 
-      // Filigrane
       drawWatermark(doc, tmpl, logoBuf, sealBuf, 130, 240, 330);
 
-      // En-tête
       if (tmpl.showLogo !== false && logoBuf) safeDrawImage(doc, logoBuf, 35, 30, { fit: [45, 45] });
       if (tmpl.showSeal !== false && sealBuf) safeDrawImage(doc, sealBuf, 515, 30, { fit: [45, 45] });
 
@@ -462,58 +498,63 @@ async function generateFicheInscriptionPdf(snapshot, qrUrl, outputPath) {
 
       doc.moveTo(35, 85).lineTo(560, 85).lineWidth(1.2).strokeColor(primaryColor).stroke();
 
-      // Titre
       doc.fillColor("#0F172A").fontSize(12).font("Helvetica-Bold").text(tmpl.documentTitle || "FICHE INDIVIDUELLE D'INSCRIPTION & D'ENGAGEMENT", 35, 100, { width: 525, align: "center", underline: true });
-      doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text(`SESSION ACADÉMIQUE : ${insc.academicYearLabel || "—"}`, 35, 116, { width: 525, align: "center" });
+      doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text(`SESSION ACADÉMIQUE : ${insc.academicYearLabel || "—"} • ${insc.promotionLabel || ""}`, 35, 116, { width: 525, align: "center" });
 
-      // Photo et informations
-      doc.rect(465, 135, 95, 115).fillAndStroke("#F8FAFC", "#CBD5E1");
-      if (!safeDrawImage(doc, photoBuf, 465, 135, { fit: [95, 115], align: "center", valign: "center" })) {
-        doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text("PHOTO D'IDENTITÉ", 475, 185, { width: 75, align: "center" });
+      doc.rect(465, 135, 95, 125).fillAndStroke("#F8FAFC", "#CBD5E1");
+      if (!safeDrawImage(doc, photoBuf, 465, 135, { fit: [95, 125], align: "center", valign: "center" })) {
+        doc.fillColor("#64748B").fontSize(8).font("Helvetica-Bold").text("PHOTO D'IDENTITÉ", 475, 190, { width: 75, align: "center" });
       }
 
-      doc.rect(35, 135, 415, 115).fillAndStroke("#F8FAFC", "#CBD5E1");
-      let ly = 145;
-      doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Matricule Officiel :", 45, ly);
-      doc.fillColor(primaryColor).fontSize(8.5).font("Courier-Bold").text(student.matricule || "—", 145, ly);
+      doc.rect(35, 135, 415, 125).fillAndStroke("#F8FAFC", "#CBD5E1");
+      let ly = 143;
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Matricule Officiel :", 45, ly);
+      doc.fillColor(primaryColor).fontSize(8.5).font("Courier-Bold").text(student.matricule || "—", 155, ly);
 
-      ly += 18;
+      ly += 16;
       doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Nom de famille :", 45, ly);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica-Bold").text((student.lastName || "").toUpperCase(), 145, ly);
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text((student.lastName || "").toUpperCase(), 155, ly);
 
-      ly += 18;
+      ly += 16;
       doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Prénom(s) :", 45, ly);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica-Bold").text(student.firstName || "", 145, ly);
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text(student.firstName || "", 155, ly);
 
-      ly += 18;
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Date de naissance :", 45, ly);
-      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica").text(student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "Non renseignée", 145, ly);
+      ly += 16;
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Genre / Naissance :", 45, ly);
+      const genreBirth = `${student.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le ${student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "—"}${student.birthPlace ? ` à ${student.birthPlace}` : ""}`;
+      doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(genreBirth, 155, ly);
 
-      ly += 18;
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Date d'enregistrement :", 45, ly);
-      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica").text(new Date().toLocaleDateString("fr-FR"), 145, ly);
+      ly += 16;
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Contact Apprenant :", 45, ly);
+      doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(student.phone || "Non renseigné", 155, ly);
 
-      // Section Parcours
-      doc.rect(35, 265, 525, 75).fillAndStroke("#FFFFFF", "#CBD5E1");
-      doc.rect(35, 265, 525, 18).fill(primaryColor);
-      doc.fillColor("#FFFFFF").fontSize(8).font("Helvetica-Bold").text("AFFECTATION PÉDAGOGIQUE & CYCLE CHOISI", 45, 270);
+      ly += 16;
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Parent / Tuteur (Urgence) :", 45, ly);
+      const parentInfo = `${student.guardianName || "Non renseigné"}${student.guardianPhone ? ` (${student.guardianPhone})` : ""}`;
+      doc.fillColor("#0F172A").fontSize(8).font("Helvetica-Bold").text(parentInfo, 155, ly);
 
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Filière de formation :", 45, 292);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica-Bold").text(`${insc.filiereName || "—"} (${insc.programTypeCode || "DQP"})`, 160, 292);
+      ly += 16;
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Dernier diplôme obtenu :", 45, ly);
+      doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(student.entryDiploma || "Aucun / Niveau d'entrée direct", 155, ly);
 
-      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Classe & Niveau :", 45, 312);
-      doc.fillColor("#0F172A").fontSize(9).font("Helvetica").text(`${insc.classeLabel || "—"} (Niveau ${insc.niveauOrder || 1})`, 160, 312);
+      doc.rect(35, 270, 525, 65).fillAndStroke("#FFFFFF", "#CBD5E1");
+      doc.rect(35, 270, 525, 18).fill(primaryColor);
+      doc.fillColor("#FFFFFF").fontSize(8).font("Helvetica-Bold").text("AFFECTATION PÉDAGOGIQUE & CYCLE CHOISI", 45, 275);
 
-      // Engagement
-      doc.rect(35, 355, 525, 80).fillAndStroke("#F8FAFC", "#CBD5E1");
-      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text("ENGAGEMENT DE L'APPRENANT(E) :", 45, 365);
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Filière de formation :", 45, 296);
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text(`${insc.filiereName || "—"} (${insc.programTypeCode || "DQP"})`, 160, 296);
+
+      doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Classe & Promotion :", 45, 314);
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica").text(`${insc.classeLabel || "—"} • ${insc.promotionLabel || ""}`, 160, 314);
+
+      doc.rect(35, 345, 525, 80).fillAndStroke("#F8FAFC", "#CBD5E1");
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text("ENGAGEMENT DE L'APPRENANT(E) :", 45, 355);
       doc.fillColor("#334155").fontSize(8).font("Helvetica").text(
         tmpl.engagementText || "Je soussigné(e), certifie sur l'honneur l'exactitude des informations mentionnées ci-dessus et déclare avoir pris pleine connaissance du règlement intérieur de l'établissement. Je m'engage à faire preuve d'assiduité, de rigueur et de probité tout au long de mon cycle de formation.",
-        45, 380, { width: 505, lineGap: 2.5 }
+        45, 370, { width: 505, lineGap: 2.5 }
       );
 
-      // Signatures
-      const sigY = 470;
+      const sigY = 445;
       safeDrawImage(doc, qrBuf, 35, sigY, { width: 60, height: 60 });
       doc.fillColor("#64748B").fontSize(5.5).font("Courier").text(snapshot.qrToken || "", 35, sigY + 65, { width: 130 });
 
@@ -521,7 +562,7 @@ async function generateFicheInscriptionPdf(snapshot, qrUrl, outputPath) {
         { title: tmpl.signatoryTitleLeft || "Signature de l'Apprenant(e)", roleKey: "student" },
         { title: tmpl.signatoryTitleRight || "Visa de la Direction", roleKey: "directeur" },
       ];
-      renderSignatoryBlocks(doc, signatories, center.signatures || {}, 470);
+      renderSignatoryBlocks(doc, signatories, center.signatures || {}, 445);
 
       doc.rect(35, 765, 525, 0.5).stroke("#CBD5E1");
       doc.fillColor("#64748B").fontSize(6.5).font("Helvetica").text(tmpl.footerLegal || "Fiche d'inscription conservée aux archives officielles de l'établissement.", 35, 772, { width: 440 });
@@ -540,5 +581,6 @@ module.exports = {
   generateStudentCardPdf,
   generateBatchCardsSheetPdf,
   generateAttestationPdf,
+  generateBatchAttestationsPdf,
   generateFicheInscriptionPdf,
 };

@@ -11,6 +11,7 @@ const {
   generateStudentCardPdf,
   generateBatchCardsSheetPdf,
   generateAttestationPdf,
+  generateBatchAttestationsPdf,
   generateFicheInscriptionPdf,
 } = require("../services/documentPdfService");
 
@@ -79,7 +80,7 @@ const DEFAULT_TEMPLATE_CONFIG = {
 };
 
 // 1. Templates graphiques actifs
-router.get("/documents/templates/:type", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+router.get("/documents/templates/:type", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const template = await prisma.documentTemplate.findUnique({
       where: { centerId_type: { centerId: req.centerId, type: req.params.type } },
@@ -104,15 +105,15 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// 2. Génération unitaire avec Figeage Strict
-router.post("/documents/generate", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
+// 2. Génération / Réutilisation avec Figeage Strict du Document (Immuabilité)
+router.post("/documents/generate", verifyJwt, requirePermission("students.read", "students.create"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, forceRegenerate = false } = req.body || {};
     if (!studentId) return res.status(400).json({ error: "Identifiant apprenant requis." });
 
     await ensureStorageTree(req.centerId);
 
-    // VÉRIFICATION D'UN DOCUMENT DÉJÀ ÉMIS
+    // VÉRIFICATION D'UN DOCUMENT DÉJÀ ÉMIS (Évite la multiplication de fichiers)
     const existingDoc = await prisma.document.findFirst({
       where: {
         centerId: req.centerId,
@@ -124,7 +125,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
     });
 
     if (!forceRegenerate && existingDoc) {
-      // Cas 1 : Le PDF existe déjà sur disque -> On le sert directement (0 régénération)
+      // Cas 1 : Le fichier physique existe déjà sur disque -> On le sert directement sans regénérer
       if (fs.existsSync(existingDoc.filePath)) {
         return res.json({
           success: true,
@@ -140,7 +141,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
         });
       }
 
-      // Cas 2 : Le fichier physique a été supprimé du disque -> Régénération STRICTE depuis le snapshot d'origine
+      // Cas 2 : Le fichier physique a été effacé -> Régénération STRICTE depuis le snapshot figé en DB
       const host = req.get("host");
       const protocol = req.protocol;
       const verificationUrl = `${protocol}://${host}/verify/${existingDoc.qrToken}`;
@@ -169,7 +170,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
       });
     }
 
-    // NOUVELLE ÉMISSION : Résolution et figeage complet du snapshot à cet instant T
+    // NOUVELLE ÉMISSION : Résolution et figeage du snapshot
     const [center, template, student] = await Promise.all([
       prisma.center.findUnique({ where: { id: req.centerId } }),
       prisma.documentTemplate.findUnique({
@@ -182,6 +183,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
             where: classeId ? { classeId } : undefined,
             include: {
               classe: { include: { filiere: { include: { programType: true } }, niveau: true } },
+              promotion: true,
               academicYear: true,
             },
             orderBy: { createdAt: "desc" },
@@ -200,7 +202,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
     const signatureDirecteur = getRoleSignatureBase64(req.centerId, "directeur");
     const signaturePedagogique = getRoleSignatureBase64(req.centerId, "directeur_pedagogique");
 
-    // QR Token unique et scellé cryptographiquement
+    // QR Token unique et scellé
     const cuid = crypto.randomBytes(8).toString("hex");
     const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key")
       .update(`${cuid}:${student.matricule}:${type}`)
@@ -211,7 +213,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
     const protocol = req.protocol;
     const verificationUrl = `${protocol}://${host}/verify/${qrToken}`;
 
-    // Le renderSnapshot fige TOUTES les composantes (images en base64 incluses)
+    // Le renderSnapshot fige TOUT ce qui est nécessaire pour reproduire le PDF des années plus tard
     const renderSnapshot = {
       generatedAt: new Date().toISOString(),
       center: {
@@ -238,7 +240,13 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
         matricule: student.matricule,
         firstName: student.firstName,
         lastName: student.lastName,
+        gender: student.gender,
         birthDate: student.birthDate,
+        birthPlace: student.birthPlace,
+        phone: student.phone,
+        guardianName: student.guardianName,
+        guardianPhone: student.guardianPhone,
+        entryDiploma: student.entryDiploma,
         photoDataUrl: studentPhotoBase64,
       },
       inscription: {
@@ -248,6 +256,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
         programTypeCode: inscription.classe?.filiere?.programType?.code || "DQP",
         niveauOrder: inscription.classe?.niveau?.order || 1,
         academicYearLabel: inscription.academicYear?.label || "2026-2027",
+        promotionLabel: inscription.promotion?.label || `Promotion ${inscription.academicYear?.label}`,
         status: inscription.status,
       },
       qrToken,
@@ -302,7 +311,163 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read")
   }
 });
 
-// 3. Prévisualisation directe sécurisée
+// 3. Impression groupée par classe (ICI EST PLACÉ VOTRE BLOC DE CODE)
+router.post("/documents/generate-batch", verifyJwt, requirePermission("students.read", "students.create"), async (req, res, next) => {
+  try {
+    const { classeId, type = "CARTE_ETUDIANT" } = req.body || {};
+    if (!classeId) return res.status(400).json({ error: "Classe requise." });
+
+    await ensureStorageTree(req.centerId);
+
+    const [center, template, classe] = await Promise.all([
+      prisma.center.findUnique({ where: { id: req.centerId } }),
+      prisma.documentTemplate.findUnique({
+        where: { centerId_type: { centerId: req.centerId, type } },
+      }),
+      prisma.classe.findFirst({
+        where: { id: classeId, centerId: req.centerId },
+        include: {
+          filiere: { include: { programType: true } },
+          niveau: true,
+          academicYear: true,
+          inscriptions: {
+            where: { student: { deletedAt: null } },
+            include: { student: true, promotion: true },
+            orderBy: { student: { lastName: "asc" } },
+          },
+        },
+      }),
+    ]);
+
+    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
+    if (classe.inscriptions.length === 0) {
+      return res.status(400).json({ error: "Aucun apprenant inscrit dans cette classe." });
+    }
+
+    const logoBase64 = getCenterLogoBase64(req.centerId, center?.logo);
+    const sealBase64 = getCenterSealBase64(req.centerId);
+    const signatureDirecteur = getRoleSignatureBase64(req.centerId, "directeur");
+    const signaturePedagogique = getRoleSignatureBase64(req.centerId, "directeur_pedagogique");
+
+    const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, type.toLowerCase());
+    if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
+
+    const host = req.get("host");
+    const protocol = req.protocol;
+
+    const snapshotsList = [];
+    const qrUrlsList = [];
+
+    for (const insc of classe.inscriptions) {
+      const student = insc.student;
+      const studentPhotoBase64 = getStudentPhotoBase64(req.centerId, student.photoPath);
+
+      const cuid = crypto.randomBytes(8).toString("hex");
+      const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key")
+        .update(`${cuid}:${student.matricule}:${type}`)
+        .digest("hex").slice(0, 16);
+
+      const qrToken = `${cuid}?t=${hmacSig}`;
+      const verificationUrl = `${protocol}://${host}/verify/${qrToken}`;
+
+      const snapshot = {
+        generatedAt: new Date().toISOString(),
+        center: {
+          id: center.id,
+          name: center.name,
+          email: center.email,
+          phone: center.phone,
+          address: center.address,
+          city: center.city,
+          country: center.country,
+          registrationNumber: center.registrationNumber,
+          directorName: center.directorName,
+          directorTitle: center.directorTitle || "Le Directeur Général",
+          logoDataUrl: logoBase64,
+          sealDataUrl: sealBase64,
+          signatures: {
+            directeur: signatureDirecteur,
+            directeur_pedagogique: signaturePedagogique,
+          },
+        },
+        templateConfig: template?.config || DEFAULT_TEMPLATE_CONFIG,
+        student: {
+          id: student.id,
+          matricule: student.matricule,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          gender: student.gender,
+          birthDate: student.birthDate,
+          birthPlace: student.birthPlace,
+          phone: student.phone,
+          guardianName: student.guardianName,
+          guardianPhone: student.guardianPhone,
+          entryDiploma: student.entryDiploma,
+          photoDataUrl: studentPhotoBase64,
+        },
+        inscription: {
+          classeId: classe.id,
+          classeLabel: classe.label,
+          filiereName: classe.filiere?.name || "Filière",
+          programTypeCode: classe.filiere?.programType?.code || "DQP",
+          niveauOrder: classe.niveau?.order || 1,
+          academicYearLabel: classe.academicYear?.label || "2026-2027",
+          promotionLabel: insc.promotion?.label || `Promotion ${classe.academicYear?.label}`,
+          status: insc.status,
+        },
+        qrToken,
+        verificationUrl,
+      };
+
+      snapshotsList.push(snapshot);
+      qrUrlsList.push(verificationUrl);
+    }
+
+    // =========================================================================
+    // VOTRE BLOC DE CODE PLACÉ ICI : COMPILATION DU FICHIER PDF GROUPÉ
+    // =========================================================================
+    const batchPdfFileName = `BATCH_${type}_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${Date.now()}.pdf`;
+    const fullBatchPdfPath = path.join(docFolder, batchPdfFileName);
+
+    if (type === "CARTE_ETUDIANT") {
+      await generateBatchCardsSheetPdf(snapshotsList, qrUrlsList, fullBatchPdfPath);
+    } else {
+      await generateBatchAttestationsPdf(snapshotsList, qrUrlsList, fullBatchPdfPath);
+    }
+    // =========================================================================
+
+    const pdfBuffer = fs.readFileSync(fullBatchPdfPath);
+    const fileHash = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
+
+    const batchDocument = await prisma.document.create({
+      data: {
+        centerId: req.centerId,
+        type: `BATCH_${type}`,
+        classeId: classe.id,
+        filePath: fullBatchPdfPath,
+        fileHash,
+        renderSnapshot: { count: snapshotsList.length, classeLabel: classe.label },
+        qrToken: `BATCH-${classe.id}-${Date.now()}`,
+      },
+    });
+
+    res.json({
+      success: true,
+      count: snapshotsList.length,
+      batchDocument: {
+        id: batchDocument.id,
+        downloadUrl: `/documents/${batchDocument.id}/download`,
+        previewUrl: `/documents/${batchDocument.id}/preview`,
+      },
+    });
+  } catch (err) {
+    console.error("[Batch Error]", err);
+    next(err);
+  }
+});
+
+// 4. Prévisualisation directe
 router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
   try {
     const doc = await prisma.document.findFirst({
@@ -335,7 +500,7 @@ router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 4. Téléchargement direct
+// 5. Téléchargement
 router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   try {
     const doc = await prisma.document.findFirst({
@@ -343,7 +508,7 @@ router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
     });
 
     if (!doc || !fs.existsSync(doc.filePath)) {
-      return res.status(404).json({ error: "Fichier PDF introuvable." });
+      return res.status(404).json({ error: "Fichier PDF introuvable sur le serveur." });
     }
 
     res.download(doc.filePath, path.basename(doc.filePath));
@@ -352,7 +517,7 @@ router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 5. Page publique d'authentification QR Code (Scan Smartphone)
+// 6. Page publique d'authentification QR Code (Scan Smartphone)
 router.get("/verify/:token", async (req, res, next) => {
   try {
     const token = req.params.token;
@@ -366,7 +531,7 @@ router.get("/verify/:token", async (req, res, next) => {
     if (!doc) {
       return res.status(404).send(`
         <!DOCTYPE html>
-        <html lang="fr"><head><meta charset="utf-8"><title>CECO — Non Authentifié</title>
+        <html lang="fr"><head><meta charset="utf-8"><title>CECO — Document Non Authentifié</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>body{font-family:sans-serif;background:#FEEBEF;color:#F5365C;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:16px;}
         .card{background:white;padding:28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;text-align:center;border:1px solid #F5365C;}</style>

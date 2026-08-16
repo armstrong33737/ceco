@@ -1,3 +1,4 @@
+// packages/backend/src/routes/students.js
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -54,30 +55,25 @@ function saveStudentPhoto(centerId, studentId, dataUrl) {
 // 1. Lister les apprenants
 router.get("/students", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
-    const { search, classeId, academicYearId, status, filiereId } = req.query || {};
+    const { search, classeId, academicYearId, promotionId, status, filiereId, onlyArchived } = req.query || {};
+    const isArchivedQuery = onlyArchived === "true";
 
     const where = {
       centerId: req.centerId,
-      deletedAt: null,
+      deletedAt: isArchivedQuery ? { not: null } : null,
       ...(search && {
         OR: [
           { firstName: { contains: search, mode: "insensitive" } },
           { lastName: { contains: search, mode: "insensitive" } },
           { matricule: { contains: search, mode: "insensitive" } },
+          { phone: { contains: search, mode: "insensitive" } },
         ],
       }),
-      ...(classeId && {
-        inscriptions: { some: { classeId } }
-      }),
-      ...(filiereId && !classeId && {
-        inscriptions: { some: { classe: { filiereId } } }
-      }),
-      ...(academicYearId && {
-        inscriptions: { some: { academicYearId } }
-      }),
-      ...(status && {
-        inscriptions: { some: { status } }
-      }),
+      ...(classeId && { inscriptions: { some: { classeId } } }),
+      ...(promotionId && { inscriptions: { some: { promotionId } } }),
+      ...(filiereId && !classeId && { inscriptions: { some: { classe: { filiereId } } } }),
+      ...(academicYearId && { inscriptions: { some: { academicYearId } } }),
+      ...(status && { inscriptions: { some: { status } } }),
     };
 
     const students = await prisma.student.findMany({
@@ -90,14 +86,15 @@ router.get("/students", verifyJwt, requirePermission("students.read"), async (re
                 filiere: { include: { programType: true } },
                 niveau: true,
                 salle: true,
-              }
+              },
             },
-            academicYear: true
+            promotion: true,
+            academicYear: true,
           },
-          orderBy: { academicYear: { startDate: "desc" } }
-        }
+          orderBy: { createdAt: "desc" },
+        },
       },
-      orderBy: { lastName: "asc" }
+      orderBy: isArchivedQuery ? { deletedAt: "desc" } : { lastName: "asc" },
     });
 
     res.json(students);
@@ -119,13 +116,14 @@ router.get("/students/:id", verifyJwt, requirePermission("students.read"), async
                 filiere: { include: { programType: true } },
                 niveau: true,
                 salle: true,
-              }
+              },
             },
-            academicYear: true
+            promotion: true,
+            academicYear: true,
           },
-          orderBy: { academicYear: { startDate: "desc" } }
-        }
-      }
+          orderBy: { createdAt: "desc" },
+        },
+      },
     });
 
     if (!student) return res.status(404).json({ error: "Apprenant introuvable." });
@@ -135,76 +133,137 @@ router.get("/students/:id", verifyJwt, requirePermission("students.read"), async
   }
 });
 
-// 3. Création
+// 3. Création sécurisée et auto-résolue d'un apprenant
 router.post("/students", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
-    const { firstName, lastName, birthDate, matricule, classeId, academicYearId, photoDataUrl } = req.body || {};
+    const {
+      firstName, lastName, gender, birthDate, birthPlace, phone,
+      guardianName, guardianPhone, entryDiploma,
+      matricule, classeId, academicYearId, photoDataUrl,
+    } = req.body || {};
 
-    if (!firstName || !lastName || !classeId || !academicYearId) {
-      return res.status(400).json({ error: "Prénom, nom, classe et année académique requis." });
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: "Le nom et le prénom de l'apprenant sont obligatoires." });
     }
 
     await ensureStorageTree(req.centerId);
 
-    const year = await prisma.academicYear.findFirst({
-      where: { id: academicYearId, centerId: req.centerId }
-    });
-    if (!year || !year.isCurrent) {
-      return res.status(400).json({ error: "Les inscriptions ne sont autorisées que sur l'année académique active." });
+    // 1. Résolution de la classe
+    let targetClass = null;
+    if (classeId) {
+      targetClass = await prisma.classe.findFirst({
+        where: { id: classeId, centerId: req.centerId },
+        include: { niveau: true, filiere: true, academicYear: true },
+      });
     }
 
+    // Si aucune classe valide n'a été passée, on résout la première classe active disponible
+    if (!targetClass) {
+      targetClass = await prisma.classe.findFirst({
+        where: {
+          centerId: req.centerId,
+          ...(academicYearId ? { academicYearId } : { academicYear: { isCurrent: true } }),
+        },
+        include: { niveau: true, filiere: true, academicYear: true },
+        orderBy: { label: "asc" },
+      });
+    }
+
+    if (!targetClass) {
+      return res.status(400).json({
+        error: "Aucune classe disponible. Veuillez d'abord créer au moins une classe dans le module Formations.",
+      });
+    }
+
+    // 2. Résolution de la session (déduite de la classe)
+    const targetYear = targetClass.academicYear;
+    const finalYearId = targetYear?.id || academicYearId;
+
+    // 3. Résolution ou auto-création de la promotion (cohorte)
+    let promotion = await prisma.promotion.findFirst({
+      where: { centerId: req.centerId, filiereId: targetClass.filiereId, academicYearId: finalYearId },
+    });
+
+    if (!promotion) {
+      const yearLabel = targetYear?.label || "2026-2027";
+      const startYear = parseInt(yearLabel.split("-")[0]) || 2026;
+      const duration = targetClass.filiere?.durationInYears || 2;
+      promotion = await prisma.promotion.create({
+        data: {
+          centerId: req.centerId,
+          filiereId: targetClass.filiereId,
+          academicYearId: finalYearId,
+          label: `Promotion ${startYear}-${startYear + duration}`,
+          expectedEndYear: String(startYear + duration),
+        },
+      });
+    }
+
+    // 4. Génération automatique du matricule si non renseigné
     let autoMatricule = matricule ? matricule.trim().toUpperCase() : null;
     if (!autoMatricule) {
-      const yearPrefix = year.label.substring(2, 4);
+      const yearPrefix = (targetYear?.label || "26").substring(2, 4);
       const count = await prisma.student.count({ where: { centerId: req.centerId } });
       autoMatricule = `STU${yearPrefix}-${String(count + 1).padStart(4, "0")}`;
     }
 
-    const student = await prisma.student.create({
-      data: {
-        centerId: req.centerId,
-        matricule: autoMatricule,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        birthDate: birthDate ? new Date(birthDate) : null,
-      }
-    });
-
-    if (photoDataUrl && photoDataUrl.startsWith("data:image/")) {
-      const photoFileName = saveStudentPhoto(req.centerId, student.id, photoDataUrl);
-      await prisma.student.update({
-        where: { id: student.id },
-        data: { photoPath: photoFileName }
+    // 5. Exécution sous transaction atomique ACID
+    const result = await prisma.$transaction(async (tx) => {
+      const student = await tx.student.create({
+        data: {
+          centerId: req.centerId,
+          matricule: autoMatricule,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          gender: gender || "M",
+          birthDate: birthDate ? new Date(birthDate) : null,
+          birthPlace: birthPlace ? birthPlace.trim() : null,
+          phone: phone ? phone.trim() : null,
+          guardianName: guardianName ? guardianName.trim() : null,
+          guardianPhone: guardianPhone ? guardianPhone.trim() : null,
+          entryDiploma: entryDiploma ? entryDiploma.trim() : "BEPC",
+        },
       });
-    }
 
-    await prisma.inscription.create({
-      data: {
-        centerId: req.centerId,
-        studentId: student.id,
-        classeId,
-        academicYearId,
-        status: "en_cours"
+      if (photoDataUrl && typeof photoDataUrl === "string" && photoDataUrl.startsWith("data:image/")) {
+        const photoFileName = saveStudentPhoto(req.centerId, student.id, photoDataUrl);
+        await tx.student.update({
+          where: { id: student.id },
+          data: { photoPath: photoFileName },
+        });
       }
-    });
 
-    const result = await prisma.student.findUnique({
-      where: { id: student.id },
-      include: {
-        inscriptions: {
-          include: {
-            classe: { include: { filiere: true, niveau: true } },
-            academicYear: true
-          }
-        }
-      }
+      await tx.inscription.create({
+        data: {
+          centerId: req.centerId,
+          studentId: student.id,
+          classeId: targetClass.id,
+          academicYearId: finalYearId,
+          promotionId: promotion.id,
+          status: "en_cours",
+        },
+      });
+
+      return tx.student.findUnique({
+        where: { id: student.id },
+        include: {
+          inscriptions: {
+            include: {
+              classe: { include: { filiere: true, niveau: true } },
+              promotion: true,
+              academicYear: true,
+            },
+          },
+        },
+      });
     });
 
     res.status(201).json(result);
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(409).json({ error: "Un apprenant avec ce matricule existe déjà." });
+      return res.status(409).json({ error: "Un apprenant avec ce matricule existe déjà dans l'établissement." });
     }
+    console.error("[Student Create Error]", err);
     next(err);
   }
 });
@@ -212,16 +271,26 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
 // 4. Modification
 router.put("/students/:id", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
-    const { firstName, lastName, birthDate, matricule, photoDataUrl } = req.body || {};
+    const {
+      firstName, lastName, gender, birthDate, birthPlace, phone,
+      guardianName, guardianPhone, entryDiploma,
+      matricule, photoDataUrl,
+    } = req.body || {};
 
     const existing = await prisma.student.findFirst({
-      where: { id: req.params.id, centerId: req.centerId, deletedAt: null }
+      where: { id: req.params.id, centerId: req.centerId, deletedAt: null },
     });
     if (!existing) return res.status(404).json({ error: "Apprenant introuvable." });
 
     const updateData = {
       ...(firstName && { firstName: firstName.trim() }),
       ...(lastName && { lastName: lastName.trim() }),
+      ...(gender !== undefined && { gender: gender || null }),
+      ...(birthPlace !== undefined && { birthPlace: birthPlace ? birthPlace.trim() : null }),
+      ...(phone !== undefined && { phone: phone ? phone.trim() : null }),
+      ...(guardianName !== undefined && { guardianName: guardianName ? guardianName.trim() : null }),
+      ...(guardianPhone !== undefined && { guardianPhone: guardianPhone ? guardianPhone.trim() : null }),
+      ...(entryDiploma !== undefined && { entryDiploma: entryDiploma ? entryDiploma.trim() : null }),
       ...(matricule && { matricule: matricule.trim().toUpperCase() }),
       ...(birthDate !== undefined && { birthDate: birthDate ? new Date(birthDate) : null }),
     };
@@ -240,10 +309,11 @@ router.put("/students/:id", verifyJwt, requirePermission("students.update"), asy
         inscriptions: {
           include: {
             classe: { include: { filiere: true, niveau: true } },
-            academicYear: true
-          }
-        }
-      }
+            promotion: true,
+            academicYear: true,
+          },
+        },
+      },
     });
 
     res.json(updated);
@@ -256,7 +326,7 @@ router.put("/students/:id", verifyJwt, requirePermission("students.update"), asy
 router.get("/students/:id/photo", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { id: req.params.id, centerId: req.centerId, deletedAt: null }
+      where: { id: req.params.id, centerId: req.centerId, deletedAt: null },
     });
     if (!student || !student.photoPath) {
       return res.status(404).json({ error: "Aucune photo enregistrée." });
@@ -283,28 +353,28 @@ router.post("/students/:id/inscribe", verifyJwt, requirePermission("students.cre
     const studentId = req.params.id;
 
     if (!classeId || !academicYearId) {
-      return res.status(400).json({ error: "Classe et année académique requises." });
+      return res.status(400).json({ error: "Classe et session requises." });
     }
 
     const year = await prisma.academicYear.findFirst({
-      where: { id: academicYearId, centerId: req.centerId }
+      where: { id: academicYearId, centerId: req.centerId },
     });
     if (!year || !year.isCurrent) {
-      return res.status(400).json({ error: "L'année académique sélectionnée n'est pas active." });
+      return res.status(400).json({ error: "La session sélectionnée n'est pas active." });
     }
 
     const existingInsc = await prisma.inscription.findUnique({
-      where: {
-        studentId_academicYearId: {
-          studentId,
-          academicYearId
-        }
-      }
+      where: { studentId_academicYearId: { studentId, academicYearId } },
     });
 
     if (existingInsc) {
-      return res.status(409).json({ error: "Cet apprenant est déjà inscrit pour cette année académique." });
+      return res.status(409).json({ error: "Cet apprenant est déjà inscrit pour cette session académique." });
     }
+
+    const lastInsc = await prisma.inscription.findFirst({
+      where: { studentId, centerId: req.centerId },
+      orderBy: { createdAt: "asc" },
+    });
 
     const created = await prisma.inscription.create({
       data: {
@@ -312,12 +382,14 @@ router.post("/students/:id/inscribe", verifyJwt, requirePermission("students.cre
         studentId,
         classeId,
         academicYearId,
-        status: status || "en_cours"
+        promotionId: lastInsc?.promotionId || null,
+        status: status || "en_cours",
       },
       include: {
         classe: { include: { filiere: true, niveau: true } },
-        academicYear: true
-      }
+        promotion: true,
+        academicYear: true,
+      },
     });
 
     res.status(201).json(created);
@@ -330,13 +402,13 @@ router.post("/students/:id/inscribe", verifyJwt, requirePermission("students.cre
 router.put("/inscriptions/:id/status", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const { status } = req.body || {};
-    if (!["en_cours", "admis", "redouble", "abandon"].includes(status)) {
+    if (!["en_cours", "admis", "redouble", "abandon", "diplome"].includes(status)) {
       return res.status(400).json({ error: "Statut invalide." });
     }
 
     const updated = await prisma.inscription.update({
       where: { id: req.params.id },
-      data: { status }
+      data: { status },
     });
     res.json(updated);
   } catch (err) {
@@ -348,13 +420,13 @@ router.put("/inscriptions/:id/status", verifyJwt, requirePermission("students.up
 router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { id: req.params.id, centerId: req.centerId }
+      where: { id: req.params.id, centerId: req.centerId },
     });
     if (!student) return res.status(404).json({ error: "Apprenant introuvable." });
 
     await prisma.student.update({
       where: { id: req.params.id },
-      data: { deletedAt: new Date() }
+      data: { deletedAt: new Date() },
     });
 
     res.status(204).send();
@@ -363,8 +435,36 @@ router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), 
   }
 });
 
-// 9. Exportation CSV
-router.get("/students-export", verifyJwt, requirePermission("students.read", "students.generate"), async (req, res, next) => {
+// 9. Restauration d'un apprenant archivé
+router.put("/students/:id/restore", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
+  try {
+    const student = await prisma.student.findFirst({
+      where: { id: req.params.id, centerId: req.centerId, deletedAt: { not: null } },
+    });
+    if (!student) return res.status(404).json({ error: "Apprenant archivé introuvable." });
+
+    const restored = await prisma.student.update({
+      where: { id: req.params.id },
+      data: { deletedAt: null },
+      include: {
+        inscriptions: {
+          include: {
+            classe: { include: { filiere: true, niveau: true } },
+            promotion: true,
+            academicYear: true,
+          },
+        },
+      },
+    });
+
+    res.json(restored);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 10. Exportation CSV enrichie
+router.get("/students-export", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const students = await prisma.student.findMany({
       where: { centerId: req.centerId, deletedAt: null },
@@ -372,24 +472,37 @@ router.get("/students-export", verifyJwt, requirePermission("students.read", "st
         inscriptions: {
           include: {
             classe: { include: { filiere: true, niveau: true } },
-            academicYear: true
+            promotion: true,
+            academicYear: true,
           },
-          orderBy: { academicYear: { startDate: "desc" } }
-        }
+          orderBy: { createdAt: "desc" },
+        },
       },
-      orderBy: { lastName: "asc" }
+      orderBy: { lastName: "asc" },
     });
 
-    const headers = ["Matricule", "Nom", "Prenom", "DateNaissance", "Classe", "Filiere", "Session", "Statut"];
+    const headers = [
+      "Matricule", "Nom", "Prenom", "Genre", "DateNaissance", "LieuNaissance",
+      "Telephone", "Tuteur", "TelUrgence", "DiplomeEntree",
+      "Classe", "Filiere", "Promotion", "Session", "Statut",
+    ];
+
     const rows = students.map((s) => {
       const currentInsc = s.inscriptions[0];
       return [
         `"${s.matricule}"`,
         `"${s.lastName}"`,
         `"${s.firstName}"`,
+        `"${s.gender || ""}"`,
         `"${s.birthDate ? new Date(s.birthDate).toISOString().split("T")[0] : ""}"`,
+        `"${s.birthPlace || ""}"`,
+        `"${s.phone || ""}"`,
+        `"${s.guardianName || ""}"`,
+        `"${s.guardianPhone || ""}"`,
+        `"${s.entryDiploma || ""}"`,
         `"${currentInsc?.classe?.label || ""}"`,
         `"${currentInsc?.classe?.filiere?.name || ""}"`,
+        `"${currentInsc?.promotion?.label || ""}"`,
         `"${currentInsc?.academicYear?.label || ""}"`,
         `"${currentInsc?.status || "en_cours"}"`,
       ].join(";");
@@ -404,27 +517,50 @@ router.get("/students-export", verifyJwt, requirePermission("students.read", "st
   }
 });
 
-// 10. Importation en masse
+// 11. Importation en masse avec bilan d'anomalies
 router.post("/students/import", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const { students: items, classeId, academicYearId } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0 || !classeId || !academicYearId) {
-      return res.status(400).json({ error: "Liste d'apprenants, classe et session académique requis." });
+      return res.status(400).json({ error: "Liste d'apprenants, classe et session requises." });
     }
 
-    const year = await prisma.academicYear.findFirst({
-      where: { id: academicYearId, centerId: req.centerId, isCurrent: true }
+    const [year, classe] = await Promise.all([
+      prisma.academicYear.findFirst({ where: { id: academicYearId, centerId: req.centerId, isCurrent: true } }),
+      prisma.classe.findFirst({ where: { id: classeId, centerId: req.centerId }, include: { filiere: true } }),
+    ]);
+
+    if (!year) return res.status(400).json({ error: "La session sélectionnée n'est pas active." });
+    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
+
+    let promotion = await prisma.promotion.findFirst({
+      where: { centerId: req.centerId, filiereId: classe.filiereId, academicYearId: year.id },
     });
-    if (!year) {
-      return res.status(400).json({ error: "L'année académique sélectionnée n'est pas active." });
+    if (!promotion) {
+      const startYear = parseInt(year.label.split("-")[0]) || 2026;
+      promotion = await prisma.promotion.create({
+        data: {
+          centerId: req.centerId,
+          filiereId: classe.filiereId,
+          academicYearId: year.id,
+          label: `Promotion ${startYear}-${startYear + (classe.filiere?.durationInYears || 2)}`,
+        },
+      });
     }
 
     let createdCount = 0;
+    const errors = [];
     const yearPrefix = year.label.substring(2, 4);
 
-    for (const item of items) {
-      if (!item.firstName || !item.lastName) continue;
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      const rowNum = index + 2;
+
+      if (!item.firstName || !item.lastName) {
+        errors.push({ row: rowNum, reason: "Nom ou prénom manquant" });
+        continue;
+      }
 
       let matricule = item.matricule ? item.matricule.trim().toUpperCase() : null;
       if (!matricule) {
@@ -433,35 +569,57 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
       }
 
       const existing = await prisma.student.findFirst({
-        where: { centerId: req.centerId, matricule }
+        where: { centerId: req.centerId, matricule },
       });
 
-      if (!existing) {
-        const student = await prisma.student.create({
-          data: {
-            centerId: req.centerId,
-            matricule,
-            firstName: item.firstName.trim(),
-            lastName: item.lastName.trim(),
-            birthDate: item.birthDate ? new Date(item.birthDate) : null,
-          }
-        });
+      if (existing) {
+        errors.push({ row: rowNum, matricule, reason: "Matricule déjà attribué à un autre apprenant" });
+        continue;
+      }
 
-        await prisma.inscription.create({
-          data: {
-            centerId: req.centerId,
-            studentId: student.id,
-            classeId,
-            academicYearId,
-            status: "en_cours"
-          }
+      try {
+        await prisma.$transaction(async (tx) => {
+          const student = await tx.student.create({
+            data: {
+              centerId: req.centerId,
+              matricule,
+              firstName: item.firstName.trim(),
+              lastName: item.lastName.trim(),
+              gender: item.gender ? item.gender.trim().toUpperCase().charAt(0) : "M",
+              birthDate: item.birthDate ? new Date(item.birthDate) : null,
+              birthPlace: item.birthPlace ? item.birthPlace.trim() : null,
+              phone: item.phone ? item.phone.trim() : null,
+              guardianName: item.guardianName ? item.guardianName.trim() : null,
+              guardianPhone: item.guardianPhone ? item.guardianPhone.trim() : null,
+              entryDiploma: item.entryDiploma ? item.entryDiploma.trim() : "BEPC",
+            },
+          });
+
+          await tx.inscription.create({
+            data: {
+              centerId: req.centerId,
+              studentId: student.id,
+              classeId,
+              academicYearId,
+              promotionId: promotion.id,
+              status: "en_cours",
+            },
+          });
         });
 
         createdCount++;
+      } catch (e) {
+        errors.push({ row: rowNum, matricule, reason: e.message || "Erreur de base de données" });
       }
     }
 
-    res.json({ success: true, count: createdCount, message: `${createdCount} apprenant(s) importé(s) avec succès.` });
+    res.json({
+      success: true,
+      createdCount,
+      totalCount: items.length,
+      errors,
+      message: `${createdCount} apprenant(s) importé(s) avec succès sur ${items.length} lignes traitées.`,
+    });
   } catch (err) {
     next(err);
   }

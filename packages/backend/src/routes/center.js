@@ -84,7 +84,7 @@ function serializeCenter(center) {
   return out;
 }
 
-router.get("/center", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+router.get("/center", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const center = await prisma.center.findUnique({ where: { id: req.centerId } });
     if (!center) return res.status(404).json({ error: "Centre introuvable." });
@@ -178,7 +178,7 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
 });
 
 // Gestion des signatures indexées par rôle
-router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update"), async (req, res, next) => {
+router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);
     await ensureStorageTree(req.centerId);
