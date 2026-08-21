@@ -4,21 +4,23 @@ import { apiFetch } from "../lib/apiClient";
 import Icon from "../components/Icon";
 
 const MODULES = [
-  { key: "center", label: "Configuration du Centre", icon: "storefront" },
-  { key: "users", label: "Gestion des Utilisateurs", icon: "group" },
-  { key: "roles", label: "Rôles & Permissions", icon: "badge" },
+  { key: "center", label: "Identité & Agrément du Centre", icon: "storefront" },
+  { key: "formations", label: "Pédagogie, Filières & Matières", icon: "menu_book" }, // ⬅️ Module V3 distinct
+  { key: "users", label: "Gestion des Comptes", icon: "group" },
+  { key: "roles", label: "Rôles & Habilitations", icon: "badge" },
   { key: "students", label: "Dossiers Apprenants", icon: "school" },
   { key: "grades", label: "Évaluations & Notes", icon: "grade" },
-  { key: "bulletins", label: "Bulletins, Diplômes & Relevés", icon: "description" },
+  { key: "bulletins", label: "Bulletins & Actes Officiels", icon: "description" },
   { key: "backups", label: "Sauvegardes & Restauration", icon: "archive" },
 ];
 
 const ACTIONS = [
-  { key: "read", label: "Lire" },
-  { key: "create", label: "Créer" },
+  { key: "read", label: "Consulter" },
+  { key: "create", label: "Créer / Saisir" },
   { key: "update", label: "Modifier" },
   { key: "delete", label: "Supprimer" },
-  { key: "generate", label: "Générer" },
+  { key: "validate", label: "Valider / Verrouiller" }, // ⬅️ Verrou officiel
+  { key: "generate", label: "Générer PDF" },
 ];
 
 function sameSet(a, b) {

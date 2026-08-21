@@ -17,6 +17,16 @@ import DocumentTemplatesSettings from "./pages/DocumentTemplatesSettings"; // Im
 import License from "./pages/License";
 import Backups from "./pages/Backups";
 import About from "./pages/About";
+import AuditLogs from "./pages/AuditLogs";
+import PedagogieLayout from "./components/PedagogieLayout";
+import GradesEntry from "./pages/pedagogie/GradesEntry";
+import ClassOfferings from "./pages/pedagogie/ClassOfferings";
+import FiliereCurriculum from "./pages/pedagogie/FiliereCurriculum";
+import SubjectsCatalog from "./pages/pedagogie/SubjectsCatalog";
+import SubjectCategories from "./pages/pedagogie/SubjectCategories";
+import TeachersList from "./pages/pedagogie/TeachersList";
+import GradingPolicies from "./pages/pedagogie/GradingPolicies";
+import DeliberationView from "./pages/pedagogie/DeliberationView";
 
 function LicenseLockout() {
   const { user, updateSubscription, logout } = useAuthStore();
@@ -216,6 +226,17 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="formations" element={<Formations />} />
             <Route path="etudiants" element={<Students />} />
+            <Route path="pedagogie" element={<PedagogieLayout />}>
+              <Route index element={<Navigate to="saisie" replace />} />
+              <Route path="saisie" element={<GradesEntry />} />
+              <Route path="deliberations" element={<DeliberationView />} />
+              <Route path="maquettes" element={<ClassOfferings />} />
+              <Route path="programmes-filieres" element={<FiliereCurriculum />} />
+              <Route path="matieres" element={<SubjectsCatalog />} />
+              <Route path="categories" element={<SubjectCategories />} />
+              <Route path="formateurs" element={<TeachersList />} />
+              <Route path="ponderations" element={<GradingPolicies />} />
+            </Route>
             <Route path="parametres" element={<SettingsLayout />}>
               <Route index element={<Navigate to="centre" replace />} />
               <Route path="centre" element={<CenterSettings />} />
@@ -224,6 +245,7 @@ export default function App() {
               <Route path="modeles" element={<DocumentTemplatesSettings />} />
               <Route path="licence" element={<License />} />
               <Route path="sauvegarde" element={<Backups />} />
+              <Route path="audit" element={<AuditLogs />} />
               <Route path="apropos" element={<About />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

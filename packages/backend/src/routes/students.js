@@ -52,52 +52,101 @@ function saveStudentPhoto(centerId, studentId, dataUrl) {
   return fileName;
 }
 
-// 1. Lister les apprenants
+function buildStudentWhereClause(centerId, query) {
+  const {
+    search, classeId, academicYearId, promotionId, status, filiereId, onlyArchived,
+  } = query || {};
+
+  const isArchivedQuery = onlyArchived === "true";
+
+  const inscriptionWhere = {};
+  if (classeId) inscriptionWhere.classeId = classeId;
+  if (promotionId) inscriptionWhere.promotionId = promotionId;
+  if (academicYearId) inscriptionWhere.academicYearId = academicYearId;
+  if (status) inscriptionWhere.status = status;
+  if (filiereId && !classeId) {
+    inscriptionWhere.classe = { filiereId };
+  }
+
+  return {
+    centerId,
+    deletedAt: isArchivedQuery ? { not: null } : null,
+    ...(search && search.trim() && {
+      OR: [
+        { firstName: { contains: search.trim(), mode: "insensitive" } },
+        { lastName: { contains: search.trim(), mode: "insensitive" } },
+        { matricule: { contains: search.trim(), mode: "insensitive" } },
+        { phone: { contains: search.trim(), mode: "insensitive" } },
+        { guardianName: { contains: search.trim(), mode: "insensitive" } },
+      ],
+    }),
+    ...(Object.keys(inscriptionWhere).length > 0 && {
+      inscriptions: { some: inscriptionWhere },
+    }),
+  };
+}
+
+// 1. Lister les apprenants (Paginé côté serveur)
 router.get("/students", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
-    const { search, classeId, academicYearId, promotionId, status, filiereId, onlyArchived } = req.query || {};
-    const isArchivedQuery = onlyArchived === "true";
+    const { page = 1, limit = 25, all = "false" } = req.query || {};
+    const where = buildStudentWhereClause(req.centerId, req.query);
+    const isArchived = req.query.onlyArchived === "true";
 
-    const where = {
-      centerId: req.centerId,
-      deletedAt: isArchivedQuery ? { not: null } : null,
-      ...(search && {
-        OR: [
-          { firstName: { contains: search, mode: "insensitive" } },
-          { lastName: { contains: search, mode: "insensitive" } },
-          { matricule: { contains: search, mode: "insensitive" } },
-          { phone: { contains: search, mode: "insensitive" } },
-        ],
-      }),
-      ...(classeId && { inscriptions: { some: { classeId } } }),
-      ...(promotionId && { inscriptions: { some: { promotionId } } }),
-      ...(filiereId && !classeId && { inscriptions: { some: { classe: { filiereId } } } }),
-      ...(academicYearId && { inscriptions: { some: { academicYearId } } }),
-      ...(status && { inscriptions: { some: { status } } }),
+    const includeQuery = {
+      inscriptions: {
+        include: {
+          classe: {
+            include: {
+              filiere: { include: { programType: true } },
+              niveau: true,
+              salle: true,
+            },
+          },
+          promotion: true,
+          academicYear: true,
+        },
+        orderBy: { createdAt: "desc" },
+      },
     };
 
-    const students = await prisma.student.findMany({
-      where,
-      include: {
-        inscriptions: {
-          include: {
-            classe: {
-              include: {
-                filiere: { include: { programType: true } },
-                niveau: true,
-                salle: true,
-              },
-            },
-            promotion: true,
-            academicYear: true,
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-      orderBy: isArchivedQuery ? { deletedAt: "desc" } : { lastName: "asc" },
-    });
+    if (all === "true") {
+      const students = await prisma.student.findMany({
+        where,
+        include: includeQuery,
+        orderBy: isArchived ? { deletedAt: "desc" } : { lastName: "asc" },
+      });
+      return res.json({ data: students, pagination: { total: students.length, page: 1, limit: students.length, totalPages: 1 } });
+    }
 
-    res.json(students);
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(5, parseInt(limit) || 25));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, students] = await Promise.all([
+      prisma.student.count({ where }),
+      prisma.student.findMany({
+        where,
+        include: includeQuery,
+        skip,
+        take: limitNum,
+        orderBy: isArchived ? { deletedAt: "desc" } : { lastName: "asc" },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum) || 1;
+
+    res.json({
+      data: students,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -133,13 +182,13 @@ router.get("/students/:id", verifyJwt, requirePermission("students.read"), async
   }
 });
 
-// 3. Création sécurisée et auto-résolue d'un apprenant
+// 3. Création sous Transaction avec MATRICULE AUTO-GÉNÉRÉ SCELLÉ
 router.post("/students", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const {
       firstName, lastName, gender, birthDate, birthPlace, phone,
       guardianName, guardianPhone, entryDiploma,
-      matricule, classeId, academicYearId, photoDataUrl,
+      classeId, academicYearId, photoDataUrl,
     } = req.body || {};
 
     if (!firstName || !lastName) {
@@ -148,7 +197,6 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
 
     await ensureStorageTree(req.centerId);
 
-    // 1. Résolution de la classe
     let targetClass = null;
     if (classeId) {
       targetClass = await prisma.classe.findFirst({
@@ -157,7 +205,6 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
       });
     }
 
-    // Si aucune classe valide n'a été passée, on résout la première classe active disponible
     if (!targetClass) {
       targetClass = await prisma.classe.findFirst({
         where: {
@@ -171,15 +218,14 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
 
     if (!targetClass) {
       return res.status(400).json({
-        error: "Aucune classe disponible. Veuillez d'abord créer au moins une classe dans le module Formations.",
+        error: "Aucune classe disponible. Veuillez d'abord créer une classe dans le module Formations.",
       });
     }
 
-    // 2. Résolution de la session (déduite de la classe)
     const targetYear = targetClass.academicYear;
     const finalYearId = targetYear?.id || academicYearId;
 
-    // 3. Résolution ou auto-création de la promotion (cohorte)
+    // Résolution automatique de la promotion (cohorte)
     let promotion = await prisma.promotion.findFirst({
       where: { centerId: req.centerId, filiereId: targetClass.filiereId, academicYearId: finalYearId },
     });
@@ -199,15 +245,11 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
       });
     }
 
-    // 4. Génération automatique du matricule si non renseigné
-    let autoMatricule = matricule ? matricule.trim().toUpperCase() : null;
-    if (!autoMatricule) {
-      const yearPrefix = (targetYear?.label || "26").substring(2, 4);
-      const count = await prisma.student.count({ where: { centerId: req.centerId } });
-      autoMatricule = `STU${yearPrefix}-${String(count + 1).padStart(4, "0")}`;
-    }
+    // GÉNÉRATION SCELLÉE DU MATRICULE OFFICIEL (STU{YY}-{XXXX})
+    const yearPrefix = (targetYear?.label || "26").substring(2, 4);
+    const count = await prisma.student.count({ where: { centerId: req.centerId } });
+    const autoMatricule = `STU${yearPrefix}-${String(count + 1).padStart(4, "0")}`;
 
-    // 5. Exécution sous transaction atomique ACID
     const result = await prisma.$transaction(async (tx) => {
       const student = await tx.student.create({
         data: {
@@ -261,20 +303,18 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
     res.status(201).json(result);
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(409).json({ error: "Un apprenant avec ce matricule existe déjà dans l'établissement." });
+      return res.status(409).json({ error: "Un apprenant avec ce matricule existe déjà." });
     }
-    console.error("[Student Create Error]", err);
     next(err);
   }
 });
 
-// 4. Modification
+// 4. Modification (SANS MODIFICATION DU MATRICULE)
 router.put("/students/:id", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const {
       firstName, lastName, gender, birthDate, birthPlace, phone,
-      guardianName, guardianPhone, entryDiploma,
-      matricule, photoDataUrl,
+      guardianName, guardianPhone, entryDiploma, photoDataUrl,
     } = req.body || {};
 
     const existing = await prisma.student.findFirst({
@@ -291,7 +331,6 @@ router.put("/students/:id", verifyJwt, requirePermission("students.update"), asy
       ...(guardianName !== undefined && { guardianName: guardianName ? guardianName.trim() : null }),
       ...(guardianPhone !== undefined && { guardianPhone: guardianPhone ? guardianPhone.trim() : null }),
       ...(entryDiploma !== undefined && { entryDiploma: entryDiploma ? entryDiploma.trim() : null }),
-      ...(matricule && { matricule: matricule.trim().toUpperCase() }),
       ...(birthDate !== undefined && { birthDate: birthDate ? new Date(birthDate) : null }),
     };
 
@@ -416,7 +455,7 @@ router.put("/inscriptions/:id/status", verifyJwt, requirePermission("students.up
   }
 });
 
-// 8. Suppression douce
+// 8. Suppression douce (Archivage)
 router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -463,11 +502,14 @@ router.put("/students/:id/restore", verifyJwt, requirePermission("students.updat
   }
 });
 
-// 10. Exportation CSV enrichie
+// 10. Exportation CSV filtrée
 router.get("/students-export", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
+    const where = buildStudentWhereClause(req.centerId, req.query);
+    const isArchived = req.query.onlyArchived === "true";
+
     const students = await prisma.student.findMany({
-      where: { centerId: req.centerId, deletedAt: null },
+      where,
       include: {
         inscriptions: {
           include: {
@@ -478,7 +520,7 @@ router.get("/students-export", verifyJwt, requirePermission("students.read"), as
           orderBy: { createdAt: "desc" },
         },
       },
-      orderBy: { lastName: "asc" },
+      orderBy: isArchived ? { deletedAt: "desc" } : { lastName: "asc" },
     });
 
     const headers = [
@@ -517,7 +559,7 @@ router.get("/students-export", verifyJwt, requirePermission("students.read"), as
   }
 });
 
-// 11. Importation en masse avec bilan d'anomalies
+// 11. Importation en masse avec auto-génération de matricule si absent
 router.post("/students/import", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const { students: items, classeId, academicYearId } = req.body || {};

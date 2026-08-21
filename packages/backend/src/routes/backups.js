@@ -1,3 +1,4 @@
+// packages/backend/src/routes/backups.js
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -10,9 +11,6 @@ const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
 
 const router = express.Router();
 
-// IMPORTANT : le dossier de sauvegarde doit vivre sous storage/{centerId}/backups
-// (comme tout le reste de l'application), jamais dans un dossier global — sinon
-// la bascule multi-tenant (V8/V9) mélangerait les sauvegardes de tous les centres.
 function backupDir(centerId) {
   return centerStoragePath(centerId, "backups");
 }
@@ -80,17 +78,7 @@ router.put("/backups/config", verifyJwt, requirePermission("backups.update"), as
   }
 });
 
-// ------------------------------------------------------------------
-// LIMITATION CONNUE : cette sauvegarde sérialise les modèles Prisma en JSON
-// plutôt que d'utiliser pg_dump (décision d'architecture initiale — voir le
-// document technique consolidé). Choix pragmatique tant que le binaire
-// pg_dump n'est pas localisé de façon fiable depuis embedded-postgres.
-// Elle NE COUVRE PAS encore : Formateur, Entreprise, Stage, Presence,
-// DocumentTemplate, Document, AuditLog, Notification. Ces tables n'ont pas
-// encore de données réelles tant que V2+ n'est pas construit — mais il
-// faudra les ajouter ici AVANT de brancher les modules correspondants,
-// sinon une restauration les videra silencieusement sans les recréer.
-// ------------------------------------------------------------------
+// Génération d'une archive compressée .zip complète (Dump JSON + Médias /storage)
 router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -100,7 +88,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     const zipPath = path.join(dir, zipFilename);
 
     const dumpData = {
-      metadata: { version: "1.0.0", timestamp: new Date(), centerId: req.centerId },
+      metadata: { version: "3.0.0", timestamp: new Date(), centerId: req.centerId },
       centers: await prisma.center.findMany({ where: { id: req.centerId } }),
       subscriptions: await prisma.subscription.findMany({ where: { centerId: req.centerId } }),
       settings: await prisma.setting.findMany({ where: { centerId: req.centerId } }),
@@ -112,34 +100,37 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
       niveaux: await prisma.niveau.findMany({ where: { filiere: { centerId: req.centerId } } }),
       salles: await prisma.salle.findMany({ where: { centerId: req.centerId } }),
       academicYears: await prisma.academicYear.findMany({ where: { centerId: req.centerId } }),
+      promotions: await prisma.promotion.findMany({ where: { centerId: req.centerId } }),
       classes: await prisma.classe.findMany({ where: { centerId: req.centerId } }),
       students: await prisma.student.findMany({ where: { centerId: req.centerId } }),
       inscriptions: await prisma.inscription.findMany({ where: { centerId: req.centerId } }),
+      formateurs: await prisma.formateur.findMany({ where: { centerId: req.centerId } }),
+      subjectCategories: await prisma.subjectCategory.findMany({ where: { centerId: req.centerId } }),
       subjects: await prisma.subject.findMany({ where: { centerId: req.centerId } }),
+      filiereSubjects: await prisma.filiereSubject.findMany({ where: { centerId: req.centerId } }),
       subjectOfferings: await prisma.subjectOffering.findMany({ where: { subject: { centerId: req.centerId } } }),
       gradingPolicies: await prisma.gradingPolicy.findMany({ where: { centerId: req.centerId } }),
       gradePeriods: await prisma.gradePeriod.findMany({ where: { centerId: req.centerId } }),
       grades: await prisma.grade.findMany({ where: { centerId: req.centerId } }),
       subjectResults: await prisma.subjectResult.findMany({ where: { centerId: req.centerId } }),
       deliberations: await prisma.deliberation.findMany({ where: { centerId: req.centerId } }),
-      studentDeliberations: await prisma.studentDeliberation.findMany({
-        where: { deliberation: { centerId: req.centerId } },
-      }),
+      studentDeliberations: await prisma.studentDeliberation.findMany({ where: { deliberation: { centerId: req.centerId } } }),
+      documentTemplates: await prisma.documentTemplate.findMany({ where: { centerId: req.centerId } }),
+      documents: await prisma.document.findMany({ where: { centerId: req.centerId } }),
     };
 
     const output = fs.createWriteStream(zipPath);
     const archive = archiver("zip", { zlib: { level: 9 } });
 
     output.on("close", () => {
-      console.log(`[Backup] Archive compressée générée : ${zipFilename}`);
+      console.log(`[Backup] Archive V3 générée : ${zipFilename}`);
       res.json({ success: true, file: zipFilename });
     });
     archive.on("error", (err) => { throw err; });
     archive.pipe(output);
     archive.append(JSON.stringify(dumpData, null, 2), { name: "db_dump.json" });
 
-    // Médias du centre (logos, photos, documents) — tout storage/{centerId}
-    // à l'exception du dossier backups lui-même (éviter une archive récursive).
+    // Médias
     const mediaRoot = centerStoragePath(req.centerId);
     if (fs.existsSync(mediaRoot)) {
       for (const entry of fs.readdirSync(mediaRoot)) {
@@ -154,8 +145,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
   }
 });
 
-// Opération la plus destructrice de l'application (TRUNCATE CASCADE) —
-// gardée derrière la permission la plus stricte du module.
+// Restauration transactionnelle sécurisée (TRUNCATE CASCADE)
 router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
   const { filename } = req.body || {};
   if (!filename) return res.status(400).json({ error: "Nom de fichier requis." });
@@ -182,10 +172,12 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
 
     const tablesToTruncate = [
       "StudentDeliberation", "Deliberation", "SubjectResult", "Grade", "SubjectOffering",
-      "GradePeriod", "GradingPolicy", "Inscription", "Student", "Classe",
-      "Salle", "AcademicYear", "Niveau", "Filiere", "ProgramType",
+      "FiliereSubject", "SubjectCategory", "Promotion", "GradePeriod", "GradingPolicy",
+      "Inscription", "Student", "Classe", "Salle", "AcademicYear", "Niveau", "Filiere",
+      "ProgramType", "Subject", "Formateur", "Document", "DocumentTemplate",
       "Permission", "User", "Role", "Setting", "Subscription", "Center",
     ];
+
     for (const table of tablesToTruncate) {
       await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE;`);
     }
@@ -213,6 +205,7 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
         data: dumpData.academicYears.map((y) => ({ ...y, startDate: new Date(y.startDate), endDate: new Date(y.endDate) })),
       });
     }
+    if (dumpData.promotions?.length) await prisma.promotion.createMany({ data: dumpData.promotions });
     if (dumpData.classes?.length) await prisma.classe.createMany({ data: dumpData.classes });
     if (dumpData.students?.length) {
       await prisma.student.createMany({
@@ -222,7 +215,10 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
     if (dumpData.inscriptions?.length) {
       await prisma.inscription.createMany({ data: dumpData.inscriptions.map((i) => ({ ...i, createdAt: new Date(i.createdAt) })) });
     }
+    if (dumpData.formateurs?.length) await prisma.formateur.createMany({ data: dumpData.formateurs });
+    if (dumpData.subjectCategories?.length) await prisma.subjectCategory.createMany({ data: dumpData.subjectCategories });
     if (dumpData.subjects?.length) await prisma.subject.createMany({ data: dumpData.subjects });
+    if (dumpData.filiereSubjects?.length) await prisma.filiereSubject.createMany({ data: dumpData.filiereSubjects });
     if (dumpData.gradingPolicies?.length) {
       await prisma.gradingPolicy.createMany({
         data: dumpData.gradingPolicies.map((g) => ({ ...g, effectiveFrom: new Date(g.effectiveFrom), effectiveTo: g.effectiveTo ? new Date(g.effectiveTo) : null })),
@@ -244,6 +240,10 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
       await prisma.deliberation.createMany({ data: dumpData.deliberations.map((d) => ({ ...d, juryDate: new Date(d.juryDate) })) });
     }
     if (dumpData.studentDeliberations?.length) await prisma.studentDeliberation.createMany({ data: dumpData.studentDeliberations });
+    if (dumpData.documentTemplates?.length) await prisma.documentTemplate.createMany({ data: dumpData.documentTemplates });
+    if (dumpData.documents?.length) {
+      await prisma.document.createMany({ data: dumpData.documents.map((d) => ({ ...d, generatedAt: new Date(d.generatedAt) })) });
+    }
 
     const extractedMediaDir = path.join(tmpDir, "media");
     if (fs.existsSync(extractedMediaDir)) {
@@ -256,12 +256,12 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    console.log(`[Restauration] Effectuée depuis : ${filename}`);
-    res.json({ success: true, message: "Système et fichiers restaurés avec succès." });
+    console.log(`[Restauration V3] Effectuée avec succès depuis : ${filename}`);
+    res.json({ success: true, message: "Base relationnelle et médias V3 restaurés avec succès." });
   } catch (err) {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     next(err);
   }
 });
 
-module.exports = router;    
+module.exports = router;

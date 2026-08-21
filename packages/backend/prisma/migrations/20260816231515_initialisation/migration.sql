@@ -6,6 +6,15 @@ CREATE TABLE "Center" (
     "logo" TEXT,
     "email" TEXT,
     "phone" TEXT,
+    "address" TEXT,
+    "city" TEXT,
+    "postalCode" TEXT,
+    "country" TEXT,
+    "website" TEXT,
+    "registrationNumber" TEXT,
+    "directorName" TEXT,
+    "directorTitle" TEXT,
+    "description" TEXT,
     "subscriptionPlan" TEXT NOT NULL DEFAULT 'local',
     "maxStorage" BIGINT,
     "storageUsedBytes" BIGINT NOT NULL DEFAULT 0,
@@ -128,6 +137,19 @@ CREATE TABLE "AcademicYear" (
 );
 
 -- CreateTable
+CREATE TABLE "Promotion" (
+    "id" TEXT NOT NULL,
+    "centerId" TEXT NOT NULL,
+    "filiereId" TEXT NOT NULL,
+    "academicYearId" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "expectedEndYear" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Promotion_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Salle" (
     "id" TEXT NOT NULL,
     "centerId" TEXT NOT NULL,
@@ -157,7 +179,13 @@ CREATE TABLE "Student" (
     "matricule" TEXT NOT NULL,
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
+    "gender" TEXT,
     "birthDate" TIMESTAMP(3),
+    "birthPlace" TEXT,
+    "phone" TEXT,
+    "guardianName" TEXT,
+    "guardianPhone" TEXT,
+    "entryDiploma" TEXT,
     "photoPath" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMP(3),
@@ -172,10 +200,50 @@ CREATE TABLE "Inscription" (
     "studentId" TEXT NOT NULL,
     "classeId" TEXT NOT NULL,
     "academicYearId" TEXT NOT NULL,
+    "promotionId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'en_cours',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Inscription_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SubjectCategory" (
+    "id" TEXT NOT NULL,
+    "centerId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT,
+    "order" INTEGER NOT NULL DEFAULT 1,
+    "isEliminatory" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SubjectCategory_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Subject" (
+    "id" TEXT NOT NULL,
+    "centerId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "code" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Subject_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FiliereSubject" (
+    "id" TEXT NOT NULL,
+    "centerId" TEXT NOT NULL,
+    "filiereId" TEXT NOT NULL,
+    "niveauOrder" INTEGER NOT NULL,
+    "semesterOrder" INTEGER NOT NULL,
+    "subjectId" TEXT NOT NULL,
+    "categoryId" TEXT,
+    "defaultCoefficient" DOUBLE PRECISION NOT NULL DEFAULT 2.0,
+    "defaultVolumeHoraire" INTEGER,
+
+    CONSTRAINT "FiliereSubject_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -185,19 +253,27 @@ CREATE TABLE "Formateur" (
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
     "email" TEXT,
+    "phone" TEXT,
+    "specialite" TEXT,
     "userId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Formateur_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "Subject" (
+CREATE TABLE "SubjectOffering" (
     "id" TEXT NOT NULL,
-    "centerId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "code" TEXT,
+    "subjectId" TEXT NOT NULL,
+    "classeId" TEXT NOT NULL,
+    "gradePeriodId" TEXT NOT NULL,
+    "categoryId" TEXT,
+    "formateurId" TEXT,
+    "coefficient" DOUBLE PRECISION NOT NULL DEFAULT 2.0,
+    "volumeHoraire" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
 
-    CONSTRAINT "Subject_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "SubjectOffering_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -229,19 +305,6 @@ CREATE TABLE "GradePeriod" (
 );
 
 -- CreateTable
-CREATE TABLE "SubjectOffering" (
-    "id" TEXT NOT NULL,
-    "subjectId" TEXT NOT NULL,
-    "classeId" TEXT NOT NULL,
-    "gradePeriodId" TEXT NOT NULL,
-    "coefficient" DOUBLE PRECISION NOT NULL,
-    "volumeHoraire" INTEGER,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-
-    CONSTRAINT "SubjectOffering_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "Grade" (
     "id" TEXT NOT NULL,
     "centerId" TEXT NOT NULL,
@@ -252,6 +315,8 @@ CREATE TABLE "Grade" (
     "label" TEXT,
     "value" DOUBLE PRECISION NOT NULL,
     "maxValue" DOUBLE PRECISION NOT NULL DEFAULT 20,
+    "isAbsent" BOOLEAN NOT NULL DEFAULT false,
+    "absenceReason" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Grade_pkey" PRIMARY KEY ("id")
@@ -267,8 +332,8 @@ CREATE TABLE "SubjectResult" (
     "computationMode" TEXT NOT NULL,
     "ccAverage" DOUBLE PRECISION,
     "normalAverage" DOUBLE PRECISION,
-    "ccWeight" DOUBLE PRECISION,
-    "normalWeight" DOUBLE PRECISION,
+    "ccWeight" DOUBLE PRECISION NOT NULL,
+    "normalWeight" DOUBLE PRECISION NOT NULL,
     "gradingPolicyId" TEXT,
     "coefficient" DOUBLE PRECISION NOT NULL,
     "finalGrade" DOUBLE PRECISION NOT NULL,
@@ -419,6 +484,9 @@ CREATE UNIQUE INDEX "ProgramType_centerId_code_key" ON "ProgramType"("centerId",
 CREATE UNIQUE INDEX "AcademicYear_centerId_label_key" ON "AcademicYear"("centerId", "label");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Promotion_centerId_filiereId_academicYearId_key" ON "Promotion"("centerId", "filiereId", "academicYearId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Classe_filiereId_niveauId_academicYearId_key" ON "Classe"("filiereId", "niveauId", "academicYearId");
 
 -- CreateIndex
@@ -428,16 +496,25 @@ CREATE UNIQUE INDEX "Student_centerId_matricule_key" ON "Student"("centerId", "m
 CREATE UNIQUE INDEX "Inscription_studentId_academicYearId_key" ON "Inscription"("studentId", "academicYearId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "SubjectCategory_centerId_name_key" ON "SubjectCategory"("centerId", "name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Subject_centerId_code_key" ON "Subject"("centerId", "code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "FiliereSubject_filiereId_niveauOrder_semesterOrder_subjectI_key" ON "FiliereSubject"("filiereId", "niveauOrder", "semesterOrder", "subjectId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Formateur_userId_key" ON "Formateur"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SubjectOffering_subjectId_classeId_gradePeriodId_key" ON "SubjectOffering"("subjectId", "classeId", "gradePeriodId");
 
 -- CreateIndex
 CREATE INDEX "GradingPolicy_centerId_filiereId_effectiveFrom_idx" ON "GradingPolicy"("centerId", "filiereId", "effectiveFrom");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "GradePeriod_centerId_academicYearId_type_order_key" ON "GradePeriod"("centerId", "academicYearId", "type", "order");
-
--- CreateIndex
-CREATE UNIQUE INDEX "SubjectOffering_subjectId_classeId_gradePeriodId_key" ON "SubjectOffering"("subjectId", "classeId", "gradePeriodId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "SubjectResult_studentId_subjectId_gradePeriodId_key" ON "SubjectResult"("studentId", "subjectId", "gradePeriodId");
@@ -488,6 +565,15 @@ ALTER TABLE "Niveau" ADD CONSTRAINT "Niveau_filiereId_fkey" FOREIGN KEY ("filier
 ALTER TABLE "AcademicYear" ADD CONSTRAINT "AcademicYear_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Promotion" ADD CONSTRAINT "Promotion_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Promotion" ADD CONSTRAINT "Promotion_filiereId_fkey" FOREIGN KEY ("filiereId") REFERENCES "Filiere"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Promotion" ADD CONSTRAINT "Promotion_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Salle" ADD CONSTRAINT "Salle_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -521,28 +607,58 @@ ALTER TABLE "Inscription" ADD CONSTRAINT "Inscription_classeId_fkey" FOREIGN KEY
 ALTER TABLE "Inscription" ADD CONSTRAINT "Inscription_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Formateur" ADD CONSTRAINT "Formateur_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Inscription" ADD CONSTRAINT "Inscription_promotionId_fkey" FOREIGN KEY ("promotionId") REFERENCES "Promotion"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectCategory" ADD CONSTRAINT "SubjectCategory_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Subject" ADD CONSTRAINT "Subject_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "FiliereSubject" ADD CONSTRAINT "FiliereSubject_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FiliereSubject" ADD CONSTRAINT "FiliereSubject_filiereId_fkey" FOREIGN KEY ("filiereId") REFERENCES "Filiere"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FiliereSubject" ADD CONSTRAINT "FiliereSubject_subjectId_fkey" FOREIGN KEY ("subjectId") REFERENCES "Subject"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FiliereSubject" ADD CONSTRAINT "FiliereSubject_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "SubjectCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Formateur" ADD CONSTRAINT "Formateur_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Formateur" ADD CONSTRAINT "Formateur_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_subjectId_fkey" FOREIGN KEY ("subjectId") REFERENCES "Subject"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_classeId_fkey" FOREIGN KEY ("classeId") REFERENCES "Classe"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_gradePeriodId_fkey" FOREIGN KEY ("gradePeriodId") REFERENCES "GradePeriod"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "SubjectCategory"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_formateurId_fkey" FOREIGN KEY ("formateurId") REFERENCES "Formateur"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "GradingPolicy" ADD CONSTRAINT "GradingPolicy_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "GradingPolicy" ADD CONSTRAINT "GradingPolicy_filiereId_fkey" FOREIGN KEY ("filiereId") REFERENCES "Filiere"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "GradePeriod" ADD CONSTRAINT "GradePeriod_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "GradePeriod" ADD CONSTRAINT "GradePeriod_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_subjectId_fkey" FOREIGN KEY ("subjectId") REFERENCES "Subject"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_classeId_fkey" FOREIGN KEY ("classeId") REFERENCES "Classe"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SubjectOffering" ADD CONSTRAINT "SubjectOffering_gradePeriodId_fkey" FOREIGN KEY ("gradePeriodId") REFERENCES "GradePeriod"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Grade" ADD CONSTRAINT "Grade_centerId_fkey" FOREIGN KEY ("centerId") REFERENCES "Center"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

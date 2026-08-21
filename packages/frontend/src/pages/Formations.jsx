@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+// packages/frontend/src/pages/Formations.jsx
+import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../lib/apiClient";
@@ -19,6 +20,9 @@ export default function Formations() {
   const [salles, setSalles] = useState([]);
   const [classes, setClasses] = useState([]);
 
+  // Recherche textuelle standardisée
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Modales
   const [modalType, setModalType] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -34,8 +38,6 @@ export default function Formations() {
   const [showTransitionModal, setShowTransitionModal] = useState(false);
   const [transitionData, setTransitionData] = useState({ previousYearId: "", newYearId: "" });
   const [transitioning, setTransitioning] = useState(false);
-
-  // Duplication de classes
   const [duplicating, setDuplicating] = useState(false);
 
   async function loadAll() {
@@ -81,7 +83,7 @@ export default function Formations() {
         expectedEndYear: "2028",
       });
     }
-    if (type === "year") setFormPayload({ label: "", startDate: "", endDate: "", isCurrent: true });
+    if (type === "year") setFormPayload({ label: "", startDate: "", endDate: "", isCurrent: false });
     if (type === "salle") setFormPayload({ name: "", capacity: "" });
     if (type === "classe") {
       const f = filieres[0];
@@ -140,7 +142,7 @@ export default function Formations() {
   async function handleSetCurrentYear(yearId) {
     try {
       await apiFetch(`/academic-years/${yearId}/set-current`, { method: "PUT" });
-      setSuccessMsg("Session académique activée.");
+      setSuccessMsg("Session académique activée avec succès.");
       setTimeout(() => setSuccessMsg(""), 3000);
       await loadAll();
     } catch (err) {
@@ -149,7 +151,7 @@ export default function Formations() {
   }
 
   async function handleDuplicateClasses(targetYearId) {
-    const prevYear = academicYears.find((y) => !y.isCurrent && y.id !== targetYearId);
+    const prevYear = academicYears.find((y) => y.status === "CLOSED" || (!y.isCurrent && y.id !== targetYearId));
     if (!prevYear) {
       setError("Aucune session précédente trouvée pour dupliquer les classes.");
       return;
@@ -217,16 +219,42 @@ export default function Formations() {
   }
 
   const currentAcademicYear = academicYears.find((y) => y.isCurrent);
+  const upcomingYear = academicYears.find((y) => y.status === "UPCOMING");
+
+  // Filtres de recherche textuelle réactifs
+  const filteredFilieres = useMemo(() => {
+    if (!searchQuery.trim()) return filieres;
+    const q = searchQuery.toLowerCase();
+    return filieres.filter((f) => f.name.toLowerCase().includes(q) || f.programType?.code?.toLowerCase().includes(q));
+  }, [filieres, searchQuery]);
+
+  const filteredClasses = useMemo(() => {
+    if (!searchQuery.trim()) return classes;
+    const q = searchQuery.toLowerCase();
+    return classes.filter((c) => c.label.toLowerCase().includes(q) || c.filiere?.name.toLowerCase().includes(q));
+  }, [classes, searchQuery]);
+
+  const filteredPromotions = useMemo(() => {
+    if (!searchQuery.trim()) return promotions;
+    const q = searchQuery.toLowerCase();
+    return promotions.filter((p) => p.label.toLowerCase().includes(q) || p.filiere?.name.toLowerCase().includes(q));
+  }, [promotions, searchQuery]);
+
+  const filteredSalles = useMemo(() => {
+    if (!searchQuery.trim()) return salles;
+    const q = searchQuery.toLowerCase();
+    return salles.filter((s) => s.name.toLowerCase().includes(q));
+  }, [salles, searchQuery]);
 
   if (loading) return <p className="text-sm text-on-surface-variant font-medium">Chargement du référentiel académique...</p>;
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-md max-w-7xl mx-auto">
-      {/* En-tête avec raccourcis */}
+      {/* En-tête avec actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-on-surface">Structure Académique &amp; Formations (V2)</h1>
+            <h1 className="text-lg font-bold text-on-surface">Structure Académique &amp; Formations</h1>
             <span className="rounded-md bg-primary-light text-primary font-bold text-[11px] px-2 py-0.5">
               Session active : {currentAcademicYear?.label || "Aucune"}
             </span>
@@ -275,12 +303,13 @@ export default function Formations() {
                 onClick={() => {
                   setModalError(null);
                   setTransitionData({
-                    previousYearId: academicYears.find((y) => !y.isCurrent)?.id || "",
-                    newYearId: currentAcademicYear?.id || academicYears[0]?.id || "",
+                    previousYearId: currentAcademicYear?.id || "",
+                    newYearId: upcomingYear?.id || "",
                   });
                   setShowTransitionModal(true);
                 }}
-                className="rounded-md bg-primary-light border border-primary/20 px-3 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all shadow-xs flex items-center gap-1"
+                disabled={!upcomingYear}
+                className="rounded-md bg-primary-light border border-primary/20 px-3 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all shadow-xs flex items-center gap-1 disabled:opacity-40"
               >
                 <Icon name="swap_horiz" className="text-[16px]" />
                 <span>Transition Annuelle</span>
@@ -315,7 +344,7 @@ export default function Formations() {
       {/* Onglets */}
       <div className="flex gap-1.5 p-1 bg-surface-container-lowest rounded-md border border-outline-variant/30 shadow-xs overflow-x-auto">
         <button
-          onClick={() => setTab("filieres")}
+          onClick={() => { setTab("filieres"); setSearchQuery(""); }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
             tab === "filieres" ? "bg-primary text-on-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container/60"
           }`}
@@ -325,7 +354,7 @@ export default function Formations() {
         </button>
 
         <button
-          onClick={() => setTab("promotions")}
+          onClick={() => { setTab("promotions"); setSearchQuery(""); }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
             tab === "promotions" ? "bg-primary text-on-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container/60"
           }`}
@@ -335,7 +364,7 @@ export default function Formations() {
         </button>
 
         <button
-          onClick={() => setTab("classes")}
+          onClick={() => { setTab("classes"); setSearchQuery(""); }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
             tab === "classes" ? "bg-primary text-on-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container/60"
           }`}
@@ -345,7 +374,7 @@ export default function Formations() {
         </button>
 
         <button
-          onClick={() => setTab("annees")}
+          onClick={() => { setTab("annees"); setSearchQuery(""); }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
             tab === "annees" ? "bg-primary text-on-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container/60"
           }`}
@@ -355,7 +384,7 @@ export default function Formations() {
         </button>
 
         <button
-          onClick={() => setTab("salles")}
+          onClick={() => { setTab("salles"); setSearchQuery(""); }}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
             tab === "salles" ? "bg-primary text-on-primary shadow-xs" : "text-on-surface-variant hover:bg-surface-container/60"
           }`}
@@ -394,9 +423,15 @@ export default function Formations() {
           </div>
 
           <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-            <div className="p-md border-b border-outline-variant/20 flex items-center justify-between">
+            <div className="p-md border-b border-outline-variant/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <h2 className="text-sm font-bold text-on-surface">Référentiel des Filières &amp; Niveaux</h2>
-              <span className="text-xs text-on-surface-variant font-mono">{filieres.length} filière(s)</span>
+              <input
+                type="text"
+                placeholder="Rechercher filière..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-xs px-3 py-1.5 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs whitespace-nowrap">
@@ -410,7 +445,7 @@ export default function Formations() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/15">
-                  {filieres.map((f) => (
+                  {filteredFilieres.map((f) => (
                     <tr key={f.id} className="hover:bg-surface-container/20">
                       <td className="px-md py-3 font-bold text-on-surface">{f.name}</td>
                       <td className="px-md py-3 font-bold text-primary font-mono">{f.programType?.code}</td>
@@ -446,12 +481,18 @@ export default function Formations() {
       {/* Onglet 2 : Promotions & Cohortes */}
       {tab === "promotions" && (
         <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-          <div className="p-md border-b border-outline-variant/20 flex items-center justify-between">
+          <div className="p-md border-b border-outline-variant/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-on-surface">Promotions &amp; Cohortes d'Entrée</h2>
               <p className="text-xs text-on-surface-variant">Les promotions regroupent les apprenants entrés ensemble en Niveau 1 jusqu'à leur diplomation.</p>
             </div>
-            <span className="text-xs font-mono text-on-surface-variant">{promotions.length} promotion(s)</span>
+            <input
+              type="text"
+              placeholder="Rechercher promotion..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="text-xs px-3 py-1.5 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -467,7 +508,7 @@ export default function Formations() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/15">
-                {promotions.map((p) => (
+                {filteredPromotions.map((p) => (
                   <tr key={p.id} className="hover:bg-surface-container/20">
                     <td className="px-md py-3 font-bold text-on-surface">{p.label}</td>
                     <td className="px-md py-3">
@@ -498,12 +539,18 @@ export default function Formations() {
       {/* Onglet 3 : Classes Promotionnelles */}
       {tab === "classes" && (
         <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-          <div className="p-md border-b border-outline-variant/20 flex items-center justify-between">
+          <div className="p-md border-b border-outline-variant/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <h2 className="text-sm font-bold text-on-surface">Classes Promotionnelles</h2>
               <p className="text-xs text-on-surface-variant">Les classes sont des contenants rattachés à une session, une filière et un niveau précis.</p>
             </div>
-            <span className="text-xs font-mono text-on-surface-variant">{classes.length} classe(s)</span>
+            <input
+              type="text"
+              placeholder="Rechercher classe..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="text-xs px-3 py-1.5 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
+            />
           </div>
 
           <div className="overflow-x-auto">
@@ -519,8 +566,9 @@ export default function Formations() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/15">
-                {classes.map((c) => {
-                  const isClosed = !c.academicYear?.isCurrent;
+                {filteredClasses.map((c) => {
+                  const isClosed = c.academicYear?.status === "CLOSED" || (!c.academicYear?.isCurrent && c.academicYear?.status !== "UPCOMING");
+
                   return (
                     <tr key={c.id} className={`hover:bg-surface-container/20 ${isClosed ? "opacity-60 bg-surface/50" : ""}`}>
                       <td className="px-md py-3 font-bold text-on-surface text-xs">
@@ -550,18 +598,22 @@ export default function Formations() {
                             title="Voir la liste des élèves"
                           >
                             <Icon name="badge" className="text-[14px]" />
-                            <span>Effectif &amp; Actes</span>
+                            <span>Effectif</span>
                           </button>
 
-                          {!isClosed && (
-                            <button onClick={() => openEdit("classe", c)} className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container">
-                              Modifier
-                            </button>
-                          )}
-                          {!isClosed && (
-                            <button onClick={() => setDeleteTarget({ endpoint: "classes", id: c.id, name: c.label })} className="text-error hover:bg-error-container/20 p-1.5 rounded-md">
-                              <Icon name="delete" className="text-[16px]" />
-                            </button>
+                          {!isClosed ? (
+                            <>
+                              <button onClick={() => openEdit("classe", c)} className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container">
+                                Modifier
+                              </button>
+                              <button onClick={() => setDeleteTarget({ endpoint: "classes", id: c.id, name: c.label })} className="text-error hover:bg-error-container/20 p-1.5 rounded-md">
+                                <Icon name="delete" className="text-[16px]" />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-mono text-on-surface-variant/60 font-semibold px-2 py-1">
+                              Archive scellée
+                            </span>
                           )}
                         </div>
                       </td>
@@ -574,13 +626,15 @@ export default function Formations() {
         </div>
       )}
 
-      {/* Onglet 4 : Sessions Académiques */}
+      {/* Onglet 4 : Sessions Académiques (Machine d'États) */}
       {tab === "annees" && (
         <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
           <div className="p-md border-b border-outline-variant/20 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-bold text-on-surface">Sessions Académiques</h2>
-              <p className="text-xs text-on-surface-variant">L'activation d'une session verrouille les inscriptions sur les sessions antérieures.</p>
+              <h2 className="text-sm font-bold text-on-surface">Sessions Académiques (Cycle de Vie)</h2>
+              <p className="text-xs text-on-surface-variant">
+                Une session clôturée devient définitivement immuable (lecture seule). Une seule session préparatoire peut exister en avance.
+              </p>
             </div>
             <span className="text-xs font-mono text-on-surface-variant">{academicYears.length} session(s)</span>
           </div>
@@ -593,77 +647,111 @@ export default function Formations() {
                   <th className="px-md py-3">Classes</th>
                   <th className="px-md py-3">Promotions</th>
                   <th className="px-md py-3">Inscrits</th>
-                  <th className="px-md py-3">État</th>
+                  <th className="px-md py-3">État du Cycle de Vie</th>
                   <th className="px-md py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/15">
-                {academicYears.map((y) => (
-                  <tr key={y.id} className="hover:bg-surface-container/20">
-                    <td className="px-md py-3 font-bold text-on-surface text-sm">{y.label}</td>
-                    <td className="px-md py-3 text-on-surface-variant">
-                      Du {new Date(y.startDate).toLocaleDateString("fr-FR")} au {new Date(y.endDate).toLocaleDateString("fr-FR")}
-                    </td>
-                    <td className="px-md py-3 font-mono">{y._count?.classes || 0}</td>
-                    <td className="px-md py-3 font-mono">{y._count?.promotions || 0}</td>
-                    <td className="px-md py-3 font-mono font-bold text-primary">{y._count?.inscriptions || 0}</td>
-                    <td className="px-md py-3">
-                      {y.isCurrent ? (
-                        <span className="rounded-md bg-success-light text-success font-bold px-2 py-0.5 text-[10px] border border-success/20">
-                          Active (En cours)
-                        </span>
-                      ) : (
-                        <span className="rounded-md bg-surface text-on-surface-variant px-2 py-0.5 text-[10px] border border-outline-variant/30">
-                          Clôturée
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-md py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button onClick={() => openEdit("year", y)} className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container">
-                          Modifier
-                        </button>
-                        {!y.isCurrent && (
-                          <button onClick={() => handleSetCurrentYear(y.id)} className="rounded-md border border-primary/30 px-2.5 py-1 text-primary font-bold hover:bg-primary-light">
-                            Définir Active
-                          </button>
+                {academicYears.map((y) => {
+                  const isCurrent = y.isCurrent || y.status === "CURRENT";
+                  const isUpcoming = y.status === "UPCOMING" && !y.isCurrent;
+                  const isClosed = y.status === "CLOSED" || (!y.isCurrent && y.status !== "UPCOMING");
+
+                  return (
+                    <tr key={y.id} className="hover:bg-surface-container/20">
+                      <td className="px-md py-3 font-bold text-on-surface text-sm">{y.label}</td>
+                      <td className="px-md py-3 text-on-surface-variant">
+                        Du {new Date(y.startDate).toLocaleDateString("fr-FR")} au {new Date(y.endDate).toLocaleDateString("fr-FR")}
+                      </td>
+                      <td className="px-md py-3 font-mono">{y._count?.classes || 0}</td>
+                      <td className="px-md py-3 font-mono">{y._count?.promotions || 0}</td>
+                      <td className="px-md py-3 font-mono font-bold text-primary">{y._count?.inscriptions || 0}</td>
+                      <td className="px-md py-3">
+                        {isCurrent && (
+                          <span className="rounded-md bg-success-light text-success font-bold px-2.5 py-1 text-[10px] border border-success/20">
+                            ● Session Active (En cours)
+                          </span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        {isUpcoming && (
+                          <span className="rounded-md bg-primary-light text-primary font-bold px-2.5 py-1 text-[10px] border border-primary/20">
+                            ★ Préparatoire (Rentrée Prochaine)
+                          </span>
+                        )}
+                        {isClosed && (
+                          <span className="rounded-md bg-surface text-on-surface-variant font-bold px-2.5 py-1 text-[10px] border border-outline-variant/40">
+                            🔒 Clôturée (Archive scellée)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-md py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!isClosed ? (
+                            <>
+                              <button onClick={() => openEdit("year", y)} className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container">
+                                Modifier
+                              </button>
+                              {isUpcoming && (
+                                <button onClick={() => handleSetCurrentYear(y.id)} className="rounded-md bg-primary text-white font-bold px-2.5 py-1 shadow-xs hover:bg-primary-dark">
+                                  Activer la Session
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-mono text-on-surface-variant/60 font-semibold px-2 py-1">
+                              Lecture seule
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Onglet 5 : Salles & Ateliers */}
+      {/* Onglet 5 : Salles */}
       {tab === "salles" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md">
-          {salles.map((s) => (
-            <div key={s.id} className="p-md rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-xs text-on-surface">{s.name}</h3>
-                <p className="text-[11px] text-on-surface-variant mt-0.5">Capacité : {s.capacity || "?"} places</p>
-                <p className="text-[10px] font-mono text-primary mt-1">{s._count?.classes || 0} classe(s) hébergée(s)</p>
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => openEdit("salle", s)} className="text-on-surface-variant hover:text-primary p-1.5 rounded-md">
-                  <Icon name="edit" className="text-[16px]" />
-                </button>
-                <button onClick={() => setDeleteTarget({ endpoint: "salles", id: s.id, name: s.name })} className="text-error hover:bg-error-container/20 p-1.5 rounded-md">
-                  <Icon name="delete" className="text-[16px]" />
-                </button>
-              </div>
+        <div className="space-y-md">
+          <div className="flex justify-between items-center bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-on-surface">Salles &amp; Ateliers de Formation</h3>
+              <p className="text-xs text-on-surface-variant">Gestion de la capacité d'accueil et des affectations.</p>
             </div>
-          ))}
+            <input
+              type="text"
+              placeholder="Rechercher salle..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="text-xs px-3 py-1.5 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md">
+            {filteredSalles.map((s) => (
+              <div key={s.id} className="p-md rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-xs text-on-surface">{s.name}</h3>
+                  <p className="text-[11px] text-on-surface-variant mt-0.5">Capacité : {s.capacity || "?"} places</p>
+                  <p className="text-[10px] font-mono text-primary mt-1">{s._count?.classes || 0} classe(s) hébergée(s)</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit("salle", s)} className="text-on-surface-variant hover:text-primary p-1.5 rounded-md">
+                    <Icon name="edit" className="text-[16px]" />
+                  </button>
+                  <button onClick={() => setDeleteTarget({ endpoint: "salles", id: s.id, name: s.name })} className="text-error hover:bg-error-container/20 p-1.5 rounded-md">
+                    <Icon name="delete" className="text-[16px]" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* =====================================================================
-          PORTAIL DES MODALES
-          ===================================================================== */}
+      {/* PORTAIL DES MODALES */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {/* MODALE TRANSITION ANNUELLE */}
@@ -674,70 +762,46 @@ export default function Formations() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleExecuteTransition}
-                className="w-full max-w-lg rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-lg rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                <div className="flex items-center justify-between border-b pb-2">
                   <div className="flex items-center gap-2">
                     <Icon name="swap_horiz" className="text-primary text-[22px]" />
-                    <div>
-                      <h3 className="text-sm font-bold text-on-surface">Moteur de Transition Annuelle</h3>
-                      <p className="text-xs text-on-surface-variant">Promotion des admis et réinscription des redoublants</p>
-                    </div>
+                    <h3 className="text-sm font-bold text-on-surface">Moteur de Transition Annuelle</h3>
                   </div>
-                  <button type="button" onClick={() => setShowTransitionModal(false)} className="text-on-surface-variant hover:text-on-surface">
-                    <Icon name="close" className="text-[18px]" />
-                  </button>
+                  <button type="button" onClick={() => setShowTransitionModal(false)} className="text-on-surface-variant"><Icon name="close" className="text-[18px]" /></button>
                 </div>
 
                 <div className="space-y-3 text-xs">
-                  <div className="p-3 rounded-md bg-surface border border-outline-variant/30 space-y-1.5">
-                    <p className="font-semibold text-on-surface">Règles automatiques appliquées :</p>
-                    <ul className="list-disc pl-4 space-y-1 text-on-surface-variant">
-                      <li>Les apprenants <strong>Admis</strong> montent au Niveau N+1 dans leur promotion d'origine.</li>
-                      <li>Les admis ayant complété la durée de cycle sont marqués <strong>Diplômés</strong> de leur promotion.</li>
-                      <li>Les apprenants <strong>Redoublants</strong> sont réinscrits au même niveau sur la nouvelle session.</li>
-                    </ul>
-                  </div>
-
+                  <p className="text-on-surface-variant leading-relaxed">
+                    Cette action va promouvoir les apprenants admis vers la nouvelle session et clore définitivement la session sortante.
+                  </p>
                   <div>
-                    <label className="font-semibold text-on-surface-variant uppercase block mb-1">Session sortante (source)</label>
-                    <select
-                      required
-                      value={transitionData.previousYearId}
-                      onChange={(e) => setTransitionData({ ...transitionData, previousYearId: e.target.value })}
-                      className={inputCls}
-                    >
-                      <option value="">Sélectionner la session source</option>
-                      {academicYears.map((y) => (
+                    <label className="font-semibold text-on-surface-variant uppercase block mb-1">Session sortante (à clôturer)</label>
+                    <select required value={transitionData.previousYearId} onChange={(e) => setTransitionData({ ...transitionData, previousYearId: e.target.value })} className={inputCls}>
+                      <option value="">Sélectionner la session</option>
+                      {academicYears.filter((y) => y.status !== "CLOSED").map((y) => (
                         <option key={y.id} value={y.id}>{y.label} ({y._count?.inscriptions || 0} inscrits)</option>
                       ))}
                     </select>
                   </div>
-
                   <div>
-                    <label className="font-semibold text-on-surface-variant uppercase block mb-1">Session active (destination)</label>
-                    <select
-                      required
-                      value={transitionData.newYearId}
-                      onChange={(e) => setTransitionData({ ...transitionData, newYearId: e.target.value })}
-                      className={inputCls}
-                    >
+                    <label className="font-semibold text-on-surface-variant uppercase block mb-1">Nouvelle session (destination)</label>
+                    <select required value={transitionData.newYearId} onChange={(e) => setTransitionData({ ...transitionData, newYearId: e.target.value })} className={inputCls}>
                       <option value="">Sélectionner la session cible</option>
-                      {academicYears.filter((y) => y.isCurrent).map((y) => (
-                        <option key={y.id} value={y.id}>{y.label} (Session active)</option>
+                      {academicYears.filter((y) => y.status === "UPCOMING" || y.isCurrent).map((y) => (
+                        <option key={y.id} value={y.id}>{y.label} ({y.status === "UPCOMING" ? "Préparatoire" : "Active"})</option>
                       ))}
                     </select>
                   </div>
                 </div>
 
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
+                {modalError && <p className="p-2 bg-error-container text-error text-xs rounded font-semibold">{modalError}</p>}
 
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setShowTransitionModal(false)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
-                    Annuler
-                  </button>
-                  <button type="submit" disabled={transitioning} className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark disabled:opacity-60 flex items-center gap-1.5">
-                    {transitioning ? "Traitement..." : "Lancer la transition"}
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button type="button" onClick={() => setShowTransitionModal(false)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>
+                  <button type="submit" disabled={transitioning} className="px-4 py-1.5 bg-primary text-white font-bold rounded text-xs shadow-xs">
+                    {transitioning ? "Transition en cours..." : "Exécuter la Transition"}
                   </button>
                 </div>
               </motion.form>
@@ -753,32 +817,29 @@ export default function Formations() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="w-full max-w-4xl rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md max-h-[92vh] flex flex-col justify-between"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3 flex-shrink-0">
+                <div className="flex items-center justify-between border-b pb-2 flex-shrink-0">
                   <div>
                     <h3 className="text-sm font-bold text-on-surface">{selectedClassDetail.label}</h3>
                     <p className="text-xs text-on-surface-variant">
                       Filière : {selectedClassDetail.filiere?.name} • Session : {selectedClassDetail.academicYear?.label} • Salle : {selectedClassDetail.salle?.name || "Non assignée"}
                     </p>
                   </div>
-                  <button onClick={() => setSelectedClassDetail(null)} className="text-on-surface-variant hover:text-on-surface p-1">
-                    <Icon name="close" className="text-[18px]" />
-                  </button>
+                  <button onClick={() => setSelectedClassDetail(null)} className="text-on-surface-variant p-1"><Icon name="close" className="text-[18px]" /></button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-3">
-                  <div className="flex justify-between items-center bg-surface p-2.5 rounded-md border border-outline-variant/30 text-xs">
-                    <span className="font-bold text-on-surface">Effectif total : {selectedClassDetail.inscriptions?.length || 0} apprenant(s)</span>
+                  <div className="p-2.5 bg-surface rounded border text-xs font-bold text-on-surface">
+                    Effectif total : {selectedClassDetail.inscriptions?.length || 0} apprenant(s)
                   </div>
-
                   {selectedClassDetail.inscriptions?.length === 0 ? (
                     <p className="text-xs text-on-surface-variant text-center py-6">Aucun apprenant inscrit dans cette classe.</p>
                   ) : (
                     <table className="w-full text-left text-xs whitespace-nowrap">
                       <thead>
-                        <tr className="border-b border-outline-variant/30 font-semibold uppercase text-on-surface-variant bg-surface">
+                        <tr className="border-b font-bold uppercase text-on-surface-variant bg-surface">
                           <th className="px-3 py-2">Matricule</th>
                           <th className="px-3 py-2">Nom &amp; Prénom</th>
-                          <th className="px-3 py-2">Promotion (Cohorte)</th>
+                          <th className="px-3 py-2">Cohorte</th>
                           <th className="px-3 py-2">Statut</th>
                         </tr>
                       </thead>
@@ -789,7 +850,7 @@ export default function Formations() {
                             <td className="px-3 py-2 font-semibold text-on-surface">{insc.student?.lastName} {insc.student?.firstName}</td>
                             <td className="px-3 py-2 font-mono text-on-surface-variant">{insc.promotion?.label || "—"}</td>
                             <td className="px-3 py-2">
-                              <span className="rounded-md bg-primary-light text-primary border border-primary/20 px-2 py-0.5 font-bold text-[10px] uppercase">
+                              <span className="rounded bg-primary-light text-primary border border-primary/20 px-2 py-0.5 font-bold text-[10px] uppercase">
                                 {insc.status}
                               </span>
                             </td>
@@ -800,16 +861,14 @@ export default function Formations() {
                   )}
                 </div>
 
-                <div className="flex justify-end pt-2 border-t border-outline-variant/20 flex-shrink-0">
-                  <button onClick={() => setSelectedClassDetail(null)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
-                    Fermer
-                  </button>
+                <div className="flex justify-end pt-2 border-t flex-shrink-0">
+                  <button onClick={() => setSelectedClassDetail(null)} className="px-4 py-1.5 border rounded text-xs font-semibold">Fermer</button>
                 </div>
               </motion.div>
             </div>
           )}
 
-          {/* MODALES CRUD (Cycle, Filière, Promotion, Année, Salle, Classe) */}
+          {/* MODALES CRUD STANDARD */}
           {modalType && (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
               <motion.form
@@ -817,25 +876,23 @@ export default function Formations() {
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleFormSubmit}
-                className="w-full max-w-md rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-md rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                <div className="flex items-center justify-between border-b pb-2">
                   <h3 className="text-sm font-bold text-on-surface">
                     {editingId ? "Modifier" : "Ajouter"} {modalType === "programType" ? "un Cycle" : modalType === "filiere" ? "une Filière" : modalType === "promotion" ? "une Promotion" : modalType === "year" ? "une Session" : modalType === "salle" ? "une Salle" : "une Classe"}
                   </h3>
-                  <button type="button" onClick={() => setModalType(null)} className="text-on-surface-variant hover:text-on-surface">
-                    <Icon name="close" className="text-[18px]" />
-                  </button>
+                  <button type="button" onClick={() => setModalType(null)} className="text-on-surface-variant"><Icon name="close" className="text-[18px]" /></button>
                 </div>
 
                 {modalType === "programType" && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Code</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Code *</label>
                       <input required placeholder="Ex: DQP" value={formPayload.code} onChange={(e) => setFormPayload({ ...formPayload, code: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Intitulé</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Intitulé *</label>
                       <input required placeholder="Diplôme de Qualification Professionnelle" value={formPayload.label} onChange={(e) => setFormPayload({ ...formPayload, label: e.target.value })} className={inputCls} />
                     </div>
                   </div>
@@ -844,17 +901,17 @@ export default function Formations() {
                 {modalType === "filiere" && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Cycle</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Cycle *</label>
                       <select required value={formPayload.programTypeId} onChange={(e) => setFormPayload({ ...formPayload, programTypeId: e.target.value })} className={inputCls}>
                         {programTypes.map((pt) => <option key={pt.id} value={pt.id}>{pt.code} — {pt.label}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Nom</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Nom de la filière *</label>
                       <input required placeholder="Ex: Froid et Climatisation" value={formPayload.name} onChange={(e) => setFormPayload({ ...formPayload, name: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Durée (Années)</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Durée du cycle (Années)</label>
                       <select value={formPayload.durationInYears} onChange={(e) => setFormPayload({ ...formPayload, durationInYears: parseInt(e.target.value) })} className={inputCls}>
                         <option value={1}>1 an (Niveau 1)</option>
                         <option value={2}>2 ans (Niveau 1 &amp; 2)</option>
@@ -869,13 +926,13 @@ export default function Formations() {
                     {!editingId && (
                       <>
                         <div>
-                          <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Filière</label>
+                          <label className="text-xs font-semibold uppercase block mb-1">Filière *</label>
                           <select required value={formPayload.filiereId} onChange={(e) => setFormPayload({ ...formPayload, filiereId: e.target.value })} className={inputCls}>
                             {filieres.map((f) => <option key={f.id} value={f.id}>{f.name} ({f.programType?.code})</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session d'entrée</label>
+                          <label className="text-xs font-semibold uppercase block mb-1">Session d'entrée *</label>
                           <select required value={formPayload.academicYearId} onChange={(e) => setFormPayload({ ...formPayload, academicYearId: e.target.value })} className={inputCls}>
                             {academicYears.map((ay) => <option key={ay.id} value={ay.id}>{ay.label}</option>)}
                           </select>
@@ -883,49 +940,106 @@ export default function Formations() {
                       </>
                     )}
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Intitulé de la promotion</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Libellé de la cohorte *</label>
                       <input required placeholder="Ex: Promotion 2026-2028" value={formPayload.label} onChange={(e) => setFormPayload({ ...formPayload, label: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Année de diplomation prévue</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Année de diplomation prévue</label>
                       <input placeholder="Ex: 2028" value={formPayload.expectedEndYear} onChange={(e) => setFormPayload({ ...formPayload, expectedEndYear: e.target.value })} className={inputCls} />
                     </div>
                   </div>
                 )}
 
-                {modalType === "year" && (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Intitulé</label>
-                      <input required placeholder="Ex: 2026-2027" value={formPayload.label} onChange={(e) => setFormPayload({ ...formPayload, label: e.target.value })} className={inputCls} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
+                {modalType === "year" && (() => {
+                  const labelRegex = /^\d{4}-\d{4}$/;
+                  const isLabelFormatValid = labelRegex.test((formPayload.label || "").trim());
+                  let isMathConsistent = false;
+                  if (isLabelFormatValid) {
+                    const [sY, eY] = formPayload.label.trim().split("-").map(Number);
+                    isMathConsistent = eY === sY + 1;
+                  }
+
+                  let diffDays = 0;
+                  let isDateOrderValid = false;
+                  let isDurationValid = false;
+                  let monthsCalc = 0;
+
+                  if (formPayload.startDate && formPayload.endDate) {
+                    const sDate = new Date(formPayload.startDate);
+                    const eDate = new Date(formPayload.endDate);
+                    if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime())) {
+                      diffDays = (eDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24);
+                      isDateOrderValid = diffDays > 0;
+                      isDurationValid = diffDays >= 240 && diffDays <= 430;
+                      monthsCalc = (diffDays / 30.44).toFixed(1);
+                    }
+                  }
+
+                  const isFormValid = isLabelFormatValid && isMathConsistent && isDateOrderValid && isDurationValid;
+
+                  return (
+                    <div className="space-y-3 text-xs">
                       <div>
-                        <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Début</label>
-                        <input required type="date" value={formPayload.startDate} onChange={(e) => setFormPayload({ ...formPayload, startDate: e.target.value })} className={inputCls} />
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="font-semibold uppercase text-on-surface-variant">Intitulé de la session *</label>
+                          <span className={`font-mono text-[10px] font-bold ${isLabelFormatValid && isMathConsistent ? "text-success" : "text-error"}`}>
+                            {isLabelFormatValid && isMathConsistent ? "✓ Format YYYY-YYYY Conforme" : "(Format obligatoire : 2026-2027)"}
+                          </span>
+                        </div>
+                        <input
+                          required
+                          placeholder="Ex: 2026-2027"
+                          value={formPayload.label}
+                          onChange={(e) => setFormPayload({ ...formPayload, label: e.target.value })}
+                          className={`${inputCls} font-mono ${!isLabelFormatValid && formPayload.label ? "border-error focus:border-error" : ""}`}
+                        />
                       </div>
-                      <div>
-                        <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Fin</label>
-                        <input required type="date" value={formPayload.endDate} onChange={(e) => setFormPayload({ ...formPayload, endDate: e.target.value })} className={inputCls} />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="font-semibold uppercase block mb-1 text-on-surface-variant">Date de Début *</label>
+                          <input
+                            required
+                            type="date"
+                            value={formPayload.startDate}
+                            onChange={(e) => setFormPayload({ ...formPayload, startDate: e.target.value })}
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className="font-semibold uppercase block mb-1 text-on-surface-variant">Date de Fin *</label>
+                          <input
+                            required
+                            type="date"
+                            value={formPayload.endDate}
+                            onChange={(e) => setFormPayload({ ...formPayload, endDate: e.target.value })}
+                            className={inputCls}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Indicateur de durée calculée en direct */}
+                      <div className={`p-2.5 rounded border text-[11px] font-mono flex items-center justify-between ${
+                        isDurationValid ? "bg-success-light/50 border-success/30 text-success" : "bg-surface border-outline-variant/40 text-on-surface-variant"
+                      }`}>
+                        <span>Durée académique calculée :</span>
+                        <strong className="font-bold">
+                          {monthsCalc > 0 ? `${monthsCalc} mois (${Math.round(diffDays)} jours)` : "—"}
+                          {isDurationValid ? " ✓ Valide (≥ 8 mois)" : " (Min. 8 mois / 240 j)"}
+                        </strong>
                       </div>
                     </div>
-                    {!editingId && (
-                      <label className="flex items-center gap-2 text-xs font-bold text-on-surface cursor-pointer pt-1">
-                        <input type="checkbox" checked={formPayload.isCurrent} onChange={(e) => setFormPayload({ ...formPayload, isCurrent: e.target.checked })} className="rounded-md accent-primary h-4 w-4" />
-                        <span>Définir comme session active</span>
-                      </label>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
 
                 {modalType === "salle" && (
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Nom de la salle / atelier</label>
-                      <input required placeholder="Ex: Atelier Froid B02" value={formPayload.name} onChange={(e) => setFormPayload({ ...formPayload, name: e.target.value })} className={inputCls} />
+                      <label className="text-xs font-semibold uppercase block mb-1">Nom de la salle / atelier *</label>
+                      <input required placeholder="Ex: Salle B04" value={formPayload.name} onChange={(e) => setFormPayload({ ...formPayload, name: e.target.value })} className={inputCls} />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Capacité d'accueil</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Capacité</label>
                       <input type="number" min={1} placeholder="30" value={formPayload.capacity} onChange={(e) => setFormPayload({ ...formPayload, capacity: e.target.value })} className={inputCls} />
                     </div>
                   </div>
@@ -936,7 +1050,7 @@ export default function Formations() {
                     {!editingId && (
                       <>
                         <div>
-                          <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Filière</label>
+                          <label className="text-xs font-semibold uppercase block mb-1">Filière *</label>
                           <select
                             required
                             value={formPayload.filiereId}
@@ -954,7 +1068,7 @@ export default function Formations() {
                           </select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Niveau</label>
+                          <label className="text-xs font-semibold uppercase block mb-1">Niveau *</label>
                           <select required value={formPayload.niveauId} onChange={(e) => setFormPayload({ ...formPayload, niveauId: e.target.value })} className={inputCls}>
                             {filieres.find((f) => f.id === formPayload.filiereId)?.niveaux?.map((n) => (
                               <option key={n.id} value={n.id}>Niveau {n.order}</option>
@@ -962,34 +1076,34 @@ export default function Formations() {
                           </select>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session active</label>
+                          <label className="text-xs font-semibold uppercase block mb-1">Session active *</label>
                           <select required value={formPayload.academicYearId} onChange={(e) => setFormPayload({ ...formPayload, academicYearId: e.target.value })} className={inputCls}>
-                            {academicYears.filter((y) => y.isCurrent).map((y) => (
-                              <option key={y.id} value={y.id}>{y.label} (Active)</option>
+                            {academicYears.filter((y) => y.status !== "CLOSED").map((y) => (
+                              <option key={y.id} value={y.id}>{y.label} ({y.isCurrent ? "Active" : "Préparatoire"})</option>
                             ))}
                           </select>
                         </div>
                       </>
                     )}
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Salle assignée</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Salle assignée</label>
                       <select value={formPayload.salleId} onChange={(e) => setFormPayload({ ...formPayload, salleId: e.target.value })} className={inputCls}>
                         <option value="">Aucune salle assignée</option>
                         {salles.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.capacity || "?"} places)</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Libellé personnalisé</label>
+                      <label className="text-xs font-semibold uppercase block mb-1">Libellé personnalisé</label>
                       <input placeholder="Laisser vide pour auto-génération" value={formPayload.label} onChange={(e) => setFormPayload({ ...formPayload, label: e.target.value })} className={inputCls} />
                     </div>
                   </div>
                 )}
 
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
+                {modalError && <p className="p-2 bg-error-container text-error text-xs rounded font-semibold">{modalError}</p>}
 
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setModalType(null)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Annuler</button>
-                  <button type="submit" disabled={saving} className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark disabled:opacity-60">
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button type="button" onClick={() => setModalType(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>
+                  <button type="submit" disabled={saving} className="px-4 py-1.5 bg-primary text-white font-bold rounded text-xs shadow-xs">
                     {saving ? "Enregistrement..." : editingId ? "Enregistrer" : "Créer"}
                   </button>
                 </div>
@@ -1004,16 +1118,18 @@ export default function Formations() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-sm rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-sm rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md"
               >
-                <div className="flex items-center gap-2 text-error">
+                <div className="flex items-center gap-2 text-error border-b pb-2">
                   <Icon name="warning" className="text-[20px]" />
                   <h3 className="text-sm font-bold text-on-surface">Confirmer la suppression</h3>
                 </div>
-                <p className="text-xs text-on-surface-variant">Supprimer définitivement <strong>{deleteTarget.name}</strong> ?</p>
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button onClick={() => setDeleteTarget(null)} className="rounded-md px-3.5 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Annuler</button>
-                  <button onClick={confirmDelete} className="rounded-md bg-error px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90">Supprimer</button>
+                <p className="text-xs text-on-surface-variant leading-relaxed">
+                  Supprimer définitivement <strong>{deleteTarget.name}</strong> ?
+                </p>
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>
+                  <button onClick={confirmDelete} className="px-3.5 py-1.5 bg-error text-white font-bold rounded text-xs shadow-xs">Supprimer</button>
                 </div>
               </motion.div>
             </div>

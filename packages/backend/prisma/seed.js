@@ -1,24 +1,44 @@
+// packages/backend/prisma/seed.js
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
-// Permissions par défaut des rôles système, avec la NOUVELLE nomenclature
-// granulaire (module.action) — doit rester synchronisée avec la grille de
-// packages/frontend/src/pages/Roles.jsx (MODULES x ACTIONS).
+// Rôles système V3
 const SYSTEM_ROLES = [
   { name: "Admin", isSystem: true, permissions: ["*"] },
-  { name: "Secrétaire", isSystem: false, permissions: ["students.read", "students.create", "students.update"] },
-  { name: "Formateur", isSystem: false, permissions: ["students.read", "grades.create", "grades.update"] },
+  {
+    name: "Directeur des Études",
+    isSystem: false,
+    permissions: [
+      "formations.read", "formations.create", "formations.update", "formations.delete",
+      "grades.read", "grades.create", "grades.update", "grades.validate",
+      "students.read", "bulletins.generate",
+    ],
+  },
+  {
+    name: "Secrétaire",
+    isSystem: false,
+    permissions: [
+      "students.read", "students.create", "students.update",
+      "formations.read", "grades.read", "bulletins.generate",
+    ],
+  },
+  {
+    name: "Formateur",
+    isSystem: false,
+    permissions: [
+      "formations.read", "grades.read", "grades.create", "grades.update",
+    ],
+  },
 ];
 
 const ADMIN_EMAIL = "admin@local.ceco";
 
 async function main() {
-  // 1. Centre — créé une seule fois, jamais recréé ni écrasé ensuite.
+  // 1. Centre local
   let center = await prisma.center.findFirst();
   if (!center) {
-    console.log("Première initialisation — création du centre local par défaut...");
     center = await prisma.center.create({
       data: {
         name: "Centre d'Excellence CECO Local",
@@ -33,12 +53,9 @@ async function main() {
       },
     });
     console.log(`Centre créé : ${center.name} (${center.id})`);
-  } else {
-    console.log(`Centre déjà initialisé : ${center.name} (${center.id}).`);
   }
 
-  // 2. Abonnement — 2 mois gratuits, créé une seule fois. Ne touche jamais
-  // à une date d'expiration déjà fixée (ex. après un paiement réel).
+  // 2. Abonnement 60 jours
   const existingSubscription = await prisma.subscription.findUnique({ where: { centerId: center.id } });
   if (!existingSubscription) {
     const expiresAt = new Date();
@@ -53,22 +70,28 @@ async function main() {
         maxStorage: BigInt(10 * 1024 * 1024 * 1024),
       },
     });
-    console.log(`Abonnement créé avec 2 mois gratuits — expiration le ${expiresAt.toISOString()}.`);
   }
 
-  // 3. Rôles système — RÉPARATEUR, pas juste créateur : s'assure que chaque
-  // rôle système possède exactement les permissions attendues, même si ce
-  // centre a été créé par une version antérieure de ce script. C'est ce qui
-  // évite qu'un rôle admin se retrouve un jour sans son "*" après une mise
-  // à jour du catalogue de permissions. Ne touche jamais un rôle
-  // personnalisé créé par l'utilisateur (isSystem: false et absent d'ici).
+  // 3. Politique de pondération initiale par défaut (30% CC_TP / 70% NORMALE)
+  const existingPolicy = await prisma.gradingPolicy.findFirst({ where: { centerId: center.id } });
+  if (!existingPolicy) {
+    await prisma.gradingPolicy.create({
+      data: {
+        centerId: center.id,
+        ccWeight: 0.30,
+        normalWeight: 0.70,
+      },
+    });
+    console.log("Politique de pondération par défaut initialisée : 30% CC_TP / 70% NORMALE.");
+  }
+
+  // 4. Rôles système et permissions
   for (const roleDef of SYSTEM_ROLES) {
     let role = await prisma.role.findFirst({ where: { centerId: center.id, name: roleDef.name } });
     if (!role) {
       role = await prisma.role.create({
         data: { centerId: center.id, name: roleDef.name, isSystem: roleDef.isSystem },
       });
-      console.log(`Rôle "${roleDef.name}" créé.`);
     }
 
     const existing = await prisma.permission.findMany({ where: { roleId: role.id } });
@@ -76,12 +99,10 @@ async function main() {
     const missing = roleDef.permissions.filter((a) => !existingActions.includes(a));
     if (missing.length > 0) {
       await prisma.permission.createMany({ data: missing.map((action) => ({ roleId: role.id, action })) });
-      console.log(`Rôle "${roleDef.name}" réparé — permissions ajoutées : ${missing.join(", ")}`);
     }
   }
 
-  // 4. Compte admin par défaut — créé une seule fois ; réparé si son rôle
-  // a été perdu (même logique que pour le rôle lui-même).
+  // 5. Compte admin
   const adminRole = await prisma.role.findFirst({ where: { centerId: center.id, name: "Admin" } });
   const adminUser = await prisma.user.findFirst({ where: { centerId: center.id, email: ADMIN_EMAIL } });
 
@@ -98,13 +119,10 @@ async function main() {
         isActive: true,
       },
     });
-    console.log(`Compte admin par défaut créé : ${ADMIN_EMAIL} / admin123 — À CHANGER IMMÉDIATEMENT.`);
-  } else if (!adminUser.roleId) {
-    await prisma.user.update({ where: { id: adminUser.id }, data: { roleId: adminRole.id } });
-    console.log(`Compte admin réparé : rôle "Admin" réassocié à ${ADMIN_EMAIL}.`);
+    console.log(`Compte admin créé : ${ADMIN_EMAIL} / admin123`);
   }
 
-  console.log("Seed vérifié.");
+  console.log("Seed V3 vérifié avec succès.");
 }
 
 main()

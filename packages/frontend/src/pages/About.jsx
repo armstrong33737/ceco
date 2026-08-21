@@ -3,19 +3,19 @@ import Icon from "../components/Icon";
 import logo from "../../assets/logo2.png";
 
 export default function About() {
+  // packages/frontend/src/pages/About.jsx (Extrait mis à jour du tableau Roadmap)
   const ROADMAP = [
     { v: "V0", title: "Fondation Technique", desc: "Multi-tenant (centerId), stockage scopé, modélisation académique figée, moteur PostgreSQL embarqué.", status: "Actif" },
     { v: "V1", title: "Installation Locale & Paramètres", desc: "Configuration Serveur/Client, licence 60j, sauvegardes compressées .zip, gestion des comptes et RBAC.", status: "Actif" },
-    { v: "V2", title: "Gestion des Formations & Apprenants", desc: "Filières, niveaux, promotions, inscriptions annuelles non-destructives, fiches et cartes étudiants.", status: "Prochainement" },
-    { v: "V3", title: "Gestion Pédagogique", desc: "Affectation des matières par semestre, saisie des CC et sessions normales, pondérations paramétrables.", status: "Prévu" },
-    { v: "V4", title: "Bulletins & Diplômes", desc: "Génération de relevés semestriels/annuels, PV de délibération, signatures numériques et QR codes.", status: "Prévu" },
+    { v: "V2", title: "Gestion des Formations & Apprenants", desc: "Filières, promotions (cohortes), inscriptions annuelles, fiches, cartes d'étudiant découpables duplex et certificats.", status: "Actif" },
+    { v: "V3", title: "Gestion Pédagogique & Évaluations", desc: "Matières & groupes libres, cursus filières, formateurs, bordereau de saisie matricielle, délibérations (S1+S2), verrouillage et KPIs.", status: "Actif" }, // ⬅️ Actif & Scellé
+    { v: "V4", title: "Bulletins Périodiques & Diplômes d'État", desc: "Composition des relevés de notes bilingues, bulletins périodiques et diplômes certifiés par QR Code et scellés d'agrément.", status: "Prochainement" },
     { v: "V5", title: "Gestion des Stages", desc: "Conventions de stage, entreprises partenaires, encadreurs, évaluations et présences.", status: "Prévu" },
     { v: "V6", title: "Gestion Financière", desc: "Frais de scolarité, échéanciers de paiement, reçus de versement et comptabilité légère du centre.", status: "Prévu" },
     { v: "V7", title: "Administration Avancée & KPI", desc: "Journaux d'audit complets, notifications internes/SMS, graphiques statistiques et indicateurs.", status: "Prévu" },
     { v: "V8-V9", title: "CECO Cloud (Mode SaaS)", desc: "Sous-domaines par centre, passerelles bancaires automatisées, portail d'auto-inscription.", status: "Roadmap Cloud" },
     { v: "V10-V11", title: "Marketplace & Applications Mobiles", desc: "Plugins tiers, APIs d'intégration, applications mobiles pour parents, apprenants et formateurs.", status: "Roadmap Écosystème" },
   ];
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}

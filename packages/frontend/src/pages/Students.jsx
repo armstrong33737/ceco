@@ -1,8 +1,11 @@
+// packages/frontend/src/pages/Students.jsx
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch, API_BASE, getToken } from "../lib/apiClient";
 import Icon from "../components/Icon";
+import PaginationBar from "../components/PaginationBar";
+import PdfViewerModal from "../components/PdfViewerModal";
 
 const inputCls = "h-10 rounded-md bg-surface px-3.5 text-xs text-on-surface outline-none border border-outline-variant/30 focus:border-primary focus:ring-1 focus:ring-primary transition-all w-full";
 
@@ -36,6 +39,10 @@ function StudentAvatar({ student, size = "md" }) {
 
 export default function Students() {
   const [students, setStudents] = useState([]);
+  const [paginationMeta, setPaginationMeta] = useState(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+
   const [classes, setClasses] = useState([]);
   const [filieres, setFilieres] = useState([]);
   const [promotions, setPromotions] = useState([]);
@@ -44,8 +51,8 @@ export default function Students() {
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState("");
 
-  // Vue Active vs Archives
-  const [viewMode, setViewMode] = useState("active"); // "active" | "archived"
+  // Vue Active vs Registre des Archives
+  const [viewMode, setViewMode] = useState("active");
 
   // Filtres
   const [selectedYearId, setSelectedYearId] = useState("");
@@ -63,7 +70,7 @@ export default function Students() {
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [showImport, setShowImport] = useState(false);
 
-  // Webcam Capture
+  // Webcam Capture en direct
   const [showWebcam, setShowWebcam] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -86,7 +93,7 @@ export default function Students() {
   const [reinscribeForm, setReinscribeForm] = useState({ classeId: "", academicYearId: "" });
   const [photoPreview, setPhotoPreview] = useState(null);
 
-  // Import CSV
+  // Import CSV & Bilan d'erreurs
   const [importRows, setImportRows] = useState([]);
   const [importTarget, setImportTarget] = useState({ classeId: "", academicYearId: "" });
   const [importReport, setImportReport] = useState(null);
@@ -94,28 +101,53 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState(null);
 
+  // Filtrage intelligent des classes selon l'année et la filière
+  const availableClassesForFilter = useMemo(() => {
+    return classes.filter((c) => {
+      const matchYear = !selectedYearId || c.academicYearId === selectedYearId;
+      const matchFiliere = !selectedFiliereId || c.filiereId === selectedFiliereId;
+      return matchYear && matchFiliere;
+    });
+  }, [classes, selectedYearId, selectedFiliereId]);
+
+  // Si la classe sélectionnée ne fait plus partie des classes éligibles, on la réinitialise proprement
+  useEffect(() => {
+    if (selectedClasseId && !availableClassesForFilter.some((c) => c.id === selectedClasseId)) {
+      setSelectedClasseId("");
+      setPage(1);
+    }
+  }, [availableClassesForFilter, selectedClasseId]);
+
   async function loadData() {
     setLoading(true);
     setError(null);
     try {
       const isArchived = viewMode === "archived";
-      const [studentsData, classesData, filieresData, promoData, yearsData] = await Promise.all([
-        apiFetch(`/students${isArchived ? "?onlyArchived=true" : ""}`),
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+        onlyArchived: String(isArchived),
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(selectedClasseId ? { classeId: selectedClasseId } : {}),
+        ...(selectedFiliereId ? { filiereId: selectedFiliereId } : {}),
+        ...(selectedYearId ? { academicYearId: selectedYearId } : {}),
+        ...(selectedStatus ? { status: selectedStatus } : {}),
+      });
+
+      const [studentsRes, classesData, filieresData, promoData, yearsData] = await Promise.all([
+        apiFetch(`/students?${params.toString()}`),
         apiFetch("/classes").catch(() => []),
         apiFetch("/filieres").catch(() => []),
         apiFetch("/promotions").catch(() => []),
         apiFetch("/academic-years").catch(() => []),
       ]);
-      setStudents(studentsData || []);
+
+      setStudents(studentsRes.data || []);
+      setPaginationMeta(studentsRes.pagination || null);
       setClasses(classesData || []);
       setFilieres(filieresData || []);
       setPromotions(promoData || []);
       setAcademicYears(yearsData || []);
-
-      const current = (yearsData || []).find((y) => y.isCurrent);
-      if (current && !selectedYearId) {
-        setSelectedYearId(current.id);
-      }
     } catch (err) {
       setError(err.message || "Impossible de charger la liste des étudiants.");
     } finally {
@@ -125,15 +157,21 @@ export default function Students() {
 
   useEffect(() => {
     loadData();
-  }, [viewMode]);
+  }, [page, limit, viewMode, selectedYearId, selectedFiliereId, selectedClasseId, selectedStatus, search]);
 
-  const availableClassesForFilter = useMemo(() => {
-    return classes.filter((c) => {
-      const matchYear = !selectedYearId || c.academicYearId === selectedYearId;
-      const matchFiliere = !selectedFiliereId || c.filiereId === selectedFiliereId;
-      return matchYear && matchFiliere;
-    });
-  }, [classes, selectedYearId, selectedFiliereId]);
+  function handleFilterChange(setter, value) {
+    setter(value);
+    setPage(1);
+  }
+
+  function handleResetFilters() {
+    setSelectedYearId("");
+    setSelectedFiliereId("");
+    setSelectedClasseId("");
+    setSelectedStatus("");
+    setSearch("");
+    setPage(1);
+  }
 
   function handlePhotoSelect(e, isEdit = false) {
     const file = e.target.files?.[0];
@@ -266,7 +304,16 @@ export default function Students() {
   async function handleExportCsv() {
     try {
       const token = getToken();
-      const res = await fetch(`${API_BASE}/students-export?token=${token}`);
+      const params = new URLSearchParams({
+        onlyArchived: String(viewMode === "archived"),
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(selectedClasseId ? { classeId: selectedClasseId } : {}),
+        ...(selectedFiliereId ? { filiereId: selectedFiliereId } : {}),
+        ...(selectedYearId ? { academicYearId: selectedYearId } : {}),
+        ...(selectedStatus ? { status: selectedStatus } : {}),
+      });
+
+      const res = await fetch(`${API_BASE}/students-export?${params.toString()}&token=${token}`);
       if (!res.ok) throw new Error("Échec de l'export.");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -404,22 +451,9 @@ export default function Students() {
     }
   }
 
-  const filteredStudents = students.filter((s) => {
-    const fullName = `${s.firstName} ${s.lastName}`.toLowerCase();
-    const matricule = (s.matricule || "").toLowerCase();
-    const query = search.toLowerCase();
-    const matchesSearch = fullName.includes(query) || matricule.includes(query) || (s.phone || "").includes(query);
+  const hasActiveFilters = Boolean(selectedYearId || selectedFiliereId || selectedClasseId || selectedStatus || search);
 
-    const latestInsc = s.inscriptions?.[0];
-    const matchesYear = !selectedYearId || latestInsc?.academicYearId === selectedYearId;
-    const matchesFiliere = !selectedFiliereId || latestInsc?.classe?.filiereId === selectedFiliereId;
-    const matchesClasse = !selectedClasseId || latestInsc?.classeId === selectedClasseId;
-    const matchesStatus = !selectedStatus || latestInsc?.status === selectedStatus;
-
-    return matchesSearch && matchesYear && matchesFiliere && matchesClasse && matchesStatus;
-  });
-
-  if (loading) return <p className="text-sm text-on-surface-variant font-medium">Chargement du registre...</p>;
+  if (loading && !paginationMeta) return <p className="text-sm text-on-surface-variant font-medium">Chargement du registre...</p>;
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-md max-w-7xl mx-auto">
@@ -428,10 +462,10 @@ export default function Students() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold text-on-surface">
-              {viewMode === "active" ? "Gestion des Apprenants" : "Registre des Archives & Traçabilité"}
+              {viewMode === "active" ? "Gestion des Apprenants" : "Registre des Archives &amp; Traçabilité"}
             </h1>
-            <span className="rounded-md bg-primary-light text-primary font-bold text-[11px] px-2 py-0.5">
-              {filteredStudents.length} {viewMode === "active" ? "actif(s)" : "archivé(s)"}
+            <span className="rounded-md bg-primary-light text-primary font-bold text-[11px] px-2 py-0.5 font-mono">
+              {paginationMeta?.total || 0} {viewMode === "active" ? "actif(s)" : "archivé(s)"}
             </span>
           </div>
           <p className="text-xs text-on-surface-variant mt-0.5">
@@ -445,7 +479,7 @@ export default function Students() {
           {/* Bascule Actifs / Archives */}
           <div className="flex p-0.5 bg-surface rounded-md border border-outline-variant/30">
             <button
-              onClick={() => setViewMode("active")}
+              onClick={() => { setViewMode("active"); setPage(1); }}
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
                 viewMode === "active" ? "bg-primary text-white shadow-xs" : "text-on-surface-variant hover:text-on-surface"
               }`}
@@ -453,7 +487,7 @@ export default function Students() {
               Actifs
             </button>
             <button
-              onClick={() => setViewMode("archived")}
+              onClick={() => { setViewMode("archived"); setPage(1); }}
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
                 viewMode === "archived" ? "bg-primary text-white shadow-xs" : "text-on-surface-variant hover:text-on-surface"
               }`}
@@ -465,7 +499,6 @@ export default function Students() {
 
           {viewMode === "active" && (
             <>
-              {/* Bouton Impression par Classe */}
               <button
                 onClick={() => {
                   setModalError(null);
@@ -486,9 +519,11 @@ export default function Students() {
                   setModalError(null);
                   setImportRows([]);
                   setImportReport(null);
+                  const activeYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
+                  const activeClasses = classes.filter((c) => c.academicYearId === activeYear?.id || c.academicYear?.isCurrent);
                   setImportTarget({
-                    classeId: availableClassesForFilter[0]?.id || classes[0]?.id || "",
-                    academicYearId: selectedYearId || academicYears[0]?.id || "",
+                    classeId: activeClasses[0]?.id || classes[0]?.id || "",
+                    academicYearId: activeYear?.id || "",
                   });
                   setShowImport(true);
                 }}
@@ -497,6 +532,7 @@ export default function Students() {
                 <Icon name="upload_file" className="text-[16px]" />
                 <span>Importer CSV</span>
               </button>
+
               <button
                 onClick={handleExportCsv}
                 className="flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container transition-colors shadow-xs"
@@ -504,15 +540,16 @@ export default function Students() {
                 <Icon name="download" className="text-[16px]" />
                 <span>Exporter CSV</span>
               </button>
+
               <button
                 onClick={() => {
                   setModalError(null);
                   const activeYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
-                  const eligibleClasses = classes.filter((c) => c.academicYearId === activeYear?.id || c.academicYear?.isCurrent);
+                  const activeClasses = classes.filter((c) => c.academicYearId === activeYear?.id || c.academicYear?.isCurrent);
                   setCreateForm({
                     ...initialForm,
                     academicYearId: activeYear?.id || "",
-                    classeId: eligibleClasses[0]?.id || classes[0]?.id || "",
+                    classeId: activeClasses[0]?.id || classes[0]?.id || "",
                   });
                   setPhotoPreview(null);
                   setShowCreate(true);
@@ -541,57 +578,76 @@ export default function Students() {
         </div>
       )}
 
-      {/* Filtres hiérarchiques */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs">
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">1. Session</label>
-          <select value={selectedYearId} onChange={(e) => setSelectedYearId(e.target.value)} className={inputCls}>
-            <option value="">Toutes les sessions</option>
-            {academicYears.map((y) => (
-              <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(En cours)" : ""}</option>
-            ))}
-          </select>
+      {/* Barre de Filtres Combinés */}
+      <div className="bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs space-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">1. Session</label>
+            <select value={selectedYearId} onChange={(e) => handleFilterChange(setSelectedYearId, e.target.value)} className={inputCls}>
+              <option value="">Toutes les sessions</option>
+              {academicYears.map((y) => (
+                <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Active)" : ""}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">2. Filière</label>
+            <select value={selectedFiliereId} onChange={(e) => handleFilterChange(setSelectedFiliereId, e.target.value)} className={inputCls}>
+              <option value="">Toutes les filières</option>
+              {filieres.map((f) => <option key={f.id} value={f.id}>{f.name} ({f.programType?.code})</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">3. Classe</label>
+            <select value={selectedClasseId} onChange={(e) => handleFilterChange(setSelectedClasseId, e.target.value)} className={inputCls}>
+              <option value="">Toutes les classes ({availableClassesForFilter.length})</option>
+              {availableClassesForFilter.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">4. Statut</label>
+            <select value={selectedStatus} onChange={(e) => handleFilterChange(setSelectedStatus, e.target.value)} className={inputCls}>
+              <option value="">Tous les statuts</option>
+              <option value="en_cours">En cours</option>
+              <option value="admis">Admis</option>
+              <option value="redouble">Redouble</option>
+              <option value="diplome">Diplômé</option>
+              <option value="abandon">Abandon</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">5. Recherche</label>
+            <input
+              placeholder="Nom, matricule, contact..."
+              value={search}
+              onChange={(e) => handleFilterChange(setSearch, e.target.value)}
+              className={inputCls}
+            />
+          </div>
         </div>
 
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">2. Filière</label>
-          <select value={selectedFiliereId} onChange={(e) => setSelectedFiliereId(e.target.value)} className={inputCls}>
-            <option value="">Toutes les filières</option>
-            {filieres.map((f) => <option key={f.id} value={f.id}>{f.name} ({f.programType?.code})</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">3. Classe</label>
-          <select value={selectedClasseId} onChange={(e) => setSelectedClasseId(e.target.value)} className={inputCls}>
-            <option value="">Toutes les classes</option>
-            {availableClassesForFilter.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">4. Statut</label>
-          <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className={inputCls}>
-            <option value="">Tous les statuts</option>
-            <option value="en_cours">En cours</option>
-            <option value="admis">Admis</option>
-            <option value="redouble">Redouble</option>
-            <option value="diplome">Diplômé</option>
-            <option value="abandon">Abandon</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">5. Recherche</label>
-          <input placeholder="Nom, matricule, contact..." value={search} onChange={(e) => setSearch(e.target.value)} className={inputCls} />
-        </div>
+        {hasActiveFilters && (
+          <div className="flex justify-end pt-1">
+            <button
+              onClick={handleResetFilters}
+              className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
+            >
+              <Icon name="restart_alt" className="text-[14px]" />
+              <span>Réinitialiser les filtres</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Tableau des apprenants */}
       <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-        {filteredStudents.length === 0 ? (
+        {students.length === 0 ? (
           <p className="p-lg text-xs text-on-surface-variant text-center">
-            {viewMode === "active" ? "Aucun apprenant actif trouvé." : "Aucun dossier archivé."}
+            {viewMode === "active" ? "Aucun apprenant ne correspond aux critères de filtre sélectionnés." : "Aucun dossier archivé trouvé."}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -600,7 +656,7 @@ export default function Students() {
                 <tr className="border-b border-outline-variant/30 font-semibold uppercase text-on-surface-variant bg-surface">
                   <th className="px-md py-3">Matricule</th>
                   <th className="px-md py-3">Apprenant</th>
-                  <th className="px-md py-3">Dernière Classe &amp; Cohorte</th>
+                  <th className="px-md py-3">Classe &amp; Cohorte</th>
                   <th className="px-md py-3">
                     {viewMode === "active" ? "Urgence (Tuteur)" : "Date d'Archivage"}
                   </th>
@@ -609,8 +665,12 @@ export default function Students() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/15">
-                {filteredStudents.map((s) => {
-                  const currentInsc = s.inscriptions?.[0];
+                {students.map((s) => {
+                  // Résolution contextuelle de l'inscription correspondant aux filtres appliqués
+                  const currentInsc = (selectedYearId || selectedClasseId)
+                    ? s.inscriptions?.find((i) => (!selectedYearId || i.academicYearId === selectedYearId) && (!selectedClasseId || i.classeId === selectedClasseId)) || s.inscriptions?.[0]
+                    : s.inscriptions?.[0];
+
                   return (
                     <tr key={s.id} className="hover:bg-surface-container/20 transition-colors">
                       <td className="px-md py-3 font-mono font-bold text-primary">{s.matricule}</td>
@@ -758,6 +818,16 @@ export default function Students() {
         )}
       </div>
 
+      {/* BARRE DE PAGINATION SERVEUR */}
+      <PaginationBar
+        pagination={paginationMeta}
+        onPageChange={setPage}
+        onLimitChange={(newLimit) => {
+          setLimit(newLimit);
+          setPage(1);
+        }}
+      />
+
       {/* PORTAIL DES MODALES */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
@@ -839,76 +909,17 @@ export default function Students() {
             </div>
           )}
 
-          {/* 2. VISIONNEUSE PDF AVEC IMPRESSION CLIENTE & TÉLÉCHARGEMENT */}
-          {pdfModal && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4 backdrop-blur-xs">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-5xl rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md h-[92vh] flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Icon name="picture_as_pdf" className="text-error text-[22px]" />
-                    <h3 className="text-sm font-bold text-on-surface truncate max-w-xl">
-                      {pdfModal.title}
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handlePrintClient}
-                      className="rounded-md bg-primary-light border border-primary/20 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-white flex items-center gap-1.5 shadow-xs transition-all"
-                    >
-                      <Icon name="print" className="text-[16px]" />
-                      <span>Imprimer sur client</span>
-                    </button>
-                    <a
-                      href={pdfModal.downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark flex items-center gap-1.5 shadow-xs transition-colors"
-                    >
-                      <Icon name="download" className="text-[16px]" />
-                      <span>Télécharger le PDF</span>
-                    </a>
-                    <button onClick={() => setPdfModal(null)} className="text-on-surface-variant hover:text-on-surface p-1">
-                      <Icon name="close" className="text-[20px]" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 w-full bg-surface-container rounded-md overflow-hidden border border-outline-variant/30 shadow-inner">
-                  <iframe
-                    ref={iframeRef}
-                    src={pdfModal.previewUrl}
-                    title="Aperçu PDF CECO"
-                    className="w-full h-full border-none rounded-md"
-                  />
-                </div>
-
-                <div className="flex justify-between items-center text-xs text-on-surface-variant pt-2 border-t border-outline-variant/15 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] text-success font-semibold flex items-center gap-1">
-                      <Icon name="lock" className="text-[14px]" />
-                      {pdfModal.reused ? "Document original archivé (visuel figé à l'émission)" : "Nouvel acte certifié émis"}
-                    </span>
-                    {pdfModal.student && (
-                      <button
-                        onClick={() => handleGenerateSingle(pdfModal.student, pdfModal.type, true)}
-                        className="text-[10px] font-bold text-primary underline hover:opacity-80 ml-3"
-                      >
-                        Émettre une nouvelle version (Appliquer la charte actuelle)
-                      </button>
-                    )}
-                  </div>
-                  <button onClick={() => setPdfModal(null)} className="font-semibold text-primary hover:underline">
-                    Fermer la visionneuse
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
+          {/* VISIONNEUSE PDF UNIFIÉE */}
+          <PdfViewerModal
+            isOpen={Boolean(pdfModal)}
+            title={pdfModal?.title}
+            previewUrl={pdfModal?.previewUrl}
+            downloadUrl={pdfModal?.downloadUrl}
+            isReused={pdfModal?.reused}
+            isRegenerating={generatingDoc}
+            onForceRegenerate={pdfModal?.student ? () => handleGenerateSingle(pdfModal.student, pdfModal.type, true) : null}
+            onClose={() => setPdfModal(null)}
+          />
 
           {/* 3. MODALE CONFIRMATION DE RESTAURATION D'ARCHIVE */}
           {restoreTarget && (
@@ -959,7 +970,19 @@ export default function Students() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session active</label>
-                      <select required value={importTarget.academicYearId} onChange={(e) => setImportTarget({ ...importTarget, academicYearId: e.target.value })} className={inputCls}>
+                      <select
+                        required
+                        value={importTarget.academicYearId}
+                        onChange={(e) => {
+                          const yearId = e.target.value;
+                          const matchingClasses = classes.filter((c) => c.academicYearId === yearId);
+                          setImportTarget({
+                            academicYearId: yearId,
+                            classeId: matchingClasses[0]?.id || "",
+                          });
+                        }}
+                        className={inputCls}
+                      >
                         {academicYears.filter((y) => y.isCurrent).map((y) => (
                           <option key={y.id} value={y.id}>{y.label} (Active)</option>
                         ))}
@@ -968,7 +991,7 @@ export default function Students() {
                     <div>
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Classe d'inscription</label>
                       <select required value={importTarget.classeId} onChange={(e) => setImportTarget({ ...importTarget, classeId: e.target.value })} className={inputCls}>
-                        {classes.filter((c) => c.academicYear?.isCurrent).map((c) => (
+                        {classes.filter((c) => c.academicYearId === importTarget.academicYearId || c.academicYear?.isCurrent).map((c) => (
                           <option key={c.id} value={c.id}>{c.label}</option>
                         ))}
                       </select>
@@ -992,11 +1015,11 @@ export default function Students() {
                     <div className="p-3 rounded-md bg-surface border border-outline-variant/30 space-y-2 text-xs">
                       <div className="font-bold text-success flex items-center gap-1.5">
                         <Icon name="check_circle" className="text-[18px]" />
-                        <span>{importReport.createdCount} apprenant(s) importé(s) avec succès.</span>
+                        <span>{importReport.createdCount} apprenant(s) importé(s) avec succès sur {importReport.totalCount} lignes.</span>
                       </div>
                       {importReport.errors?.length > 0 && (
                         <div className="space-y-1 text-error">
-                          <p className="font-bold">{importReport.errors.length} anomalie(s) ignorée(s) :</p>
+                          <p className="font-bold">{importReport.errors.length} anomalie(s) détectée(s) :</p>
                           <ul className="list-disc pl-4 space-y-0.5 text-[11px] max-h-32 overflow-y-auto">
                             {importReport.errors.map((err, i) => (
                               <li key={i}>Ligne {err.row} {err.matricule ? `(${err.matricule})` : ""} : {err.reason}</li>
@@ -1020,7 +1043,7 @@ export default function Students() {
             </div>
           )}
 
-          {/* 5. MODALE WEBCAM CAPTURE */}
+          {/* 5. MODALE WEBCAM CAPTURE EN DIRECT */}
           {showWebcam && (
             <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 px-4 backdrop-blur-xs">
               <div className="bg-white p-4 rounded-md shadow-2xl border border-outline-variant/30 space-y-3 w-full max-w-md text-center">
@@ -1061,6 +1084,7 @@ export default function Students() {
                 </div>
 
                 <div className="space-y-4">
+                  {/* Photo & Webcam */}
                   <div className="flex items-center gap-4 p-3 rounded-md bg-surface border border-outline-variant/20">
                     <div className="w-20 h-24 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
                       {photoPreview ? (
@@ -1084,10 +1108,11 @@ export default function Students() {
                           <span>Prendre par Webcam</span>
                         </button>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant">Format portrait 3:4 centré (PNG ou JPG 2 Mo max)</p>
+                      <p className="text-[10px] text-on-surface-variant">Format portrait 3:4 centré (PNG ou JPG 3 Mo max)</p>
                     </div>
                   </div>
 
+                  {/* État Civil */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Nom de famille *</label>
@@ -1121,6 +1146,7 @@ export default function Students() {
                     </div>
                   </div>
 
+                  {/* Urgence & Tuteur */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-surface rounded-md border border-outline-variant/20">
                     <div>
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Parent / Tuteur légal</label>
@@ -1144,22 +1170,19 @@ export default function Students() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-outline-variant/15">
-                    <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Matricule</label>
-                      <input placeholder="Laisser vide pour auto" value={createForm.matricule} onChange={(e) => setCreateForm({ ...createForm, matricule: e.target.value })} className={inputCls} />
-                    </div>
+                  {/* Affectation académique (Matricule automatique) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-outline-variant/15">
                     <div>
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session active</label>
                       <select
                         required
                         value={createForm.academicYearId}
                         onChange={(e) => {
-                          const newYearId = e.target.value;
-                          const matchingClasses = classes.filter((c) => c.academicYearId === newYearId);
+                          const yearId = e.target.value;
+                          const matchingClasses = classes.filter((c) => c.academicYearId === yearId || c.academicYear?.isCurrent);
                           setCreateForm({
                             ...createForm,
-                            academicYearId: newYearId,
+                            academicYearId: yearId,
                             classeId: matchingClasses[0]?.id || "",
                           });
                         }}
@@ -1174,11 +1197,17 @@ export default function Students() {
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Classe d'affectation</label>
                       <select required value={createForm.classeId} onChange={(e) => setCreateForm({ ...createForm, classeId: e.target.value })} className={inputCls}>
                         <option value="">Sélectionner une classe</option>
-                        {classes.filter((c) => c.academicYear?.isCurrent).map((c) => (
+                        {classes.filter((c) => c.academicYearId === createForm.academicYearId || c.academicYear?.isCurrent).map((c) => (
                           <option key={c.id} value={c.id}>{c.label}</option>
                         ))}
                       </select>
                     </div>
+                  </div>
+
+                  {/* Note informative sur le matricule */}
+                  <div className="p-2.5 rounded bg-primary-light text-primary text-[11px] font-semibold flex items-center gap-1.5 border border-primary/20">
+                    <Icon name="verified" className="text-[16px]" />
+                    <span>Le matricule officiel (ex: STU26-0042) sera généré automatiquement par le serveur de manière sécurisée.</span>
                   </div>
                 </div>
 
@@ -1194,7 +1223,7 @@ export default function Students() {
             </div>
           )}
 
-          {/* 7. MODALE MODIFICATION */}
+          {/* 7. MODALE MODIFICATION APPRENANT (MATRICULE EN LECTURE SEULE) */}
           {editingStudent && (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
               <motion.form
@@ -1205,7 +1234,12 @@ export default function Students() {
                 className="w-full max-w-2xl rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md max-h-[90vh] overflow-y-auto"
               >
                 <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-                  <h3 className="text-sm font-bold text-on-surface">Modifier le Dossier Apprenant</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-on-surface">Modifier le Dossier Apprenant</h3>
+                    <span className="font-mono text-xs font-bold bg-primary-light text-primary px-2 py-0.5 rounded border border-primary/20">
+                      {editingStudent.matricule}
+                    </span>
+                  </div>
                   <button type="button" onClick={() => setEditingStudent(null)} className="text-on-surface-variant hover:text-on-surface">
                     <Icon name="close" className="text-[18px]" />
                   </button>
@@ -1282,11 +1316,6 @@ export default function Students() {
                       <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Diplôme d'entrée</label>
                       <input value={editForm.entryDiploma} onChange={(e) => setEditForm({ ...editForm, entryDiploma: e.target.value })} className={inputCls} />
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Matricule</label>
-                    <input required value={editForm.matricule} onChange={(e) => setEditForm({ ...editForm, matricule: e.target.value })} className={inputCls} />
                   </div>
                 </div>
 

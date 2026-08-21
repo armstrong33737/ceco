@@ -1,3 +1,4 @@
+// packages/frontend/src/components/SettingsLayout.jsx (Extrait mis à jour)
 import { NavLink, Outlet } from "react-router-dom";
 import useAuthStore from "../store/authStore";
 import Icon from "./Icon";
@@ -9,6 +10,7 @@ const TABS = [
   { to: "modeles", label: "Gabarits & Modèles", icon: "palette", permission: "center.update" },
   { to: "licence", label: "Licence", icon: "verified_user", permission: "center.update" },
   { to: "sauvegarde", label: "Sauvegarde", icon: "archive", permission: "backups.read" },
+  { to: "audit", label: "Journal d'Audit", icon: "history", permission: "center.update" }, // ⬅️ Nouvel onglet
   { to: "apropos", label: "À propos", icon: "bookmark", permission: "center.update" },
 ];
 
@@ -29,16 +31,16 @@ export default function SettingsLayout() {
               {user?.center?.name || "Configuration générale"}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-on-surface mt-1">Paramètres du Système</h1>
+          <h1 className="text-xl font-bold text-on-surface mt-1">Paramètres &amp; Sécurité du Système</h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Identité du centre, gabarits de documents avec filigrane, sécurité, sauvegardes et licence.
+            Identité légale, utilisateurs, rôles, traçabilité des opérations sensibles et sauvegardes.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-surface border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface">
             <Icon name="verified" className="text-primary text-[16px]" />
-            <span>Mode Local (V2)</span>
+            <span>Mode Sécurisé (V3)</span>
           </span>
         </div>
       </div>

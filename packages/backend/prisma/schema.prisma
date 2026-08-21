@@ -1,3 +1,5 @@
+// packages/backend/prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -41,6 +43,8 @@ model Center {
 
   programTypes       ProgramType[]
   filieres           Filiere[]
+  filiereSubjects    FiliereSubject[]
+  subjectCategories  SubjectCategory[]
   promotions         Promotion[]
   classes            Classe[]
   salles             Salle[]
@@ -113,6 +117,8 @@ model User {
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
+  formateur Formateur?
+
   @@unique([centerId, email])
 }
 
@@ -143,7 +149,7 @@ model ProgramType {
   id       String    @id @default(cuid())
   centerId String
   center   Center    @relation(fields: [centerId], references: [id])
-  code     String
+  code     String    // "DQP", "CQP"
   label    String
   filieres Filiere[]
 
@@ -151,23 +157,25 @@ model ProgramType {
 }
 
 model Filiere {
-  id              String        @id @default(cuid())
+  id              String           @id @default(cuid())
   centerId        String
-  center          Center        @relation(fields: [centerId], references: [id])
+  center          Center           @relation(fields: [centerId], references: [id])
   programTypeId   String
-  programType     ProgramType   @relation(fields: [programTypeId], references: [id])
+  programType     ProgramType      @relation(fields: [programTypeId], references: [id])
   name            String
   durationInYears Int
   niveaux         Niveau[]
   promotions      Promotion[]
   classes         Classe[]
+  subjects        FiliereSubject[]
+  gradingPolicies GradingPolicy[]
 }
 
 model Niveau {
   id        String    @id @default(cuid())
   filiereId String
   filiere   Filiere   @relation(fields: [filiereId], references: [id])
-  order     Int
+  order     Int       // 1, 2, 3
   classes   Classe[]
 }
 
@@ -175,10 +183,11 @@ model AcademicYear {
   id        String   @id @default(cuid())
   centerId  String
   center    Center   @relation(fields: [centerId], references: [id])
-  label     String
+  label     String   // "2026-2027"
   startDate DateTime
   endDate   DateTime
   isCurrent Boolean  @default(false)
+  status    String   @default("UPCOMING") // "UPCOMING" | "CURRENT" | "CLOSED"
 
   promotions   Promotion[]
   classes      Classe[]
@@ -236,8 +245,6 @@ model Classe {
   @@unique([filiereId, niveauId, academicYearId])
 }
 
-// ---------------- Apprenant Enrichi (MINEFOP / Guichet) ----------------
-
 model Student {
   id             String    @id @default(cuid())
   centerId       String
@@ -247,11 +254,11 @@ model Student {
   lastName       String
   gender         String?   // "M" | "F"
   birthDate      DateTime?
-  birthPlace     String?   // Lieu de naissance
-  phone          String?   // Téléphone de l'apprenant
-  guardianName   String?   // Parent / Tuteur légal
-  guardianPhone  String?   // Contact d'urgence
-  entryDiploma   String?   // Dernier diplôme obtenu (BEPC, CAP, Probatoire, BAC...)
+  birthPlace     String?
+  phone          String?
+  guardianName   String?
+  guardianPhone  String?
+  entryDiploma   String?
   photoPath      String?
   createdAt      DateTime  @default(now())
   deletedAt      DateTime?
@@ -284,34 +291,107 @@ model Inscription {
   @@unique([studentId, academicYearId])
 }
 
-model Formateur {
-  id        String  @id @default(cuid())
-  centerId  String
-  center    Center  @relation(fields: [centerId], references: [id])
-  firstName String
-  lastName  String
-  email     String?
-  userId    String?
+// ---------------- PÉDAGOGIE V3 (Matières, Catégories Libres, Formateurs) ----------------
+
+// Catégories / Groupes d'enseignement 100% dynamiques définis par l'établissement
+model SubjectCategory {
+  id              String           @id @default(cuid())
+  centerId        String
+  center          Center           @relation(fields: [centerId], references: [id])
+  name            String           // Nom libre : "Matières Scientifiques", "Matières Professionnelles", etc.
+  code            String?          // Code court facultatif : "SCI", "PRO", "GEN"
+  order           Int              @default(1) // Ordre d'apparition sur les relevés / diplômes
+  isEliminatory   Boolean          @default(false) // Option : note éliminatoire si sous le seuil
+  createdAt       DateTime         @default(now())
+
+  filiereSubjects FiliereSubject[]
+  offerings       SubjectOffering[]
+
+  @@unique([centerId, name])
 }
 
+// Référentiel neutre et universel des matières (sans catégorie en dur)
 model Subject {
-  id       String @id @default(cuid())
-  centerId String
-  center   Center @relation(fields: [centerId], references: [id])
-  name     String
-  code     String?
+  id               String           @id @default(cuid())
+  centerId         String
+  center           Center           @relation(fields: [centerId], references: [id])
+  name             String           // "Thermodynamique", "Informatique", "Dessin Technique"
+  code             String?          // "THM101", "INF102"
+  createdAt        DateTime         @default(now())
 
-  offerings      SubjectOffering[]
-  subjectResults SubjectResult[]
+  filiereTemplates FiliereSubject[]
+  offerings        SubjectOffering[]
+  subjectResults   SubjectResult[]
 
   @@unique([centerId, code])
 }
 
+// Maquette type permanente par filière & niveau (Gabarit réutilisable d'une année sur l'autre)
+model FiliereSubject {
+  id                   String           @id @default(cuid())
+  centerId             String
+  center               Center           @relation(fields: [centerId], references: [id])
+  filiereId            String
+  filiere              Filiere          @relation(fields: [filiereId], references: [id], onDelete: Cascade)
+  niveauOrder          Int              // Niveau 1, 2 ou 3
+  semesterOrder        Int              // Semestre 1 ou 2
+  subjectId            String
+  subject              Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  categoryId           String?          // Liaison contextuelle à une catégorie de l'établissement
+  category             SubjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  defaultCoefficient   Float            @default(2.0)
+  defaultVolumeHoraire Int?
+
+  @@unique([filiereId, niveauOrder, semesterOrder, subjectId])
+}
+
+// Formateurs / Enseignants
+model Formateur {
+  id          String   @id @default(cuid())
+  centerId    String
+  center      Center   @relation(fields: [centerId], references: [id])
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  specialite  String?  // ex: "Génie Mécanique / Froid"
+  userId      String?  @unique
+  user        User?    @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+
+  offerings   SubjectOffering[]
+}
+
+// Instance Annuelle de Matière dans une Classe (Générée depuis la maquette ou ajoutée en cours d'année)
+model SubjectOffering {
+  id            String           @id @default(cuid())
+  subjectId     String
+  subject       Subject          @relation(fields: [subjectId], references: [id])
+  classeId      String
+  classe        Classe           @relation(fields: [classeId], references: [id], onDelete: Cascade)
+  gradePeriodId String           // Semestre 1 ou Semestre 2
+  gradePeriod   GradePeriod      @relation(fields: [gradePeriodId], references: [id])
+  categoryId    String?          // Catégorie contextuelle pour cette classe
+  category      SubjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  formateurId   String?          // Multi-affectation libre (le formateur peut avoir plusieurs cours)
+  formateur     Formateur?       @relation(fields: [formateurId], references: [id], onDelete: SetNull)
+
+  coefficient   Float            @default(2.0)
+  volumeHoraire Int?
+  isActive      Boolean          @default(true)
+
+  grades        Grade[]
+
+  @@unique([subjectId, classeId, gradePeriodId])
+}
+
+// Politique de Pondération CC_TP vs NORMALE (30/70, 40/60...)
 model GradingPolicy {
   id            String    @id @default(cuid())
   centerId      String
   center        Center    @relation(fields: [centerId], references: [id])
-  filiereId     String?
+  filiereId     String?   // null = politique globale de l'établissement
+  filiere       Filiere?  @relation(fields: [filiereId], references: [id])
   ccWeight      Float     @default(0.30)
   normalWeight  Float     @default(0.70)
   effectiveFrom DateTime  @default(now())
@@ -327,9 +407,9 @@ model GradePeriod {
   center         Center       @relation(fields: [centerId], references: [id])
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
-  type           String
-  order          Int
-  label          String
+  type           String       // "SEMESTRE" | "ANNUEL"
+  order          Int          // 1, 2 pour semestre ; 1 pour annuel
+  label          String       // "Semestre 1", "Semestre 2"
   startDate      DateTime
   endDate        DateTime
 
@@ -341,23 +421,7 @@ model GradePeriod {
   @@unique([centerId, academicYearId, type, order])
 }
 
-model SubjectOffering {
-  id            String      @id @default(cuid())
-  subjectId     String
-  subject       Subject     @relation(fields: [subjectId], references: [id])
-  classeId      String
-  classe        Classe      @relation(fields: [classeId], references: [id])
-  gradePeriodId String
-  gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
-  coefficient   Float
-  volumeHoraire Int?
-  isActive      Boolean     @default(true)
-
-  grades Grade[]
-
-  @@unique([subjectId, classeId, gradePeriodId])
-}
-
+// Notes brutes individuelles saisies (avec prise en compte des absences)
 model Grade {
   id                String          @id @default(cuid())
   centerId          String
@@ -368,35 +432,38 @@ model Grade {
   subjectOffering   SubjectOffering @relation(fields: [subjectOfferingId], references: [id])
   gradePeriodId     String
   gradePeriod       GradePeriod     @relation(fields: [gradePeriodId], references: [id])
-  evaluationType    String
-  label             String?
-  value             Float
+  
+  evaluationType    String          // "CC_TP" | "NORMALE" | "RATTRAPAGE"
+  label             String?         // "CC1", "CC2", "TP1", "Examen Final", "Rattrapage"
+  value             Float           // Note sur 20
   maxValue          Float           @default(20)
+  isAbsent          Boolean         @default(false)
+  absenceReason     String?         // "JUSTIFIED" | "UNJUSTIFIED" | null
   createdAt         DateTime        @default(now())
 }
 
+// Synthèse figée par matière pour le relevé/bulletin (Rétroactivité Zéro)
 model SubjectResult {
-  id            String      @id @default(cuid())
-  centerId      String
-  center        Center      @relation(fields: [centerId], references: [id])
-  studentId     String
-  student       Student     @relation(fields: [studentId], references: [id])
-  subjectId     String
-  subject       Subject     @relation(fields: [subjectId], references: [id])
-  gradePeriodId String
-  gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
+  id              String      @id @default(cuid())
+  centerId        String
+  center          Center      @relation(fields: [centerId], references: [id])
+  studentId       String
+  student         Student     @relation(fields: [studentId], references: [id])
+  subjectId       String
+  subject         Subject     @relation(fields: [subjectId], references: [id])
+  gradePeriodId   String      // Semestre 1, Semestre 2 ou Annuel
+  gradePeriod     GradePeriod @relation(fields: [gradePeriodId], references: [id])
 
-  computationMode String
-  ccAverage       Float?
-  normalAverage   Float?
-  ccWeight        Float?
-  normalWeight    Float?
+  computationMode String      // "CC_NORMALE" | "AGGREGATE_SEMESTRES"
+  ccAverage       Float?      // Moyenne arithmétique des CC_TP
+  normalAverage   Float?      // Note examen (ou retenue avec rattrapage)
+  ccWeight        Float       // ex: 0.30
+  normalWeight    Float       // ex: 0.70
   gradingPolicyId String?
-
-  coefficient   Float
-  finalGrade    Float
-  isLocked      Boolean     @default(false)
-  computedAt    DateTime    @default(now())
+  coefficient     Float
+  finalGrade      Float       // Note finale calculée (/20)
+  isLocked        Boolean     @default(false)
+  computedAt      DateTime    @default(now())
 
   @@unique([studentId, subjectId, gradePeriodId])
 }
@@ -409,7 +476,7 @@ model Deliberation {
   classe        Classe      @relation(fields: [classeId], references: [id])
   gradePeriodId String
   gradePeriod   GradePeriod @relation(fields: [gradePeriodId], references: [id])
-  scope         String
+  scope         String      // "CC" | "NORMALE" | "SEMESTRE" | "ANNUEL"
   juryDate      DateTime
 
   studentResults StudentDeliberation[]
