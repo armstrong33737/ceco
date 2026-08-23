@@ -1,3 +1,4 @@
+// packages/frontend/src/App.jsx
 import { useEffect, useState } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -13,7 +14,7 @@ import Students from "./pages/Students";
 import CenterSettings from "./pages/CenterSettings";
 import Users from "./pages/Users";
 import Roles from "./pages/Roles";
-import DocumentTemplatesSettings from "./pages/DocumentTemplatesSettings"; // Import obligatoire
+import DocumentTemplatesSettings from "./pages/DocumentTemplatesSettings";
 import License from "./pages/License";
 import Backups from "./pages/Backups";
 import About from "./pages/About";
@@ -27,6 +28,7 @@ import SubjectCategories from "./pages/pedagogie/SubjectCategories";
 import TeachersList from "./pages/pedagogie/TeachersList";
 import GradingPolicies from "./pages/pedagogie/GradingPolicies";
 import DeliberationView from "./pages/pedagogie/DeliberationView";
+import BulletinsView from "./pages/pedagogie/BulletinsView"; // ⬅️ Nouveau composant V4
 
 function LicenseLockout() {
   const { user, updateSubscription, logout } = useAuthStore();
@@ -50,7 +52,7 @@ function LicenseLockout() {
     try {
       const result = await apiFetch("/license/pay", {
         method: "POST",
-        body: JSON.stringify({ operator, phoneNumber, months })
+        body: JSON.stringify({ operator, phoneNumber, months }),
       });
 
       setPaymentStep("waiting_pin");
@@ -230,6 +232,7 @@ export default function App() {
               <Route index element={<Navigate to="saisie" replace />} />
               <Route path="saisie" element={<GradesEntry />} />
               <Route path="deliberations" element={<DeliberationView />} />
+              <Route path="bulletins" element={<BulletinsView />} />
               <Route path="maquettes" element={<ClassOfferings />} />
               <Route path="programmes-filieres" element={<FiliereCurriculum />} />
               <Route path="matieres" element={<SubjectsCatalog />} />

@@ -1,4 +1,0 @@
-quand une session est ferme, tous les pv passent a verouiller et le deveroullage est refuse
-les annee accademique doivent respecter le format 2025-2026. et les dates de debut et fin doivent etre controler et utile(ex: intervalle de minimum 8 mois)
-j'arrive toujours a ajouter les matiere dans la maquette de classe d'une annee anterieure. aussi ajoute le filtre d'annee et semestre sur cette page. le bouton instancier doit  macher sur tous le systeme d'un coup(il ouvre un modal qui demande de ce servir de la maquette filiere ou de reproduire pour la session precedente et ainsi recuperer les anseinants aussi). et la page doit etre dynamique pour preciser les annees ett les classes verouillees. ajoute la petite zonne de recherche en haut du select de la classe de la maquette identique a celui de la page de deliberation.
-il faut un moyen de verifier les matieres ajournees des etudiants

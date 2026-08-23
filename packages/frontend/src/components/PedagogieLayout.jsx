@@ -8,10 +8,12 @@ export default function PedagogieLayout() {
 
   const isDirectorOrAdmin = hasPermission(["formations.create", "formations.update", "center.update"]);
   const canDeliberate = hasPermission("grades.validate");
+  const canGenerateBulletins = hasPermission(["grades.read", "bulletins.generate", "students.read"]);
 
   const TABS = [
     { to: "saisie", label: "Saisie des Notes", icon: "edit_note", visible: true },
     { to: "deliberations", label: "Délibérations du Jury", icon: "gavel", visible: canDeliberate },
+    { to: "bulletins", label: "Bulletins & Diplômes (V4)", icon: "receipt_long", visible: canGenerateBulletins },
     { to: "maquettes", label: "Maquettes de Classes", icon: "auto_stories", visible: true },
     { to: "programmes-filieres", label: "Cursus Filières", icon: "account_tree", visible: isDirectorOrAdmin },
     { to: "matieres", label: "Matières", icon: "library_books", visible: isDirectorOrAdmin },
@@ -37,12 +39,12 @@ export default function PedagogieLayout() {
             </span>
           </div>
           <h1 className="text-xl font-bold text-on-surface mt-1">
-            {user?.role?.name === "Formateur" ? "Espace Enseignant — Saisie des Notes" : "Gestion Pédagogique & Évaluations (V3)"}
+            {user?.role?.name === "Formateur" ? "Espace Enseignant — Saisie des Notes" : "Gestion Pédagogique, Évaluations & Diplômes (V4)"}
           </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
             {user?.role?.name === "Formateur"
               ? "Accédez à vos bordereaux de notes, saisissez les évaluations continues et imprimez vos procès-verbaux."
-              : "Bordereaux de saisie, maquettes semestrielles, cursus pluriannuels, formateurs et délibérations."}
+              : "Saisie des notes, délibérations, bulletins périodiques bilingues, relevés annuels et diplômes certifiés."}
           </p>
         </div>
 
