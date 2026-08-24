@@ -29,6 +29,7 @@ function copyFolderRecursiveSync(from, to) {
   }
 }
 
+// 1. Liste des sauvegardes existantes
 router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const dir = backupDir(req.centerId);
@@ -50,6 +51,7 @@ router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req,
   }
 });
 
+// 2. Configuration automatique
 router.get("/backups/config", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const setting = await prisma.setting.findUnique({
@@ -78,7 +80,26 @@ router.put("/backups/config", verifyJwt, requirePermission("backups.update"), as
   }
 });
 
-// Génération d'une archive compressée .zip complète (Dump JSON + Médias /storage)
+// 3. Téléchargement / Export physique de l'archive vers disque ou clé USB
+router.get("/backups/:filename/download", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
+  try {
+    const { filename } = req.params;
+    const safeFilename = path.basename(filename);
+    const filePath = path.join(backupDir(req.centerId), safeFilename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Fichier d'archive introuvable." });
+    }
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 4. Génération d'une archive compressée .zip complète
 router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -88,9 +109,10 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     const zipPath = path.join(dir, zipFilename);
 
     const dumpData = {
-      metadata: { version: "3.0.0", timestamp: new Date(), centerId: req.centerId },
+      metadata: { version: "4.0.0", timestamp: new Date(), centerId: req.centerId },
       centers: await prisma.center.findMany({ where: { id: req.centerId } }),
       subscriptions: await prisma.subscription.findMany({ where: { centerId: req.centerId } }),
+      licenses: await prisma.license.findMany({ where: { centerId: req.centerId } }),
       settings: await prisma.setting.findMany({ where: { centerId: req.centerId } }),
       users: await prisma.user.findMany({ where: { centerId: req.centerId } }),
       roles: await prisma.role.findMany({ where: { centerId: req.centerId } }),
@@ -123,7 +145,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     const archive = archiver("zip", { zlib: { level: 9 } });
 
     output.on("close", () => {
-      console.log(`[Backup] Archive V3 générée : ${zipFilename}`);
+      console.log(`[Backup] Archive V4 générée : ${zipFilename}`);
       res.json({ success: true, file: zipFilename });
     });
     archive.on("error", (err) => { throw err; });
@@ -145,7 +167,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
   }
 });
 
-// Restauration transactionnelle sécurisée (TRUNCATE CASCADE)
+// 5. Restauration transactionnelle sécurisée
 router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
   const { filename } = req.body || {};
   if (!filename) return res.status(400).json({ error: "Nom de fichier requis." });
@@ -175,7 +197,7 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
       "FiliereSubject", "SubjectCategory", "Promotion", "GradePeriod", "GradingPolicy",
       "Inscription", "Student", "Classe", "Salle", "AcademicYear", "Niveau", "Filiere",
       "ProgramType", "Subject", "Formateur", "Document", "DocumentTemplate",
-      "Permission", "User", "Role", "Setting", "Subscription", "Center",
+      "Permission", "User", "Role", "Setting", "Subscription", "License", "Center",
     ];
 
     for (const table of tablesToTruncate) {
@@ -189,6 +211,15 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
           ...s,
           maxStorage: s.maxStorage ? BigInt(s.maxStorage) : null,
           expiresAt: s.expiresAt ? new Date(s.expiresAt) : null,
+        })),
+      });
+    }
+    if (dumpData.licenses?.length) {
+      await prisma.license.createMany({
+        data: dumpData.licenses.map((l) => ({
+          ...l,
+          expiresAt: new Date(l.expiresAt),
+          createdAt: new Date(l.createdAt),
         })),
       });
     }
@@ -256,8 +287,8 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    console.log(`[Restauration V3] Effectuée avec succès depuis : ${filename}`);
-    res.json({ success: true, message: "Base relationnelle et médias V3 restaurés avec succès." });
+    console.log(`[Restauration V4] Effectuée avec succès depuis : ${filename}`);
+    res.json({ success: true, message: "Base relationnelle, licences et médias restaurés avec succès." });
   } catch (err) {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     next(err);

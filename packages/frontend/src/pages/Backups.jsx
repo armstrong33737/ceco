@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, API_BASE, getToken } from "../lib/apiClient";
 import Icon from "../components/Icon";
 
 const FREQUENCIES = [
@@ -88,6 +88,21 @@ export default function Backups() {
     }
   }
 
+  async function handleDownloadBackup(filename) {
+    try {
+      const token = getToken();
+      const url = `${API_BASE}/backups/${encodeURIComponent(filename)}/download?token=${token}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      setError("Impossible de télécharger l'archive : " + err.message);
+    }
+  }
+
   async function handleRestore() {
     if (!restoreTarget) return;
     setRestoring(true);
@@ -131,7 +146,7 @@ export default function Backups() {
             </span>
           </div>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Générez des archives autonomes compressées (.zip) ou restaurez l'intégralité de la base de données locale.
+            Générez des archives autonomes (.zip), téléchargez-les sur clé USB ou restaurez l'intégralité du système.
           </p>
         </div>
 
@@ -178,9 +193,8 @@ export default function Backups() {
         </div>
       )}
 
-      {/* Configuration & Point d'information */}
+      {/* Cadence et Format */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
-        {/* Cadence */}
         <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-md flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2.5 border-b border-outline-variant/20 pb-3 mb-md">
@@ -212,11 +226,10 @@ export default function Backups() {
           </div>
 
           <div className="pt-2 border-t border-outline-variant/15 text-[10px] text-on-surface-variant">
-            La cadence est enregistrée dans les paramètres du centre.
+            La cadence automatique est enregistrée dans les paramètres de l'établissement.
           </div>
         </div>
 
-        {/* Format hybride */}
         <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-2 flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-2.5 border-b border-outline-variant/20 pb-3 mb-md">
@@ -230,17 +243,17 @@ export default function Backups() {
             </div>
 
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Chaque fichier produit est un conteneur autonome <code className="bg-surface px-1 py-0.5 rounded-md font-mono text-primary border border-outline-variant/30">.zip</code>. Il rassemble le dump complet PostgreSQL et les pièces jointes (logos, photos, actes) sous <code className="bg-surface px-1 py-0.5 rounded-md font-mono text-on-surface">/storage</code>.
+              Chaque archive <code className="bg-surface px-1 py-0.5 rounded font-mono text-primary border border-outline-variant/30">.zip</code> rassemble la base de données PostgreSQL complète et les pièces jointes (logos, photos, documents) sous <code className="bg-surface px-1 py-0.5 rounded font-mono text-on-surface">/storage</code>.
             </p>
           </div>
 
           <div className="pt-2 border-t border-outline-variant/15 text-[10px] text-on-surface-variant">
-            Compatible avec le moteur de restauration transactionnelle V3.
+            Vous pouvez télécharger ces archives pour les sécuriser hors du serveur.
           </div>
         </div>
       </div>
 
-      {/* Tableau des archives disponibles avec recherche rapide */}
+      {/* Tableau des sauvegardes avec boutons Télécharger & Restaurer */}
       <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
         <div className="p-md border-b border-outline-variant/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h2 className="text-sm font-bold text-on-surface">Archives Disponibles (/backups)</h2>
@@ -262,8 +275,8 @@ export default function Backups() {
                 <tr className="border-b border-outline-variant/30 font-bold uppercase tracking-wider text-on-surface-variant bg-surface">
                   <th className="px-md py-3">Nom de l'Archive</th>
                   <th className="px-md py-3">Taille</th>
-                  <th className="px-md py-3">Date d'Archivage</th>
-                  <th className="px-md py-3 text-right">Action</th>
+                  <th className="px-md py-3">Date de Création</th>
+                  <th className="px-md py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/15">
@@ -280,13 +293,26 @@ export default function Backups() {
                       {b.createdAt ? new Date(b.createdAt).toLocaleString("fr-FR") : "—"}
                     </td>
                     <td className="px-md py-3 text-right">
-                      <button
-                        onClick={() => setRestoreTarget(b)}
-                        disabled={restoring}
-                        className="rounded-md border border-primary/30 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary-light transition-all disabled:opacity-50"
-                      >
-                        Restaurer
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {/* BOUTON TÉLÉCHARGER / EXPORTER */}
+                        <button
+                          onClick={() => handleDownloadBackup(b.name)}
+                          className="rounded-md bg-primary-light border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all flex items-center gap-1 shadow-2xs"
+                          title="Télécharger l'archive sur votre ordinateur ou clé USB"
+                        >
+                          <Icon name="download" className="text-[14px]" />
+                          <span>Exporter .zip</span>
+                        </button>
+
+                        {/* BOUTON RESTAURER */}
+                        <button
+                          onClick={() => setRestoreTarget(b)}
+                          disabled={restoring}
+                          className="rounded-md border border-primary/30 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary-light transition-all disabled:opacity-50"
+                        >
+                          Restaurer
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -296,7 +322,7 @@ export default function Backups() {
         )}
       </div>
 
-      {/* MODALE DE CONFIRMATION DE RESTAURATION AVEC PORTAIL */}
+      {/* MODALE DE CONFIRMATION DE RESTAURATION */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {restoreTarget && (
@@ -314,7 +340,7 @@ export default function Backups() {
                 <p className="text-xs text-on-surface-variant leading-relaxed">
                   Vous êtes sur le point de restaurer l'archive <strong>{restoreTarget.name}</strong>.
                   <br /><br />
-                  <span className="text-error font-bold">Attention :</span> Cette opération va écraser la base PostgreSQL actuelle et réinjecter les fichiers médias du centre tels qu'ils étaient à la date de la sauvegarde.
+                  <span className="text-error font-bold">Attention :</span> Cette opération va écraser la base PostgreSQL actuelle et réinjecter les licences et fichiers médias du centre tels qu'ils étaient à la date de la sauvegarde.
                 </p>
                 <div className="flex justify-end gap-2 pt-2 border-t">
                   <button onClick={() => setRestoreTarget(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>

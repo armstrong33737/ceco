@@ -3,22 +3,22 @@
   "version": "1.0.0",
   "private": true,
   "main": "src/main.js",
-  "description": "CECO — ERP de gestion des centres de formation professionnelle",
+  "description": "CECO — Suite ERP de gestion des centres de formation professionnelle",
   "author": {
     "name": "Armstrong Euclador NGALEU",
-    "email": "armstrongngaleu@gmail.com",
+    "email": "armstrongngaleu3@gmail.com",
     "url": "https://armstrongngaleu.netlify.app"
   },
-  "homepage": "https://ceco.cm",
-  "copyright": "Copyright © 2026 CECO. Tous droits réservés.",
+  "homepage": "https://armstrongngaleu.netlify.app",
+  "copyright": "Copyright © 2026 Armstrong Euclador NGALEU. Tous droits réservés.",
   "scripts": {
     "dev": "electron .",
     "build:installer": "pnpm --filter @ceco/backend run prisma:generate && pnpm --filter @ceco/backend run build:bundle && pnpm --filter @ceco/frontend run build && electron-builder --publish never"
   },
   "build": {
-    "appId": "cm.ceco.desktop",
-    "productName": "CECO",
-    "copyright": "Copyright © 2026 CECO",
+    "appId": "cm.ceco.suite.erp",
+    "productName": "CECO Suite ERP",
+    "copyright": "Copyright © 2026 Armstrong Euclador NGALEU. Tous droits réservés.",
     "npmRebuild": false,
     "asar": true,
     "asarUnpack": [
@@ -33,7 +33,12 @@
     "files": [
       "src/**/*",
       "package.json",
-      "assets/**/*"
+      "assets/**/*",
+      "!**/keys/private.key",
+      "!**/scripts/**",
+      "!**/.env*",
+      "!**/*.log",
+      "!**/*.test.js"
     ],
     "extraResources": [
       {
@@ -81,16 +86,18 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "legalTrademarks": "CECO"
+      "legalTrademarks": "CECO — Armstrong Euclador NGALEU"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "CECO",
+      "shortcutName": "CECO Suite ERP",
+      "license": "assets/license_fr.txt",
       "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "menuCategory": true
     },
     "mac": {
       "category": "public.app-category.education",
@@ -105,13 +112,14 @@
     "linux": {
       "category": "Education",
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "icon": "assets/icon.png",
-      "synopsis": "ERP pour centres de formation professionnelle",
+      "synopsis": "ERP de gestion des centres de formation professionnelle",
       "description": "Solution complète pour la gestion pédagogique, administrative et financière des centres de formation.",
       "desktop": {
-        "StartupWMClass": "CECO"
+        "StartupWMClass": "CECO Suite ERP"
       }
     }
   },

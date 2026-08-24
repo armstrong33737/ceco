@@ -22,7 +22,7 @@ const pedagogieRoutes = require("./routes/pedagogie");
 const gradesRoutes = require("./routes/grades");
 const studentsRoutes = require("./routes/students");
 const documentsRoutes = require("./routes/documents");
-const auditRoutes = require("./routes/audit"); // ⬅️ Monté
+const auditRoutes = require("./routes/audit");
 
 const app = express();
 const PORT = process.env.CECO_API_PORT || 4000;
@@ -33,12 +33,12 @@ app.use(express.json({ limit: "10mb" }));
 
 app.use(buildTenantResolver(MODE));
 
-// 1. Routes ouvertes
+// 1. Routes ouvertes (Santé, Authentification, Consultation & Renouvellement Licence)
 app.use("/", healthRoutes);
 app.use("/", authRoutes);
 app.use("/", licenseRoutes);
 
-// 2. Garde de licence
+// 2. Garde de licence (Mode Lecture Seule / Période de Grâce)
 app.use(checkLicense);
 
 // 3. Routes métier

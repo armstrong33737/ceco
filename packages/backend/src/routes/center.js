@@ -1,3 +1,4 @@
+// packages/backend/src/routes/center.js
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -5,6 +6,7 @@ const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
+const { getDefaultSealFilePath, ensureDefaultSealOnDisk } = require("../storage/defaultSeal");
 
 const router = express.Router();
 
@@ -22,6 +24,11 @@ const MIME_TO_EXT = {
   "image/svg+xml": "svg",
 };
 const EXT_TO_MIME = Object.fromEntries(Object.entries(MIME_TO_EXT).map(([m, e]) => [e, m]));
+
+const DEFAULT_SIGNATURE_ROLES = [
+  { key: "directeur", title: "Directeur Général", desc: "Signature officielle de la Direction" },
+  { key: "promoteur", title: "Promoteur / Fondateur", desc: "Signature officielle du Promoteur" },
+];
 
 function brandingDir(centerId) {
   return centerStoragePath(centerId, "settings/branding");
@@ -80,30 +87,35 @@ function serializeCenter(center) {
   const out = {};
   for (const field of EDITABLE_FIELDS) out[field] = center[field];
   out.id = center.id;
-  out.hasLogo = !!center.logo;
+  out.hasLogo = Boolean(center.logo);
   return out;
 }
 
+// 1. Informations du centre & Détection du Sceau
 router.get("/center", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const center = await prisma.center.findUnique({ where: { id: req.centerId } });
     if (!center) return res.status(404).json({ error: "Centre introuvable." });
-    
-    // Vérification de la présence physique du sceau d'État
+
+    ensureDefaultSealOnDisk(req.centerId);
+
     const branding = brandingDir(req.centerId);
-    let hasSeal = false;
+    let hasCustomSeal = false;
     if (fs.existsSync(branding)) {
-      hasSeal = fs.readdirSync(branding).some((f) => f.startsWith("seal."));
+      const files = fs.readdirSync(branding);
+      hasCustomSeal = files.some((f) => f.startsWith("seal."));
     }
 
     const payload = serializeCenter(center);
-    payload.hasSeal = hasSeal;
+    payload.hasSeal = hasCustomSeal || Boolean(getDefaultSealFilePath());
+    payload.isDefaultSeal = !hasCustomSeal;
     res.json(payload);
   } catch (err) {
     next(err);
   }
 });
 
+// 2. Logo du centre
 router.get("/center/logo", verifyJwt, async (req, res, next) => {
   try {
     const center = await prisma.center.findUnique({ where: { id: req.centerId } });
@@ -120,25 +132,42 @@ router.get("/center/logo", verifyJwt, async (req, res, next) => {
   }
 });
 
+// 3. Sceau de la République (Streaming direct)
 router.get("/center/seal", verifyJwt, async (req, res, next) => {
   try {
     const dir = brandingDir(req.centerId);
-    if (!fs.existsSync(dir)) return res.status(404).json({ error: "Aucun sceau." });
+    let filePath = null;
+    let ext = "png";
 
-    const file = fs.readdirSync(dir).find((f) => f.startsWith("seal."));
-    if (!file) return res.status(404).json({ error: "Aucun sceau." });
+    if (fs.existsSync(dir)) {
+      const file = fs.readdirSync(dir).find((f) => f.startsWith("seal."));
+      if (file) {
+        filePath = path.join(dir, file);
+        ext = path.extname(file).replace(".", "").toLowerCase();
+      }
+    }
 
-    const filePath = path.join(dir, file);
-    const ext = path.extname(file).replace(".", "").toLowerCase();
+    if (!filePath || !fs.existsSync(filePath)) {
+      const defaultAsset = getDefaultSealFilePath();
+      if (defaultAsset) {
+        filePath = defaultAsset.filePath;
+        ext = defaultAsset.ext;
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Aucun fichier image de sceau trouvé." });
+    }
 
     res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
-    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("Cache-Control", "private, max-age=120");
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     next(err);
   }
 });
 
+// 4. Mise à jour des coordonnées de l'établissement
 router.put("/center", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { name, logo, seal } = req.body || {};
@@ -161,14 +190,17 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
       data.logo = saveLogoFromDataUrl(req.centerId, logo);
     }
 
-    if (seal === "") {
+    if (seal === "default" || seal === "") {
       removeExistingSealFiles(req.centerId);
+      ensureDefaultSealOnDisk(req.centerId);
     } else if (typeof seal === "string" && seal.startsWith("data:image/")) {
       saveSealFromDataUrl(req.centerId, seal);
     }
 
     const center = await prisma.center.update({ where: { id: req.centerId }, data });
-    res.json(serializeCenter(center));
+    const payload = serializeCenter(center);
+    payload.hasSeal = true;
+    res.json(payload);
   } catch (err) {
     if (err.message?.includes("Image trop volumineuse") || err.message?.includes("Format")) {
       return res.status(400).json({ error: err.message });
@@ -177,7 +209,50 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
   }
 });
 
-// Gestion des signatures indexées par rôle
+// 5. Rétablissement du Sceau par défaut
+router.post("/center/seal/reset", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    removeExistingSealFiles(req.centerId);
+    ensureDefaultSealOnDisk(req.centerId);
+    res.json({ success: true, message: "Sceau par défaut rétabli." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 6. Récupération des rôles de signatures configurés (Par défaut : Directeur et Promoteur)
+router.get("/center/signature-roles", verifyJwt, async (req, res, next) => {
+  try {
+    const setting = await prisma.setting.findUnique({
+      where: { centerId_key: { centerId: req.centerId, key: "center.signature_roles" } },
+    });
+
+    res.json(setting?.value || DEFAULT_SIGNATURE_ROLES);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/center/signature-roles", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { roles } = req.body || {};
+    if (!Array.isArray(roles)) {
+      return res.status(400).json({ error: "Liste de rôles invalide." });
+    }
+
+    const setting = await prisma.setting.upsert({
+      where: { centerId_key: { centerId: req.centerId, key: "center.signature_roles" } },
+      update: { value: roles },
+      create: { centerId: req.centerId, key: "center.signature_roles", value: roles },
+    });
+
+    res.json(setting.value);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 7. Liste des signatures physiques existantes
 router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);
@@ -187,8 +262,10 @@ router.get("/center/signatures", verifyJwt, requirePermission("center.read", "ce
     if (fs.existsSync(dir)) {
       const files = fs.readdirSync(dir);
       for (const file of files) {
-        const roleKey = path.basename(file, path.extname(file));
-        signatures[roleKey] = true;
+        if (file.endsWith(".png")) {
+          const roleKey = path.basename(file, ".png");
+          signatures[roleKey] = true;
+        }
       }
     }
 
@@ -198,6 +275,26 @@ router.get("/center/signatures", verifyJwt, requirePermission("center.read", "ce
   }
 });
 
+// 8. Streaming direct de l'image PNG d'une signature
+router.get("/center/signatures/:roleKey", verifyJwt, async (req, res, next) => {
+  try {
+    const dir = signaturesDir(req.centerId);
+    const safeKey = req.params.roleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const filePath = path.join(dir, `${safeKey}.png`);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Signature introuvable." });
+    }
+
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "private, max-age=120");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 9. Enregistrement d'une signature
 router.post("/center/signatures", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { roleKey, signatureDataUrl } = req.body || {};
@@ -209,7 +306,7 @@ router.post("/center/signatures", verifyJwt, requirePermission("center.update"),
     const dir = signaturesDir(req.centerId);
 
     const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(signatureDataUrl);
-    if (!match) return res.status(400).json({ error: "Format invalide." });
+    if (!match) return res.status(400).json({ error: "Format d'image invalide." });
 
     const [, , base64Payload] = match;
     const buffer = Buffer.from(base64Payload, "base64");
@@ -222,6 +319,7 @@ router.post("/center/signatures", verifyJwt, requirePermission("center.update"),
   }
 });
 
+// 10. Suppression d'une signature
 router.delete("/center/signatures/:roleKey", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);

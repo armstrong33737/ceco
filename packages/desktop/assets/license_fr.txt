@@ -1,0 +1,81 @@
+================================================================================
+                    CONTRAT DE LICENCE UTILISATEUR FINAL (CLUF)
+                               CECO SUITE ERP
+                      Version 1.0.0 — Mode On-Premise & Réseau
+================================================================================
+
+VEUILLEZ LIRE ATTENTIVEMENT LE PRÉSENT CONTRAT AVANT D'INSTALLER OU D'UTILISER 
+LE LOGICIEL CECO SUITE ERP. EN COCHANT LA CASE D'ACCEPTATION OU EN INSTALLANT 
+CE LOGICIEL, VOUS RECONNAISSEZ ÊTRE LIÉ PAR LES TERMES DU PRÉSENT ACCORD.
+
+--------------------------------------------------------------------------------
+1. OBJET ET CONCESSION DE LICENCE
+--------------------------------------------------------------------------------
+Armstrong Euclador NGALEU (ci-après « l'Auteur-Concepteur ») concède à 
+l'établissement de formation professionnelle acquéreur (ci-après « l'Utilisateur » 
+ou « l'Établissement ») un droit d'utilisation non exclusif, non transférable 
+et limité dans le temps de la suite logicielle CECO Suite ERP.
+
+La présente licence autorise l'installation de l'instance serveur sur un 
+ordinateur principal au sein de l'établissement, ainsi que le déploiement 
+d'instances clientes sur les postes du réseau local (LAN) dudit établissement.
+
+--------------------------------------------------------------------------------
+2. PROPRIÉTÉ INTELLECTUELLE ET SOUVERAINETÉ DES DONNÉES
+--------------------------------------------------------------------------------
+- Propriété du Logiciel : Le logiciel CECO, son architecture, son code source, 
+  ses interfaces, ses algorithmes et ses composants graphiques demeurent la 
+  propriété exclusive d'Armstrong Euclador NGALEU.
+- Souveraineté des Données : Toutes les données enregistrées (dossiers des 
+  apprenants, notes, procès-verbaux, pièces jointes, photographies et sauvegardes) 
+  demeurent la propriété intégrale et exclusive de l'Établissement. L'Auteur 
+  n'accède à aucune donnée administrative sans autorisation explicite du centre.
+
+--------------------------------------------------------------------------------
+3. EXPLOITATION LOCALE ET PÉRIODE DE VALIDITÉ
+--------------------------------------------------------------------------------
+- Période d'Évaluation : Tout nouvel établissement bénéficie d'une période 
+  d'évaluation initiale de soixante (60) jours à compter du premier lancement.
+- Renouvellement : La continuité du service complet est soumise au rechargement 
+  périodique de la licence (par clé signée hors-ligne ou par Mobile Money).
+- Période de Grâce & Mode Lecture Seule : À l'échéance d'une licence, un délai 
+  de grâce de sept (7) jours est accordé. Au-delà, l'application bascule en 
+  mode consultation et impression (lecture seule) afin de préserver l'accès 
+  aux archives sans risque de perte de données.
+
+--------------------------------------------------------------------------------
+4. SOUVERAINETÉ PÉDAGOGIQUE ET CONFORMITÉ MINISTÉRIELLE
+--------------------------------------------------------------------------------
+L'Établissement assume la responsabilité entière et exclusive de la régularité 
+des inscriptions, de la saisie des évaluations, de la souveraineté des décisions 
+de jury de délibération et de la validité de son agrément ministériel (MINEFOP). 
+CECO Suite ERP constitue un outil technique d'aide à la gestion et ne saurait 
+engager la responsabilité de l'Auteur quant à la légalité des actes émis.
+
+--------------------------------------------------------------------------------
+5. SAUVEGARDES ET SÉCURITÉ DU MATÉRIEL
+--------------------------------------------------------------------------------
+L'Établissement est tenu de réaliser régulièrement des copies de sauvegarde 
+au format compressé (.zip) fournies par le logiciel et de les externaliser 
+sur un support sécurisé (clé USB, disque dur externe). L'Auteur ne peut être 
+tenu responsable des défaillances physiques des ordinateurs de l'établissement.
+
+--------------------------------------------------------------------------------
+6. RESTRICTIONS
+--------------------------------------------------------------------------------
+Il est formellement interdit à l'Utilisateur de :
+- Tenter de décompiler, rétro-ingénierer ou altérer les signatures cryptographiques.
+- Diffuser des copies piratées ou contourner les mécanismes de licence.
+- Revendre, louer ou sous-licencier le progiciel à des tiers.
+
+--------------------------------------------------------------------------------
+7. LOI APPLICABLE ET JURIDICTION
+--------------------------------------------------------------------------------
+Le présent contrat est régi par les lois en vigueur en République du Cameroun 
+et dans l'espace OHADA. Tout litige relatif à son exécution sera soumis aux 
+tribunaux compétents.
+
+================================================================================
+© 2026 Armstrong Euclador NGALEU. Tous droits réservés.
+Contact / Portfolio : armstrongngaleu3@gmail.com • https://armstrongngaleu.netlify.app
+================================================================================

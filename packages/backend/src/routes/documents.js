@@ -25,6 +25,7 @@ const {
   generateGraduationDiplomaPdf,
   generateBatchGraduationDiplomasPdf,
 } = require("../services/documentPdfService");
+const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 
 const router = express.Router();
 
@@ -41,15 +42,17 @@ function getCenterLogoBase64(centerId, logoExt) {
 
 function getCenterSealBase64(centerId) {
   const brandingDir = centerStoragePath(centerId, "settings/branding");
-  if (!fs.existsSync(brandingDir)) return null;
-  const files = fs.readdirSync(brandingDir);
-  const sealFile = files.find((f) => f.startsWith("seal."));
-  if (sealFile) {
-    const ext = path.extname(sealFile).replace(".", "").toLowerCase();
-    const mime = ext === "svg" ? "image/svg+xml" : ext === "png" ? "image/png" : "image/jpeg";
-    return `data:${mime};base64,${fs.readFileSync(path.join(brandingDir, sealFile)).toString("base64")}`;
+  if (fs.existsSync(brandingDir)) {
+    const files = fs.readdirSync(brandingDir);
+    const sealFile = files.find((f) => f.startsWith("seal."));
+    if (sealFile) {
+      const ext = path.extname(sealFile).replace(".", "").toLowerCase();
+      const mime = ext === "svg" ? "image/svg+xml" : ext === "png" ? "image/png" : "image/jpeg";
+      return `data:${mime};base64,${fs.readFileSync(path.join(brandingDir, sealFile)).toString("base64")}`;
+    }
   }
-  return null;
+  // Fallback direct sur l'image réelle dans backend/assets/seal.png
+  return getDefaultSealBase64();
 }
 
 function getRoleSignatureBase64(centerId, roleKey) {

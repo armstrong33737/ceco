@@ -65,7 +65,7 @@ router.post("/categories", verifyJwt, requirePermission("formations.create", "ce
         centerId: req.centerId,
         name: name.trim(),
         code: code ? code.trim().toUpperCase() : null,
-        order: order ? parseInt(order) : count + 1,
+        order: order ? parseInt(order, 10) : count + 1,
         isEliminatory: Boolean(isEliminatory),
       },
     });
@@ -86,7 +86,7 @@ router.put("/categories/:id", verifyJwt, requirePermission("formations.update", 
       data: {
         ...(name && { name: name.trim() }),
         ...(code !== undefined && { code: code ? code.trim().toUpperCase() : null }),
-        ...(order !== undefined && { order: parseInt(order) }),
+        ...(order !== undefined && { order: parseInt(order, 10) }),
         ...(isEliminatory !== undefined && { isEliminatory: Boolean(isEliminatory) }),
       },
     });
@@ -265,12 +265,12 @@ router.post("/filieres/:id/subjects", verifyJwt, requirePermission("formations.c
       data: {
         centerId: req.centerId,
         filiereId: req.params.id,
-        niveauOrder: parseInt(niveauOrder),
-        semesterOrder: parseInt(semesterOrder),
+        niveauOrder: parseInt(niveauOrder, 10),
+        semesterOrder: parseInt(semesterOrder, 10),
         subjectId,
         categoryId: categoryId || null,
         defaultCoefficient: defaultCoefficient ? parseFloat(defaultCoefficient) : 2.0,
-        defaultVolumeHoraire: defaultVolumeHoraire ? parseInt(defaultVolumeHoraire) : null,
+        defaultVolumeHoraire: defaultVolumeHoraire ? parseInt(defaultVolumeHoraire, 10) : null,
       },
       include: { subject: true, category: true },
     });
@@ -291,7 +291,7 @@ router.put("/filieres/subjects/:id", verifyJwt, requirePermission("formations.up
       data: {
         ...(categoryId !== undefined && { categoryId: categoryId || null }),
         ...(defaultCoefficient && { defaultCoefficient: parseFloat(defaultCoefficient) }),
-        ...(defaultVolumeHoraire !== undefined && { defaultVolumeHoraire: defaultVolumeHoraire ? parseInt(defaultVolumeHoraire) : null }),
+        ...(defaultVolumeHoraire !== undefined && { defaultVolumeHoraire: defaultVolumeHoraire ? parseInt(defaultVolumeHoraire, 10) : null }),
       },
       include: { subject: true, category: true },
     });
@@ -460,7 +460,7 @@ router.delete("/formateurs/:id", verifyJwt, requirePermission("formations.delete
 });
 
 // ============================================================================
-// 5. MAQUETTE PÉDAGOGIQUE PAR CLASSE & INSTANCIATION AVANCÉE (CORRIGÉE)
+// 5. MAQUETTE PÉDAGOGIQUE PAR CLASSE & INSTANCIATION AVANCÉE
 // ============================================================================
 async function ensureYearGradePeriods(centerId, academicYear) {
   let periods = await prisma.gradePeriod.findMany({
@@ -530,7 +530,6 @@ router.get("/classes/:classeId/offerings", verifyJwt, requirePermission("formati
   }
 });
 
-// Instanciation Intelligente (CORRECTION DE LA VARIABLE createdCount)
 router.post("/classes/instantiate-template", verifyJwt, requirePermission("formations.update"), async (req, res, next) => {
   try {
     const { classeId, targetYearId, mode = "FILIERE_TEMPLATE", scope = "SINGLE_CLASS" } = req.body || {};
@@ -648,7 +647,7 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
                   volumeHoraire: ts.defaultVolumeHoraire,
                 },
               });
-              createdCount++; // ⬅️ CORRIGÉ : createdCount incrémenté sans ReferenceError
+              createdCount++;
             }
           }
         }
@@ -683,7 +682,7 @@ router.post("/classes/:classeId/offerings", verifyJwt, requirePermission("format
         categoryId: categoryId || null,
         formateurId: formateurId || null,
         coefficient: coefficient ? parseFloat(coefficient) : 2.0,
-        volumeHoraire: volumeHoraire ? parseInt(volumeHoraire) : null,
+        volumeHoraire: volumeHoraire ? parseInt(volumeHoraire, 10) : null,
       },
       include: { subject: true, category: true, formateur: true, gradePeriod: true },
     });
@@ -708,7 +707,7 @@ router.put("/offerings/:id", verifyJwt, requirePermission("formations.update"), 
         ...(categoryId !== undefined && { categoryId: categoryId || null }),
         ...(formateurId !== undefined && { formateurId: formateurId || null }),
         ...(coefficient && { coefficient: parseFloat(coefficient) }),
-        ...(volumeHoraire !== undefined && { volumeHoraire: volumeHoraire ? parseInt(volumeHoraire) : null }),
+        ...(volumeHoraire !== undefined && { volumeHoraire: volumeHoraire ? parseInt(volumeHoraire, 10) : null }),
       },
       include: { subject: true, category: true, formateur: true, gradePeriod: true },
     });
@@ -1311,7 +1310,7 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
 
     const targetPeriod = scope === "ANNUEL"
       ? targetYear.gradePeriods.find((p) => p.type === "ANNUEL")
-      : targetYear.gradePeriods.find((p) => p.type === "SEMESTRE" && p.order === parseInt(semesterOrder));
+      : targetYear.gradePeriods.find((p) => p.type === "SEMESTRE" && p.order === parseInt(semesterOrder, 10));
 
     if (!targetPeriod) {
       return res.status(400).json({ error: "Période d'évaluation introuvable pour cette session." });
@@ -1409,7 +1408,8 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
           };
         });
 
-        const ranked = [...computedList]
+        // Correction de la variable : utilisation de computedStudents au lieu de computedList
+        const ranked = [...computedStudents]
           .filter((s) => s.hasScore)
           .sort((a, b) => b.moyenne - a.moyenne);
 
@@ -1535,7 +1535,7 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
       for (const resItem of results) {
         const { studentId, moyenne, rang, decision } = resItem;
         const moy = moyenne !== null && moyenne !== undefined ? parseFloat(moyenne) : 0.0;
-        const finalRang = rang ? parseInt(rang) : 1;
+        const finalRang = rang ? parseInt(rang, 10) : 1;
 
         await tx.studentDeliberation.deleteMany({
           where: { deliberationId: deliberation.id, studentId },

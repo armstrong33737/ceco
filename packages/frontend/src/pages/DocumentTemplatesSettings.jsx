@@ -5,7 +5,6 @@ import { apiFetch, apiFetchImageUrl } from "../lib/apiClient";
 import useAuthStore from "../store/authStore";
 import Icon from "../components/Icon";
 
-// Classification structurée en 3 Blocs Métier
 const DOCUMENT_SECTIONS = [
   {
     id: "cartes",
@@ -74,7 +73,7 @@ const DEFAULT_CONFIGS = {
   ATTESTATION_INSCRIPTION: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "CERTIFICAT DE SCOLARITÉ & D'INSCRIPTION",
     subTitle: "ATTESTATION OF ENROLMENT",
     primaryColor: "#0B1C30",
@@ -84,7 +83,7 @@ const DEFAULT_CONFIGS = {
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Directeur des Études", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Toute falsification ou altération du présent document expose son auteur aux poursuites prévues par le Code Pénal.",
@@ -92,7 +91,7 @@ const DEFAULT_CONFIGS = {
   BULLETIN_CC: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "BULLETIN D'ÉVALUATIONS CONTINUES (CC & TP)",
     primaryColor: "#0B1C30",
     showLogo: true,
@@ -101,7 +100,7 @@ const DEFAULT_CONFIGS = {
     watermarkType: "logo",
     watermarkOpacity: 0.06,
     signatories: [
-      { title: "Le Directeur des Études", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Bulletin d'évaluation continue certifié conforme • Registre officiel CECO",
@@ -109,7 +108,7 @@ const DEFAULT_CONFIGS = {
   BULLETIN_SEMESTRE: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "BULLETIN SEMESTRIEL DE NOTES / SEMESTER REPORT CARD",
     primaryColor: "#0B1C30",
     showLogo: true,
@@ -118,7 +117,7 @@ const DEFAULT_CONFIGS = {
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Directeur des Études", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Toute rature ou surcharge annule la validité du présent bulletin officiel.",
@@ -126,7 +125,7 @@ const DEFAULT_CONFIGS = {
   RELEVE_ANNUEL: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "RELEVÉ DE NOTES ANNUEL / OFFICIAL ACADEMIC TRANSCRIPT",
     primaryColor: "#0B1C30",
     showLogo: true,
@@ -135,7 +134,7 @@ const DEFAULT_CONFIGS = {
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Directeur des Études", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Relevé officiel annuel certifié conforme et délivré en un seul exemplaire original.",
@@ -149,7 +148,7 @@ const DEFAULT_CONFIGS = {
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Président du Jury", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur de l'Établissement", roleKey: "directeur" },
     ],
     footerLegal: "Titre officiel de qualification professionnelle certifié conforme • CECO ERP",
@@ -162,6 +161,11 @@ export default function DocumentTemplatesSettings() {
   const user = useAuthStore((s) => s.user);
   const [selectedType, setSelectedType] = useState("BULLETIN_SEMESTRE");
   const [config, setConfig] = useState(DEFAULT_CONFIGS.BULLETIN_SEMESTRE);
+  const [availableSignatureRoles, setAvailableSignatureRoles] = useState([
+    { key: "directeur", title: "Directeur Général" },
+    { key: "promoteur", title: "Promoteur / Fondateur" },
+  ]);
+
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [error, setError] = useState(null);
@@ -172,19 +176,23 @@ export default function DocumentTemplatesSettings() {
 
   useEffect(() => {
     let isMounted = true;
-    apiFetch("/center")
-      .then(async (centerData) => {
-        if (!isMounted || !centerData) return;
-        if (centerData.hasLogo) {
-          const logoUrl = await apiFetchImageUrl("/center/logo");
-          if (isMounted) setCenterLogoUrl(logoUrl);
-        }
-        if (centerData.hasSeal) {
-          const sealUrl = await apiFetchImageUrl("/center/seal");
-          if (isMounted) setCenterSealUrl(sealUrl);
-        }
-      })
-      .catch(() => {});
+    Promise.all([
+      apiFetch("/center"),
+      apiFetch("/center/signature-roles").catch(() => [
+        { key: "directeur", title: "Directeur Général" },
+        { key: "promoteur", title: "Promoteur / Fondateur" },
+      ]),
+    ]).then(async ([centerData, rolesData]) => {
+      if (!isMounted) return;
+      if (rolesData) setAvailableSignatureRoles(rolesData);
+      if (centerData?.hasLogo) {
+        const logoUrl = await apiFetchImageUrl("/center/logo");
+        if (isMounted) setCenterLogoUrl(logoUrl);
+      }
+      const sealUrl = await apiFetchImageUrl("/center/seal");
+      if (isMounted) setCenterSealUrl(sealUrl);
+    }).catch(() => {});
+
     return () => { isMounted = false; };
   }, []);
 
@@ -251,7 +259,6 @@ export default function DocumentTemplatesSettings() {
     }
   }
 
-  // Trouver le document actuellement sélectionné
   let currentDocMeta = null;
   for (const sec of DOCUMENT_SECTIONS) {
     const found = sec.items.find((i) => i.key === selectedType);
@@ -263,7 +270,7 @@ export default function DocumentTemplatesSettings() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-md max-w-7xl mx-auto">
-      {/* Sélecteur en 3 Blocs Métier */}
+      {/* Sélecteur en 3 Blocs */}
       <div className="space-y-3">
         <div className="bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs">
           <h2 className="text-sm font-bold text-on-surface flex items-center gap-2">
@@ -271,7 +278,7 @@ export default function DocumentTemplatesSettings() {
             <span>Gabarits &amp; Modèles Vectoriels (V4)</span>
           </h2>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Sélectionnez un document parmi les 3 blocs fonctionnels pour ajuster les en-têtes bilingues, couleurs, mentions et blocs signataires.
+            Personnalisez les en-têtes officiels, couleurs, mentions et assignez vos signatures enregistrées.
           </p>
         </div>
 
@@ -331,7 +338,6 @@ export default function DocumentTemplatesSettings() {
         </div>
       )}
 
-      {/* Grille Formulaire + Prévisualisation en direct */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-md">
         {/* Formulaire de Configuration */}
         <form onSubmit={handleSubmit} className="lg:col-span-6 bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs space-y-md">
@@ -456,10 +462,9 @@ export default function DocumentTemplatesSettings() {
               </>
             )}
 
-            {/* Formulaires Format A4 (Bulletins, Relevés, Diplômes, Certificats, Fiches) */}
+            {/* Formulaires Format A4 */}
             {selectedType !== "CARTE_ETUDIANT" && (
               <>
-                {/* En-tête officiel bilingue */}
                 {selectedType !== "DIPLOME_FIN_FORMATION" && (
                   <div className="p-3 bg-surface rounded-md border border-outline-variant/20 space-y-2">
                     <span className="font-bold text-on-surface block uppercase text-[10px] tracking-wider">
@@ -560,14 +565,14 @@ export default function DocumentTemplatesSettings() {
                   </label>
                 </div>
 
-                {/* Blocs Signataires dynamiques */}
+                {/* Blocs Signataires dynamiques liés aux signatures configurées */}
                 <div className="p-3 bg-surface rounded-md border border-outline-variant/20 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="font-bold text-on-surface block uppercase text-[10px] tracking-wider">
                         Zones de Signatures &amp; Visas (Pied de Page)
                       </span>
-                      <p className="text-[10px] text-on-surface-variant">Configurez 1 à 3 signataires pour cet acte.</p>
+                      <p className="text-[10px] text-on-surface-variant">Sélectionnez parmi vos signataires enregistrés (1 à 3).</p>
                     </div>
                     <button
                       type="button"
@@ -592,12 +597,13 @@ export default function DocumentTemplatesSettings() {
                         <select
                           value={sig.roleKey || "directeur"}
                           onChange={(e) => handleUpdateSignatory(idx, "roleKey", e.target.value)}
-                          className={`${inputClass} w-44`}
+                          className={`${inputClass} w-48 font-semibold`}
                         >
-                          <option value="directeur">Directeur Général</option>
-                          <option value="directeur_pedagogique">Dir. Pédagogique / Président Jury</option>
+                          {availableSignatureRoles.map((r) => (
+                            <option key={r.key} value={r.key}>{r.title} ({r.key})</option>
+                          ))}
                           <option value="student">Apprenant(e)</option>
-                          <option value="none">Sans image (Mention seule)</option>
+                          <option value="none">Sans signature (Mention seule)</option>
                         </select>
                         <button
                           type="button"
@@ -624,12 +630,12 @@ export default function DocumentTemplatesSettings() {
               </>
             )}
 
-            {/* Filigrane vectoriel */}
+            {/* Filigrane */}
             <div className="p-3 bg-surface rounded-md border border-outline-variant/20 space-y-2">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-bold text-on-surface block uppercase text-[10px] tracking-wider">Filigrane de fond</span>
-                  <p className="text-[10px] text-on-surface-variant">Image translucide centrée en arrière-plan.</p>
+                  <p className="text-[10px] text-on-surface-variant">Image translucide en arrière-plan.</p>
                 </div>
                 <input
                   type="checkbox"
@@ -668,7 +674,7 @@ export default function DocumentTemplatesSettings() {
           </div>
         </form>
 
-        {/* Aperçu en direct */}
+        {/* Aperçu Vectoriel en Direct */}
         <div className="lg:col-span-6 bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs space-y-3 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-outline-variant/20 pb-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
@@ -825,7 +831,7 @@ export default function DocumentTemplatesSettings() {
                   {(config.signatories || []).map((sig, idx) => (
                     <div key={idx} className="text-center">
                       <p className="font-bold underline">{sig.title}</p>
-                      <p className="text-[7px] text-on-surface-variant font-mono">[Signature officielle]</p>
+                      <p className="text-[7px] text-on-surface-variant font-mono">[Signature : {sig.roleKey}]</p>
                     </div>
                   ))}
                 </div>
@@ -833,7 +839,7 @@ export default function DocumentTemplatesSettings() {
             </div>
           )}
 
-          {/* Rendu Format A4 Portrait (Bulletins, Relevés, Attestations) */}
+          {/* Rendu Format A4 Portrait */}
           {selectedType !== "CARTE_ETUDIANT" && selectedType !== "DIPLOME_FIN_FORMATION" && (
             <div className="p-6 bg-white rounded-md border border-outline-variant/50 shadow-sm relative overflow-hidden text-[10px] leading-tight space-y-3 min-h-[480px] flex flex-col justify-between">
               {config.showWatermark && (
@@ -873,7 +879,6 @@ export default function DocumentTemplatesSettings() {
                   <p><strong>Filière :</strong> Froid &amp; Climatisation (Niveau 1) • <strong>Session :</strong> 2026-2027</p>
                 </div>
 
-                {/* Table miniature pour les bulletins */}
                 {(selectedType === "BULLETIN_SEMESTRE" || selectedType === "BULLETIN_CC" || selectedType === "RELEVE_ANNUEL") && (
                   <div className="border border-outline-variant/30 rounded overflow-hidden text-[8px]">
                     <div className="p-1 bg-ink text-white font-bold flex justify-between">
@@ -912,7 +917,7 @@ export default function DocumentTemplatesSettings() {
                     {(config.signatories || []).map((sig, idx) => (
                       <div key={idx} className="text-center">
                         <p className="font-bold underline">{sig.title}</p>
-                        <p className="text-[7px] text-on-surface-variant font-mono">[Signature officielle]</p>
+                        <p className="text-[7px] text-on-surface-variant font-mono">[Signature : {sig.roleKey}]</p>
                       </div>
                     ))}
                   </div>
