@@ -7,6 +7,7 @@ const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
+const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 const {
   generateStudentCardPdf,
   generateBatchCardsSheetPdf,
@@ -25,7 +26,6 @@ const {
   generateGraduationDiplomaPdf,
   generateBatchGraduationDiplomasPdf,
 } = require("../services/documentPdfService");
-const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 
 const router = express.Router();
 
@@ -51,18 +51,27 @@ function getCenterSealBase64(centerId) {
       return `data:${mime};base64,${fs.readFileSync(path.join(brandingDir, sealFile)).toString("base64")}`;
     }
   }
-  // Fallback direct sur l'image réelle dans backend/assets/seal.png
   return getDefaultSealBase64();
 }
 
-function getRoleSignatureBase64(centerId, roleKey) {
-  if (!roleKey) return null;
-  const safeKey = roleKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
-  const sigPath = path.join(centerStoragePath(centerId, "settings/signatures"), `${safeKey}.png`);
-  if (fs.existsSync(sigPath)) {
-    return `data:image/png;base64,${fs.readFileSync(sigPath).toString("base64")}`;
+function getAllCenterSignaturesBase64(centerId) {
+  const dir = centerStoragePath(centerId, "settings/signatures");
+  const signatures = {};
+  if (!fs.existsSync(dir)) return signatures;
+
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    if (file.endsWith(".png")) {
+      const roleKey = path.basename(file, ".png");
+      const filePath = path.join(dir, file);
+      try {
+        signatures[roleKey] = `data:image/png;base64,${fs.readFileSync(filePath).toString("base64")}`;
+      } catch (e) {
+        console.warn(`[Documents] Erreur lecture signature ${roleKey} :`, e.message);
+      }
+    }
   }
-  return null;
+  return signatures;
 }
 
 function getStudentPhotoBase64(centerId, photoPath) {
@@ -98,7 +107,7 @@ function getDiplomaMention(avg) {
   return "Passable";
 }
 
-// Générateur du contenu textuel du QR Code 100% autonome et vérifiable hors-ligne
+// Génération du payload textuel scellé pour le QR Code autonome (lisible hors-ligne par smartphone)
 function generateOfflineQrPayload(snapshot, docType) {
   const c = snapshot.center || {};
   const s = snapshot.student || {};
@@ -112,7 +121,7 @@ function generateOfflineQrPayload(snapshot, docType) {
   } else if (docType === "RELEVE_ANNUEL") {
     resultDetail = `Moyenne Annuelle: ${t.overallAverage !== null ? t.overallAverage + "/20" : "—"} | Décision: ${t.decision || "—"}`;
   } else if (docType === "DIPLOME_FIN_FORMATION") {
-    resultDetail = `Mention: ${t.mention || "Passable"} | Statut: DIPLÔMÉ`;
+    resultDetail = `Mention: ${t.mention || "Passable"} | Décision: DIPLÔMÉ`;
   } else if (docType === "ATTESTATION_INSCRIPTION" || docType === "CARTE_ETUDIANT") {
     resultDetail = `Statut: Régulièrement inscrit (${cl.status || "en_cours"})`;
   }
@@ -143,7 +152,7 @@ const DEFAULT_FAMILY_CONFIGS = {
     showWatermark: true,
     watermarkType: "logo",
     watermarkOpacity: 0.08,
-    termsOfUse: "Cette carte est strictement personnelle et obligatoire pour l'accès aux cours, ateliers et examens. En cas de perte, signaler immédiatement à la direction.",
+    termsOfUse: "Cette carte est strictement personnelle et obligatoire pour l'accès aux cours, ateliers et examens. En cas de perte, rapporter immédiatement à la direction.",
     signatoryTitle: "Le Directeur Général",
   },
   INTERNE: {
@@ -174,7 +183,7 @@ const DEFAULT_FAMILY_CONFIGS = {
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Directeur des Études", roleKey: "directeur_pedagogique" },
+      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Toute falsification ou altération du présent document expose son auteur aux poursuites prévues par le Code Pénal.",
@@ -198,8 +207,8 @@ router.get("/documents", verifyJwt, requirePermission("students.read", "grades.r
       }),
     };
 
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(5, parseInt(limit) || 25));
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(5, parseInt(limit, 10) || 25));
     const skip = (pageNum - 1) * limitNum;
 
     const [total, documents] = await Promise.all([
@@ -281,7 +290,7 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// Helper pour préparer les données complètes de calcul pour les bulletins et relevés
+// Helper pour préparer les données de calcul académique avec intégration transparente du Rattrapage
 async function buildStudentAcademicSnapshot(centerId, studentId, classeId, gradePeriodId) {
   const [center, student, classe, period, offerings, results, grades, delibs, allStudentsInscs] = await Promise.all([
     prisma.center.findUnique({ where: { id: centerId } }),
@@ -341,7 +350,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
 
   const currentInsc = student.inscriptions[0] || {};
 
-  // Profil de classe (Statistiques calculées pour l'ensemble de la classe)
+  // Calcul du profil de classe global (statistiques de tous les apprenants)
   const classAverages = [];
   allStudentsInscs.forEach((inscItem) => {
     const stResults = results.filter((r) => r.studentId === inscItem.studentId && offerings.some((o) => o.subjectId === r.subjectId));
@@ -372,7 +381,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   const studentResults = results.filter((r) => r.studentId === student.id);
   const studentGrades = grades.filter((g) => g.studentId === student.id);
 
-  // Ventilation par groupes / catégories
+  // Ventilation par groupes d'enseignement (Catégories)
   const categoriesMap = new Map();
   let grandTotalPoints = 0;
   let grandTotalCoeff = 0;
@@ -400,10 +409,30 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     const subRes = studentResults.find((r) => r.subjectId === off.subjectId && (!gradePeriodId || r.gradePeriodId === off.gradePeriodId));
     const subGrades = studentGrades.filter((g) => g.subjectOfferingId === off.id);
 
-    const cc1 = subGrades.find((g) => g.label === "CC1");
-    const cc2 = subGrades.find((g) => g.label === "CC2");
-    const norm = subGrades.find((g) => g.evaluationType === "NORMALE");
-    const ratt = subGrades.find((g) => g.evaluationType === "RATTRAPAGE");
+    const normGrade = subGrades.find((g) => g.evaluationType === "NORMALE");
+    const rattGrade = subGrades.find((g) => g.evaluationType === "RATTRAPAGE");
+
+    // Intégration transparente du rattrapage pour les relevés officiels
+    let effectiveExamValue = null;
+    let isExamAbsent = false;
+    let isExamJustified = false;
+
+    if (normGrade) {
+      if (normGrade.isAbsent) {
+        isExamAbsent = true;
+        isExamJustified = normGrade.absenceReason === "JUSTIFIED";
+      } else {
+        effectiveExamValue = normGrade.value;
+      }
+    }
+
+    // Si le rattrapage a été passé et est supérieur, il remplace la note d'examen
+    if (rattGrade && !rattGrade.isAbsent) {
+      if (effectiveExamValue === null || rattGrade.value > effectiveExamValue) {
+        effectiveExamValue = rattGrade.value;
+        isExamAbsent = false;
+      }
+    }
 
     const finalGradeVal = subRes?.finalGrade !== null && subRes?.finalGrade !== undefined ? subRes.finalGrade : null;
     const points = finalGradeVal !== null ? Number((finalGradeVal * off.coefficient).toFixed(2)) : null;
@@ -419,6 +448,14 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       }
     }
 
+    // Rang de l'apprenant dans cette matière spécifique
+    const allScoresForSubject = results
+      .filter((r) => r.subjectId === off.subjectId && r.finalGrade !== null)
+      .map((r) => r.finalGrade)
+      .sort((a, b) => b - a);
+
+    const subjectRank = finalGradeVal !== null ? allScoresForSubject.indexOf(finalGradeVal) + 1 : null;
+
     group.subjects.push({
       subjectId: off.subjectId,
       code: off.subject?.code || "—",
@@ -426,13 +463,14 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       coefficient: off.coefficient,
       volumeHoraire: off.volumeHoraire,
       formateurName: off.formateur ? `${off.formateur.firstName} ${off.formateur.lastName}` : null,
-      cc1: cc1 ? (cc1.isAbsent ? (cc1.absenceReason === "JUSTIFIED" ? "ABS (Just.)" : "0.00") : cc1.value.toFixed(2)) : "—",
-      cc2: cc2 ? (cc2.isAbsent ? (cc2.absenceReason === "JUSTIFIED" ? "ABS (Just.)" : "0.00") : cc2.value.toFixed(2)) : "—",
       ccAverage: subRes?.ccAverage !== null && subRes?.ccAverage !== undefined ? subRes.ccAverage.toFixed(2) : "—",
-      examGrade: norm ? (norm.isAbsent ? (norm.absenceReason === "JUSTIFIED" ? "ABS (Just.)" : "0.00") : norm.value.toFixed(2)) : "—",
-      rattrapage: ratt ? ratt.value.toFixed(2) : "—",
+      examGrade: isExamAbsent
+        ? (isExamJustified ? "ABS (Just.)" : "0.00")
+        : (effectiveExamValue !== null ? effectiveExamValue.toFixed(2) : (subRes?.normalAverage !== null && subRes?.normalAverage !== undefined ? subRes.normalAverage.toFixed(2) : "—")),
       finalGrade: finalGradeVal !== null ? finalGradeVal.toFixed(2) : "—",
       points: points !== null ? points.toFixed(2) : "—",
+      rank: subjectRank || "—",
+      isValid: finalGradeVal !== null ? finalGradeVal >= 10.0 : false,
       appreciation: getGradeAppreciation(finalGradeVal),
     });
   });
@@ -453,6 +491,9 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     juryDecision = stDelib.decision;
   }
 
+  // Figeage de toutes les signatures scannées en Base64
+  const allSignatures = getAllCenterSignaturesBase64(centerId);
+
   return {
     center: {
       id: center.id,
@@ -467,10 +508,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       directorTitle: center.directorTitle || "Le Directeur Général",
       logoDataUrl: getCenterLogoBase64(centerId, center.logo),
       sealDataUrl: getCenterSealBase64(centerId),
-      signatures: {
-        directeur: getRoleSignatureBase64(centerId, "directeur"),
-        directeur_pedagogique: getRoleSignatureBase64(centerId, "directeur_pedagogique"),
-      },
+      signatures: allSignatures,
     },
     student: {
       id: student.id,
@@ -520,7 +558,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   };
 }
 
-// 3. Génération d'un document individuel
+// 3. Génération d'un document individuel avec Figeage Immuable Strict
 router.post("/documents/generate", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, gradePeriodId, forceRegenerate = false } = req.body || {};
@@ -528,6 +566,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
 
     await ensureStorageTree(req.centerId);
 
+    // 1. Recherche du document existant
     const existingDoc = await prisma.document.findFirst({
       where: {
         centerId: req.centerId,
@@ -539,10 +578,51 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       orderBy: { generatedAt: "desc" },
     });
 
-    if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
+    // 2. Si le document existe déjà et que forceRegenerate est faux :
+    if (!forceRegenerate && existingDoc) {
+      // A. Le fichier est déjà sur disque -> Servir immédiatement sans aucun recalcul
+      if (fs.existsSync(existingDoc.filePath)) {
+        return res.json({
+          success: true,
+          reused: true,
+          document: {
+            id: existingDoc.id,
+            qrToken: existingDoc.qrToken,
+            fileHash: existingDoc.fileHash,
+            renderSnapshot: existingDoc.renderSnapshot,
+            downloadUrl: `/documents/${existingDoc.id}/download`,
+            previewUrl: `/documents/${existingDoc.id}/preview`,
+          },
+        });
+      }
+
+      // B. Le fichier a disparu du disque -> Reconstitution STRICTE depuis le snapshot figé
+      fs.mkdirSync(path.dirname(existingDoc.filePath), { recursive: true });
+      const snap = existingDoc.renderSnapshot;
+      const offlinePayload = snap?.offlineQrPayload || generateOfflineQrPayload(snap, existingDoc.type);
+
+      if (existingDoc.type === "CARTE_ETUDIANT") {
+        await generateStudentCardPdf(snap, offlinePayload, existingDoc.filePath);
+      } else if (existingDoc.type === "FICHE_INSCRIPTION") {
+        await generateFicheInscriptionPdf(snap, existingDoc.filePath);
+      } else if (existingDoc.type === "ATTESTATION_INSCRIPTION") {
+        await generateAttestationPdf(snap, offlinePayload, existingDoc.filePath);
+      } else if (existingDoc.type === "BULLETIN_CC") {
+        await generateContinuousAssessmentBulletinPdf(snap, offlinePayload, existingDoc.filePath);
+      } else if (existingDoc.type === "BULLETIN_SEMESTRE") {
+        await generateSemesterBulletinPdf(snap, offlinePayload, existingDoc.filePath);
+      } else if (existingDoc.type === "RELEVE_ANNUEL") {
+        await generateAnnualTranscriptPdf(snap, offlinePayload, existingDoc.filePath);
+      } else if (existingDoc.type === "DIPLOME_FIN_FORMATION") {
+        await generateGraduationDiplomaPdf(snap, offlinePayload, existingDoc.filePath);
+      } else {
+        await generateAttestationPdf(snap, offlinePayload, existingDoc.filePath);
+      }
+
       return res.json({
         success: true,
         reused: true,
+        restored: true,
         document: {
           id: existingDoc.id,
           qrToken: existingDoc.qrToken,
@@ -554,6 +634,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       });
     }
 
+    // 3. Génération initiale OU Forçage explicite par l'utilisateur
     let targetClasseId = classeId;
     if (!targetClasseId) {
       const st = await prisma.student.findUnique({
@@ -578,7 +659,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
 
     snapshot.templateConfig = templateConfig;
 
-    // Token unique cryptographique
     const cuid = crypto.randomBytes(8).toString("hex");
     const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key")
       .update(`${cuid}:${snapshot.student.matricule}:${type}:${gradePeriodId || "ANNUEL"}`)
@@ -588,7 +668,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     const qrToken = `${cuid}?t=${hmacSig}&st=${snapshot.student.matricule}&doc=${type}`;
     snapshot.qrToken = qrToken;
 
-    // Le QR code encode le certificat textuel structuré hors-ligne pour les documents externes
     const offlinePayload = isExternalDoc ? generateOfflineQrPayload(snapshot, type) : null;
     snapshot.offlineQrPayload = offlinePayload;
 
@@ -819,7 +898,7 @@ router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 7. Page publique d'authentification web en repli
+// 7. Page publique d'authentification en ligne en repli
 router.get("/verify/:token", async (req, res, next) => {
   try {
     const token = req.params.token;

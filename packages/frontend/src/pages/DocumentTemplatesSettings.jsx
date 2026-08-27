@@ -19,7 +19,7 @@ const DOCUMENT_SECTIONS = [
     id: "internes",
     title: "2. Documents Internes & Pédagogiques",
     icon: "folder_shared",
-    description: "Fiches, bordereaux manuscrits et procès-verbaux réservés à l'administration du centre.",
+    description: "Fiches, bordereaux de saisie et procès-verbaux réservés à l'administration de l'établissement.",
     items: [
       { key: "FICHE_INSCRIPTION", label: "Fiche d'Inscription Individuelle", icon: "description", isExternal: false },
       { key: "BORDEREAU_VIERGE", label: "Bordereau de Notes Vierge", icon: "edit_document", isExternal: false },
@@ -31,20 +31,20 @@ const DOCUMENT_SECTIONS = [
     id: "externes",
     title: "3. Documents Externes & Certifiés",
     icon: "verified",
-    description: "Certificats, bulletins périodiques, relevés et diplômes certifiés par QR Code hors-ligne.",
+    description: "Certificats, bulletins semestriels, relevés et diplômes certifiés par QR Code hors-ligne.",
     items: [
       { key: "ATTESTATION_INSCRIPTION", label: "Certificat de Scolarité", icon: "verified", isExternal: true },
-      { key: "BULLETIN_CC", label: "Bulletin de Contrôle Continu (CC/TP)", icon: "fact_check", isExternal: true },
+      { key: "BULLETIN_CC", label: "Bulletin d'Évaluation Continue (CC/TP)", icon: "fact_check", isExternal: true },
       { key: "BULLETIN_SEMESTRE", label: "Bulletin Semestriel Bilingue", icon: "receipt_long", isExternal: true },
       { key: "RELEVE_ANNUEL", label: "Relevé de Notes Annuel (Transcript)", icon: "history_edu", isExternal: true },
-      { key: "DIPLOME_FIN_FORMATION", label: "Diplôme de Fin de Formation", icon: "workspace_premium", isExternal: true },
+      { key: "DIPLOME_FIN_FORMATION", label: "Diplôme de Fin de Formation (Paysage)", icon: "workspace_premium", isExternal: true },
     ],
   },
 ];
 
 const DEFAULT_CONFIGS = {
   CARTE_ETUDIANT: {
-    themeColor: "#0B1C30",
+    themeColor: "#004080",
     accentColor: "#5E72E4",
     cardTitle: "CARTE D'APPRENANT OFFICIELLE",
     showLogo: true,
@@ -56,8 +56,11 @@ const DEFAULT_CONFIGS = {
     signatoryTitle: "Le Directeur Général",
   },
   FICHE_INSCRIPTION: {
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "FICHE INDIVIDUELLE D'INSCRIPTION & D'ENGAGEMENT",
-    primaryColor: "#0B1C30",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -71,12 +74,12 @@ const DEFAULT_CONFIGS = {
     footerLegal: "Document administratif interne conservé aux archives académiques.",
   },
   ATTESTATION_INSCRIPTION: {
-    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
-    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
     subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "CERTIFICAT DE SCOLARITÉ & D'INSCRIPTION",
     subTitle: "ATTESTATION OF ENROLMENT",
-    primaryColor: "#0B1C30",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -89,11 +92,11 @@ const DEFAULT_CONFIGS = {
     footerLegal: "Toute falsification ou altération du présent document expose son auteur aux poursuites prévues par le Code Pénal.",
   },
   BULLETIN_CC: {
-    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
-    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
     subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
-    documentTitle: "BULLETIN D'ÉVALUATIONS CONTINUES (CC & TP)",
-    primaryColor: "#0B1C30",
+    documentTitle: "BULLETIN D'ÉVALUATION CONTINUE (CC & TP)",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -106,11 +109,11 @@ const DEFAULT_CONFIGS = {
     footerLegal: "Bulletin d'évaluation continue certifié conforme • Registre officiel CECO",
   },
   BULLETIN_SEMESTRE: {
-    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
-    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
     subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "BULLETIN SEMESTRIEL DE NOTES / SEMESTER REPORT CARD",
-    primaryColor: "#0B1C30",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -123,11 +126,11 @@ const DEFAULT_CONFIGS = {
     footerLegal: "Toute rature ou surcharge annule la validité du présent bulletin officiel.",
   },
   RELEVE_ANNUEL: {
-    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
-    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
     subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     documentTitle: "RELEVÉ DE NOTES ANNUEL / OFFICIAL ACADEMIC TRANSCRIPT",
-    primaryColor: "#0B1C30",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -140,18 +143,20 @@ const DEFAULT_CONFIGS = {
     footerLegal: "Relevé officiel annuel certifié conforme et délivré en un seul exemplaire original.",
   },
   DIPLOME_FIN_FORMATION: {
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING",
     documentTitle: "DIPLÔME DE FIN DE FORMATION PROFESSIONNELLE",
-    primaryColor: "#0B1C30",
+    primaryColor: "#004080",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
     watermarkType: "seal",
     watermarkOpacity: 0.08,
     signatories: [
-      { title: "Le Promoteur", roleKey: "promoteur" },
+      { title: "Le Promoteur / Fondateur", roleKey: "promoteur" },
       { title: "Le Directeur de l'Établissement", roleKey: "directeur" },
     ],
-    footerLegal: "Titre officiel de qualification professionnelle certifié conforme • CECO ERP",
+    footerLegal: "Titre officiel de qualification professionnelle certifié conforme • Registre sécurisé CECO ERP",
   },
 };
 
@@ -268,6 +273,10 @@ export default function DocumentTemplatesSettings() {
     }
   }
 
+  // Détection du centrage dynamique des logos dans l'aperçu
+  const showLogoPreview = config.showLogo !== false && Boolean(centerLogoUrl);
+  const showSealPreview = config.showSeal !== false && Boolean(centerSealUrl);
+
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-md max-w-7xl mx-auto">
       {/* Sélecteur en 3 Blocs */}
@@ -377,13 +386,13 @@ export default function DocumentTemplatesSettings() {
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
-                        value={config.themeColor || "#0B1C30"}
+                        value={config.themeColor || "#004080"}
                         onChange={(e) => setConfig({ ...config, themeColor: e.target.value })}
                         className="w-10 h-10 rounded-md border border-outline-variant/30 cursor-pointer p-0.5"
                       />
                       <input
                         type="text"
-                        value={config.themeColor || "#0B1C30"}
+                        value={config.themeColor || "#004080"}
                         onChange={(e) => setConfig({ ...config, themeColor: e.target.value })}
                         className={inputClass}
                       />
@@ -518,13 +527,13 @@ export default function DocumentTemplatesSettings() {
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
-                        value={config.primaryColor || "#0B1C30"}
+                        value={config.primaryColor || "#004080"}
                         onChange={(e) => setConfig({ ...config, primaryColor: e.target.value })}
                         className="w-10 h-10 rounded-md border border-outline-variant/30 cursor-pointer p-0.5"
                       />
                       <input
                         type="text"
-                        value={config.primaryColor || "#0B1C30"}
+                        value={config.primaryColor || "#004080"}
                         onChange={(e) => setConfig({ ...config, primaryColor: e.target.value })}
                         className={inputClass}
                       />
@@ -565,7 +574,7 @@ export default function DocumentTemplatesSettings() {
                   </label>
                 </div>
 
-                {/* Blocs Signataires dynamiques liés aux signatures configurées */}
+                {/* Blocs Signataires dynamiques */}
                 <div className="p-3 bg-surface rounded-md border border-outline-variant/20 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -727,7 +736,7 @@ export default function DocumentTemplatesSettings() {
                     </div>
                   )}
 
-                  <div className="relative z-10 -mx-3 -mt-3 px-3 py-2 flex items-center justify-between text-white" style={{ backgroundColor: config.themeColor || "#0B1C30" }}>
+                  <div className="relative z-10 -mx-3 -mt-3 px-3 py-2 flex items-center justify-between text-white" style={{ backgroundColor: config.themeColor || "#004080" }}>
                     <div className="flex items-center gap-2 max-w-[240px]">
                       {config.showLogo && centerLogoUrl && (
                         <img src={centerLogoUrl} alt="Logo" className="w-6 h-6 object-contain rounded-md bg-white p-0.5" />
@@ -763,7 +772,7 @@ export default function DocumentTemplatesSettings() {
               ) : (
                 <div className="w-[330px] h-[208px] rounded-md bg-white border border-outline-variant/50 shadow-md p-3 flex flex-col justify-between relative overflow-hidden text-[8px] leading-tight">
                   <div className="relative z-10 space-y-1.5">
-                    <p className="font-bold uppercase text-[8px]" style={{ color: config.themeColor || "#0B1C30" }}>
+                    <p className="font-bold uppercase text-[8px]" style={{ color: config.themeColor || "#004080" }}>
                       Conditions d'utilisation
                     </p>
                     <p className="text-on-surface-variant text-[7.5px] leading-normal">{config.termsOfUse}</p>
@@ -803,13 +812,17 @@ export default function DocumentTemplatesSettings() {
                 </div>
               )}
 
+              {/* En-tête bilingue auto-centré du Diplôme */}
               <div className="relative z-10 flex justify-between items-start text-[7px] border-b pb-1.5 font-serif">
-                <div className="text-center w-[30%]">RÉPUBLIQUE DU CAMEROUN<br />Paix - Travail - Patrie</div>
-                <div className="flex items-center gap-1.5">
-                  {config.showLogo && centerLogoUrl && <img src={centerLogoUrl} alt="Logo" className="w-8 h-8 object-contain" />}
-                  {config.showSeal && centerSealUrl && <img src={centerSealUrl} alt="Sceau" className="w-8 h-8 object-contain" />}
+                <div className="text-center w-[35%] whitespace-pre-line">{config.headerLeft || "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI"}</div>
+                
+                {/* Bloc Logos Auto-Centré */}
+                <div className="flex items-center gap-1.5 justify-center flex-1">
+                  {showSealPreview && <img src={centerSealUrl} alt="Sceau" className="w-8 h-8 object-contain" />}
+                  {showLogoPreview && <img src={centerLogoUrl} alt="Logo" className="w-8 h-8 object-contain" />}
                 </div>
-                <div className="text-center w-[30%]">REPUBLIC OF CAMEROON<br />Peace - Work - Fatherland</div>
+
+                <div className="text-center w-[35%] whitespace-pre-line">{config.headerRight || "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT"}</div>
               </div>
 
               <div className="relative z-10 text-center space-y-1 my-auto">
@@ -839,91 +852,151 @@ export default function DocumentTemplatesSettings() {
             </div>
           )}
 
-          {/* Rendu Format A4 Portrait */}
+          {/* Rendu Format A4 Portrait (Bulletins & Relevés) */}
           {selectedType !== "CARTE_ETUDIANT" && selectedType !== "DIPLOME_FIN_FORMATION" && (
-            <div className="p-6 bg-white rounded-md border border-outline-variant/50 shadow-sm relative overflow-hidden text-[10px] leading-tight space-y-3 min-h-[480px] flex flex-col justify-between">
+            <div className="p-4 bg-white rounded-md border border-outline-variant/50 shadow-sm relative overflow-hidden text-[9px] leading-tight space-y-2 min-h-[480px] flex flex-col justify-between">
               {config.showWatermark && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center select-none z-0" style={{ opacity: config.watermarkOpacity || 0.08 }}>
                   {config.watermarkType === "seal" && centerSealUrl ? (
-                    <img src={centerSealUrl} alt="Sceau" className="w-[240px] h-[240px] object-contain" />
+                    <img src={centerSealUrl} alt="Sceau" className="w-[200px] h-[200px] object-contain" />
                   ) : centerLogoUrl ? (
-                    <img src={centerLogoUrl} alt="Logo" className="w-[240px] h-[240px] object-contain" />
+                    <img src={centerLogoUrl} alt="Logo" className="w-[200px] h-[200px] object-contain" />
                   ) : null}
                 </div>
               )}
 
-              <div className="relative z-10 space-y-2">
-                <div className="flex justify-between items-start text-[7.5px] font-serif border-b pb-2">
-                  <div className="text-center font-semibold whitespace-pre-line w-[38%]">{config.headerLeft}</div>
-                  <div className="flex items-center gap-1.5 justify-center w-[24%]">
-                    {config.showLogo && centerLogoUrl && <img src={centerLogoUrl} alt="Logo" className="w-8 h-8 object-contain rounded-md" />}
-                    {config.showSeal && centerSealUrl && <img src={centerSealUrl} alt="Sceau" className="w-8 h-8 object-contain" />}
+              <div className="relative z-10 space-y-1.5">
+                {/* En-tête Bilingue Auto-Centré avec Sceau / Logo */}
+                <div className="flex justify-between items-start text-[7px] font-serif border-b pb-1.5">
+                  <div className="text-center font-semibold whitespace-pre-line w-[36%]">{config.headerLeft}</div>
+                  
+                  {/* Bloc Central Équilibré */}
+                  <div className="flex flex-col items-center justify-center flex-1 px-1">
+                    <div className="flex items-center gap-1.5 justify-center">
+                      {showSealPreview && <img src={centerSealUrl} alt="Sceau" className="w-7 h-7 object-contain" />}
+                      {showLogoPreview && <img src={centerLogoUrl} alt="Logo" className="w-7 h-7 object-contain rounded" />}
+                    </div>
+                    {user?.center?.phone && (
+                      <span className="text-[6.5px] font-mono text-on-surface-variant font-bold mt-0.5">Tél : {user.center.phone}</span>
+                    )}
                   </div>
-                  <div className="text-center font-semibold whitespace-pre-line w-[38%]">{config.headerRight}</div>
+
+                  <div className="text-center font-semibold whitespace-pre-line w-[36%]">{config.headerRight}</div>
                 </div>
 
                 <div className="text-center space-y-0.5">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-primary">{user?.center?.name || "CENTRE D'EXCELLENCE"}</h2>
-                  <p className="text-[8px] text-on-surface-variant font-mono">Agrément : {user?.center?.registrationNumber || "MINEFOP"}</p>
+                  <h2 className="text-[11px] font-bold uppercase tracking-wider text-primary">{user?.center?.name || "CENTRE D'EXCELLENCE"}</h2>
+                  {user?.center?.registrationNumber && (
+                    <div className="p-0.5 bg-surface border border-outline-variant/30 rounded text-[7px] font-mono font-bold text-on-surface">
+                      ARRÊTÉ D'AGRÉMENT N° {user.center.registrationNumber}
+                    </div>
+                  )}
                 </div>
 
-                <div className="text-center py-1.5 border-y border-outline-variant/30 my-1">
-                  <h3 className="font-bold text-xs uppercase underline tracking-wider" style={{ color: config.primaryColor || "#0B1C30" }}>
+                {/* Bandeau Titre Bleu Nuit à Liserés Or/Orange */}
+                <div className="text-center py-1.5 rounded bg-primary text-white border-y-2 border-amber-400 my-1 shadow-2xs">
+                  <h3 className="font-bold text-[10px] uppercase tracking-wider">
                     {config.documentTitle || currentDocMeta?.label}
                   </h3>
-                  {config.subTitle && <p className="text-[8.5px] font-bold text-on-surface-variant">{config.subTitle}</p>}
+                  {config.subTitle && <p className="text-[7.5px] text-amber-200">{config.subTitle}</p>}
                 </div>
 
-                <div className="p-2.5 bg-surface rounded-md border border-outline-variant/20 space-y-0.5 text-[9px]">
-                  <p><strong>Apprenant :</strong> NGALEU Armstrong Euclador • <strong>Matricule :</strong> STU26-0042</p>
-                  <p><strong>Filière :</strong> Froid &amp; Climatisation (Niveau 1) • <strong>Session :</strong> 2026-2027</p>
+                {/* Cartouche Apprenant Stylisé */}
+                <div className="p-2 bg-surface rounded border border-outline-variant/20 flex justify-between items-center text-[8px]">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-on-surface-variant font-bold">NOM :</span>
+                      <span className="font-bold bg-blue-100 text-blue-950 px-1.5 py-0.2 rounded">NGALEU ARMSTRONG EUCLADOR</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span><strong>SEXE :</strong> M</span>
+                      <span><strong>MATRICULE :</strong> <span className="font-mono font-bold bg-yellow-200 px-1 py-0.2 rounded text-blue-950">STU26-0042</span></span>
+                    </div>
+                    <div>
+                      <span className="text-on-surface-variant font-bold">FILIÈRE :</span>{" "}
+                      <span className="bg-green-100 text-green-950 px-1.5 py-0.2 rounded font-bold">FROID &amp; CLIMATISATION (Niveau 1 • DQP)</span>
+                    </div>
+                  </div>
+                  <div className="w-12 h-14 bg-white border rounded flex items-center justify-center text-[8px] font-mono text-on-surface-variant/50">
+                    <Icon name="person" className="text-2xl" />
+                  </div>
                 </div>
 
+                {/* Tableau Miniature avec Note CC unique et Rattrapage transparent */}
                 {(selectedType === "BULLETIN_SEMESTRE" || selectedType === "BULLETIN_CC" || selectedType === "RELEVE_ANNUEL") && (
-                  <div className="border border-outline-variant/30 rounded overflow-hidden text-[8px]">
-                    <div className="p-1 bg-ink text-white font-bold flex justify-between">
-                      <span>Matière</span>
-                      <span>Note /20</span>
+                  <div className="border border-outline-variant/30 rounded overflow-hidden text-[7.5px]">
+                    <div className="p-1 bg-primary text-white font-bold flex justify-between">
+                      <span>DISCIPLINE / MODULE</span>
+                      <span>NOTE CC</span>
+                      <span>EXAMEN</span>
+                      <span>FINALE</span>
+                      <span>APPRÉCIATION</span>
                     </div>
-                    <div className="p-1 bg-surface flex justify-between border-b font-semibold">
-                      <span>Thermodynamique appliquée (C3)</span>
-                      <span className="font-mono">14.50 / 20</span>
+                    <div className="p-0.5 bg-surface flex justify-between border-b font-semibold">
+                      <span className="w-1/3 truncate">Thermodynamique (C3)</span>
+                      <span>14.00</span>
+                      <span>15.00</span>
+                      <span className="font-bold text-primary">14.70</span>
+                      <span className="bg-green-100 text-green-800 px-1 rounded font-bold">Bien</span>
                     </div>
-                    <div className="p-1 flex justify-between border-b font-semibold">
-                      <span>Électrotechnique (C2)</span>
-                      <span className="font-mono">12.00 / 20</span>
+                    <div className="p-0.5 flex justify-between border-b font-semibold">
+                      <span className="w-1/3 truncate">Électrotechnique (C2)</span>
+                      <span>11.50</span>
+                      <span>12.00</span>
+                      <span className="font-bold text-primary">11.85</span>
+                      <span className="bg-yellow-100 text-yellow-800 px-1 rounded font-bold">Passable</span>
                     </div>
-                    <div className="p-1 bg-primary-light text-primary font-bold flex justify-between">
-                      <span>Moyenne Générale : 13.50 / 20</span>
-                      <span>Rang : 1er / 24</span>
+                  </div>
+                )}
+
+                {/* Double Grille Récapitulative Synoptique */}
+                {(selectedType === "BULLETIN_SEMESTRE" || selectedType === "RELEVE_ANNUEL") && (
+                  <div className="grid grid-cols-2 gap-1 text-[7.5px]">
+                    <div className="p-1 bg-surface border rounded space-y-0.5">
+                      <div className="flex justify-between font-bold">
+                        <span>MOYENNE :</span>
+                        <span className="bg-yellow-200 text-blue-950 px-1 rounded">13.28 / 20</span>
+                      </div>
+                      <div className="flex justify-between text-on-surface-variant">
+                        <span>CLASSE : 11.45 / 20</span>
+                        <span>RÉUSSITE : 87.5%</span>
+                      </div>
+                    </div>
+
+                    <div className="p-1 bg-surface border rounded space-y-0.5">
+                      <div className="flex justify-between font-bold">
+                        <span>RANG : <span className="bg-yellow-200 text-blue-950 px-1 rounded">2e / 24</span></span>
+                        <span className="text-primary">BIEN</span>
+                      </div>
+                      <div className="font-bold text-success text-center">DÉCISION : ADMIS(E) / VALIDÉ(E)</div>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Signatures et QR Code */}
-              <div className="relative z-10 pt-2 border-t border-outline-variant/30 space-y-2">
-                <div className="flex justify-between items-end text-[8px]">
+              {/* Signatures et QR Code Hors-Ligne */}
+              <div className="relative z-10 pt-1.5 border-t border-outline-variant/30 space-y-1 text-[7.5px]">
+                <div className="flex justify-between items-end">
                   {currentDocMeta?.isExternal ? (
-                    <div className="text-center w-1/4">
-                      <div className="w-10 h-10 bg-surface rounded-md border border-outline-variant/30 mx-auto flex items-center justify-center">
-                        <Icon name="qr_code_2" className="text-2xl text-on-surface" />
+                    <div className="text-center">
+                      <div className="w-8 h-8 bg-surface rounded border mx-auto flex items-center justify-center">
+                        <Icon name="qr_code_2" className="text-xl text-on-surface" />
                       </div>
-                      <span className="text-[6px] font-mono text-primary font-bold">QR HORS-LIGNE</span>
+                      <span className="text-[5.5px] font-mono text-primary font-bold block">QR AUTONOME</span>
                     </div>
-                  ) : <div className="w-1/4" />}
+                  ) : <div />}
 
-                  <div className="flex-1 flex justify-around">
+                  <div className="flex justify-around flex-1">
                     {(config.signatories || []).map((sig, idx) => (
                       <div key={idx} className="text-center">
                         <p className="font-bold underline">{sig.title}</p>
-                        <p className="text-[7px] text-on-surface-variant font-mono">[Signature : {sig.roleKey}]</p>
+                        <p className="text-[6.5px] text-on-surface-variant font-mono">[Signature : {sig.roleKey}]</p>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <p className="text-[7px] text-center text-on-surface-variant font-mono border-t pt-1">
+                <p className="text-[6.5px] text-center text-on-surface-variant font-mono border-t pt-0.5">
                   {config.footerLegal || DEFAULT_CONFIGS.ATTESTATION_INSCRIPTION.footerLegal}
                 </p>
               </div>
