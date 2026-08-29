@@ -3,9 +3,8 @@ import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../../lib/apiClient";
+import { showToast } from "../../store/toastStore";
 import Icon from "../../components/Icon";
-
-const inputCls = "h-10 rounded bg-surface px-3 text-xs text-on-surface outline-none border border-outline-variant/30 focus:border-primary w-full";
 
 export default function SubjectCategories() {
   const [categories, setCategories] = useState([]);
@@ -13,11 +12,14 @@ export default function SubjectCategories() {
   const [modal, setModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [form, setForm] = useState({ name: "", code: "", order: 1, isEliminatory: false });
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
-    apiFetch("/categories").then(setCategories).catch((e) => setError(e.message));
+    setLoading(true);
+    apiFetch("/categories")
+      .then((data) => setCategories(data || []))
+      .catch((e) => showToast(e.message || "Erreur de chargement des catégories.", "error"))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -33,15 +35,15 @@ export default function SubjectCategories() {
     try {
       if (modal.mode === "edit") {
         await apiFetch(`/categories/${modal.item.id}`, { method: "PUT", body: JSON.stringify(form) });
+        showToast(`Catégorie ${form.name} mise à jour.`, "success");
       } else {
         await apiFetch("/categories", { method: "POST", body: JSON.stringify(form) });
+        showToast(`Catégorie ${form.name} créée avec succès.`, "success");
       }
       setModal(null);
-      setSuccessMsg("Catégorie enregistrée avec succès.");
-      setTimeout(() => setSuccessMsg(""), 3000);
       load();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Erreur lors de l'enregistrement.", "error");
     }
   }
 
@@ -50,97 +52,104 @@ export default function SubjectCategories() {
     try {
       await apiFetch(`/categories/${deleteTarget.id}`, { method: "DELETE" });
       setDeleteTarget(null);
-      setSuccessMsg("Catégorie supprimée.");
-      setTimeout(() => setSuccessMsg(""), 3000);
+      showToast(`Catégorie ${deleteTarget.name} supprimée.`, "warning");
       load();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Impossible de supprimer cette catégorie.", "error");
       setDeleteTarget(null);
     }
   }
 
   return (
-    <div className="space-y-md">
-      {/* En-tête standardisé avec recherche rapide */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs">
+    <div className="space-y-4">
+      {/* Barre d'outils et recherche */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-lg border border-slate-200 shadow-card">
         <div>
-          <h3 className="text-sm font-bold text-on-surface">Catégories &amp; Groupes d'Enseignement</h3>
-          <p className="text-xs text-on-surface-variant">Personnalisez les groupes de matières selon le vocabulaire propre à votre centre.</p>
+          <h3 className="text-sm font-bold text-slate-900">Groupes &amp; Catégories d'Enseignement</h3>
+          <p className="text-xs text-slate-500">
+            Organisez vos matières en groupes pédagogiques (Spécialité, Général, Pratique) avec gestion des éliminatoires.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Rechercher catégorie..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="text-xs px-3 py-2 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Rechercher groupe..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-field w-56 pl-8"
+            />
+            <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[14px]" />
+          </div>
 
           <button
             onClick={() => {
               setForm({ name: "", code: "", order: categories.length + 1, isEliminatory: false });
               setModal({ mode: "create" });
             }}
-            className="rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-white flex items-center gap-1 shadow-xs flex-shrink-0"
+            className="btn-primary"
           >
             <Icon name="add" className="text-[16px]" />
-            <span>Nouvelle Catégorie</span>
+            <span>Nouveau Groupe</span>
           </button>
         </div>
       </div>
 
-      {error && <div className="p-3 bg-error-container text-error text-xs rounded-md font-semibold">{error}</div>}
-      {successMsg && <div className="p-3 bg-success-light text-success text-xs rounded-md font-semibold">{successMsg}</div>}
-
-      <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-        {filteredCategories.length === 0 ? (
-          <p className="p-6 text-xs text-on-surface-variant text-center">Aucune catégorie ne correspond à votre recherche.</p>
+      {/* Tableau des catégories */}
+      <div className="table-container">
+        {loading ? (
+          <p className="p-8 text-xs text-slate-500 text-center">Chargement des catégories d'enseignement...</p>
+        ) : filteredCategories.length === 0 ? (
+          <p className="p-8 text-xs text-slate-500 text-center">Aucune catégorie ne correspond à votre recherche.</p>
         ) : (
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead>
-              <tr className="border-b font-bold uppercase text-on-surface-variant bg-surface">
-                <th className="px-md py-3 w-16 text-center">Ordre</th>
-                <th className="px-md py-3">Intitulé du Groupe</th>
-                <th className="px-md py-3 w-28">Code Court</th>
-                <th className="px-md py-3 w-32 text-center">Éliminatoire</th>
-                <th className="px-md py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/15">
-              {filteredCategories.map((cat) => (
-                <tr key={cat.id} className="hover:bg-surface-container/20">
-                  <td className="px-md py-3 text-center font-mono font-bold text-primary">{cat.order}</td>
-                  <td className="px-md py-3 font-bold text-on-surface">{cat.name}</td>
-                  <td className="px-md py-3 font-mono">{cat.code || "—"}</td>
-                  <td className="px-md py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${cat.isEliminatory ? "bg-error-container text-error font-mono" : "bg-surface border"}`}>
-                      {cat.isEliminatory ? "Oui (< 08/20)" : "Non"}
-                    </span>
-                  </td>
-                  <td className="px-md py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => {
-                          setForm({ name: cat.name, code: cat.code || "", order: cat.order, isEliminatory: cat.isEliminatory });
-                          setModal({ mode: "edit", item: cat });
-                        }}
-                        className="px-2.5 py-1 border rounded text-xs hover:bg-surface-container font-semibold"
-                      >
-                        Modifier
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(cat)}
-                        className="p-1 text-error hover:bg-error-container/20 rounded"
-                      >
-                        <Icon name="delete" className="text-[16px]" />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead>
+                <tr>
+                  <th className="table-header-cell w-16 text-center">Ordre</th>
+                  <th className="table-header-cell">Intitulé du Groupe</th>
+                  <th className="table-header-cell w-28">Code Court</th>
+                  <th className="table-header-cell w-36 text-center">Seuil Éliminatoire</th>
+                  <th className="table-header-cell text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredCategories.map((cat) => (
+                  <tr key={cat.id} className="table-body-row">
+                    <td className="table-body-cell text-center font-mono font-bold text-blue-700">{cat.order}</td>
+                    <td className="table-body-cell font-bold text-slate-900">{cat.name}</td>
+                    <td className="table-body-cell font-mono text-slate-600">{cat.code || "—"}</td>
+                    <td className="table-body-cell text-center">
+                      <span className={cat.isEliminatory ? "badge-rose font-bold" : "badge-slate"}>
+                        {cat.isEliminatory ? "Oui (< 08/20)" : "Non"}
+                      </span>
+                    </td>
+                    <td className="table-body-cell text-right">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => {
+                            setForm({ name: cat.name, code: cat.code || "", order: cat.order, isEliminatory: cat.isEliminatory });
+                            setModal({ mode: "edit", item: cat });
+                          }}
+                          className="btn-secondary text-[11px] px-2 py-1"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(cat)}
+                          className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                          title="Supprimer la catégorie"
+                        >
+                          <Icon name="delete" className="text-[16px]" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -148,64 +157,90 @@ export default function SubjectCategories() {
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {modal && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.form
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleSubmit}
-                className="w-full max-w-md bg-white p-md sm:p-lg rounded-md shadow-2xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-md bg-white p-5 rounded-xl shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h4 className="font-bold text-sm text-on-surface">{modal.mode === "edit" ? "Modifier la Catégorie" : "Créer une Catégorie"}</h4>
-                  <button type="button" onClick={() => setModal(null)} className="text-on-surface-variant"><Icon name="close" className="text-[18px]" /></button>
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h4 className="font-bold text-sm text-slate-900">
+                    {modal.mode === "edit" ? "Modifier le Groupe" : "Créer un Groupe d'Enseignement"}
+                  </h4>
+                  <button type="button" onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700">
+                    <Icon name="close" className="text-[18px]" />
+                  </button>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-3 text-xs">
                   <div>
-                    <label className="text-xs font-semibold block mb-1">Intitulé du groupe *</label>
-                    <input required placeholder="Ex: Matières Scientifiques" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} />
+                    <label className="font-bold text-slate-700 block mb-1">Intitulé du groupe *</label>
+                    <input
+                      required
+                      placeholder="Ex: 1er Groupe (Matières Professionnelles)"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      className="input-field w-full"
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-xs font-semibold block mb-1">Code court (optionnel)</label>
-                      <input placeholder="Ex: SCI" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 block mb-1">Code court (optionnel)</label>
+                      <input
+                        placeholder="Ex: PRO"
+                        value={form.code}
+                        onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                        className="input-field w-full font-mono uppercase"
+                      />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold block mb-1">Ordre d'affichage</label>
-                      <input type="number" min="1" value={form.order} onChange={(e) => setForm({ ...form, order: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 block mb-1">Ordre d'affichage</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={form.order}
+                        onChange={(e) => setForm({ ...form, order: parseInt(e.target.value, 10) || 1 })}
+                        className="input-field w-full font-mono"
+                      />
                     </div>
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-semibold pt-1 cursor-pointer">
-                    <input type="checkbox" checked={form.isEliminatory} onChange={(e) => setForm({ ...form, isEliminatory: e.target.checked })} className="rounded accent-primary" />
-                    <span>Marquer comme groupe éliminatoire en délibération</span>
+                  <label className="flex items-center gap-2 text-xs font-semibold pt-1 cursor-pointer select-none text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={form.isEliminatory}
+                      onChange={(e) => setForm({ ...form, isEliminatory: e.target.checked })}
+                      className="rounded accent-blue-700 h-4 w-4"
+                    />
+                    <span>Marquer comme groupe éliminatoire en délibération (&lt; 08/20)</span>
                   </label>
                 </div>
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>
-                  <button type="submit" className="px-4 py-1.5 bg-primary text-white font-bold rounded text-xs shadow-xs">Enregistrer</button>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button type="button" onClick={() => setModal(null)} className="btn-secondary">Annuler</button>
+                  <button type="submit" className="btn-primary">Enregistrer</button>
                 </div>
               </motion.form>
             </div>
           )}
 
           {deleteTarget && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-sm rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-sm rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex items-center gap-2 text-error border-b pb-2">
+                <div className="flex items-center gap-2 text-rose-600 border-b border-slate-200 pb-2">
                   <Icon name="warning" className="text-[20px]" />
-                  <h3 className="text-sm font-bold text-on-surface">Supprimer la catégorie</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Supprimer le groupe</h3>
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Supprimer définitivement la catégorie <strong>{deleteTarget.name}</strong> ?
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Supprimer définitivement le groupe <strong>{deleteTarget.name}</strong> ?
                 </p>
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">Annuler</button>
-                  <button onClick={confirmDeleteCategory} className="px-3.5 py-1.5 bg-error text-white font-bold rounded text-xs shadow-xs">
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button onClick={() => setDeleteTarget(null)} className="btn-secondary">Annuler</button>
+                  <button onClick={confirmDeleteCategory} className="btn-primary bg-rose-600 hover:bg-rose-700">
                     Confirmer la suppression
                   </button>
                 </div>

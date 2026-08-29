@@ -3,9 +3,8 @@ import { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "../../lib/apiClient";
+import { showToast } from "../../store/toastStore";
 import Icon from "../../components/Icon";
-
-const inputCls = "h-10 rounded-md bg-surface px-3 text-xs text-on-surface outline-none border border-outline-variant/30 focus:border-primary w-full";
 
 function derive5CharCode(name, existingList = [], currentId = null) {
   if (!name || !name.trim()) return "";
@@ -36,11 +35,14 @@ export default function SubjectsCatalog() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [form, setForm] = useState({ name: "", code: "" });
   const [isCodeManual, setIsCodeManual] = useState(false);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState("");
+  const [loading, setLoading] = useState(true);
 
   function load() {
-    apiFetch("/subjects").then(setSubjects).catch((e) => setError(e.message));
+    setLoading(true);
+    apiFetch("/subjects")
+      .then((data) => setSubjects(data || []))
+      .catch((e) => showToast(e.message || "Erreur de chargement des matières.", "error"))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -69,22 +71,22 @@ export default function SubjectsCatalog() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!isCodeValid) {
-      setError("Le code matière doit comporter exactement 5 caractères alphanumériques majuscules (ex: THM01, INF02).");
+      showToast("Le code matière doit comporter exactement 5 caractères alphanumériques (ex: THM01, INF02).", "warning");
       return;
     }
 
     try {
       if (modal.mode === "edit") {
         await apiFetch(`/subjects/${modal.item.id}`, { method: "PUT", body: JSON.stringify(form) });
+        showToast(`Matière ${form.name} mise à jour avec succès.`, "success");
       } else {
         await apiFetch("/subjects", { method: "POST", body: JSON.stringify(form) });
+        showToast(`Nouvelle matière ${form.name} (${form.code}) créée avec succès.`, "success");
       }
       setModal(null);
-      setSuccessMsg("Matière enregistrée avec succès.");
-      setTimeout(() => setSuccessMsg(""), 3000);
       load();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Erreur lors de l'enregistrement.", "error");
     }
   }
 
@@ -93,34 +95,36 @@ export default function SubjectsCatalog() {
     try {
       await apiFetch(`/subjects/${deleteTarget.id}`, { method: "DELETE" });
       setDeleteTarget(null);
-      setSuccessMsg("Matière supprimée du référentiel.");
-      setTimeout(() => setSuccessMsg(""), 3000);
+      showToast(`Matière ${deleteTarget.name} supprimée du référentiel.`, "warning");
       load();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Impossible de supprimer cette matière.", "error");
       setDeleteTarget(null);
     }
   }
 
   return (
-    <div className="space-y-md">
-      {/* En-tête standardisé avec recherche rapide */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs">
+    <div className="space-y-4">
+      {/* Barre d'outils et recherche */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-lg border border-slate-200 shadow-card">
         <div>
-          <h3 className="text-sm font-bold text-on-surface">Référentiel Universel des Matières</h3>
-          <p className="text-xs text-on-surface-variant">
-            Disciplines de formation avec code normalisé à 5 caractères pour les délibérations et PVs.
+          <h3 className="text-sm font-bold text-slate-900">Référentiel Universel des Matières</h3>
+          <p className="text-xs text-slate-500">
+            Disciplines de formation avec code officiel normalisé à 5 caractères pour les délibérations et PVs.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Rechercher matière ou code..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="text-xs px-3 py-2 rounded-md border border-outline-variant/40 outline-none w-56 bg-surface"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Rechercher matière ou code..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-field w-56 pl-8"
+            />
+            <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[14px]" />
+          </div>
 
           <button
             onClick={() => {
@@ -128,7 +132,7 @@ export default function SubjectsCatalog() {
               setIsCodeManual(false);
               setModal({ mode: "create" });
             }}
-            className="rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-white flex items-center gap-1 shadow-xs flex-shrink-0"
+            className="btn-primary"
           >
             <Icon name="add" className="text-[16px]" />
             <span>Nouvelle Matière</span>
@@ -136,98 +140,101 @@ export default function SubjectsCatalog() {
         </div>
       </div>
 
-      {error && <div className="p-3 bg-error-container text-error text-xs rounded-md font-semibold">{error}</div>}
-      {successMsg && <div className="p-3 bg-success-light text-success text-xs rounded-md font-semibold">{successMsg}</div>}
-
       {/* Tableau des matières */}
-      <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
-        {filteredSubjects.length === 0 ? (
-          <p className="p-6 text-xs text-on-surface-variant text-center">Aucune matière ne correspond à votre recherche.</p>
+      <div className="table-container">
+        {loading ? (
+          <p className="p-8 text-xs text-slate-500 text-center">Chargement du catalogue des matières...</p>
+        ) : filteredSubjects.length === 0 ? (
+          <p className="p-8 text-xs text-slate-500 text-center">Aucune matière ne correspond à votre recherche.</p>
         ) : (
-          <table className="w-full text-left text-xs whitespace-nowrap">
-            <thead>
-              <tr className="border-b font-bold uppercase text-on-surface-variant bg-surface">
-                <th className="px-md py-3 w-28">Code (5 Car.)</th>
-                <th className="px-md py-3">Intitulé de la Discipline</th>
-                <th className="px-md py-3 w-32 text-center">Cours Actifs</th>
-                <th className="px-md py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/15">
-              {filteredSubjects.map((sub) => (
-                <tr key={sub.id} className="hover:bg-surface-container/20">
-                  <td className="px-md py-3 font-mono font-bold text-primary">
-                    <span className="px-2 py-0.5 rounded bg-primary-light border border-primary/20">{sub.code || "—"}</span>
-                  </td>
-                  <td className="px-md py-3 font-bold text-on-surface">{sub.name}</td>
-                  <td className="px-md py-3 text-center font-mono font-bold text-primary">{sub._count?.offerings || 0}</td>
-                  <td className="px-md py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => {
-                          setForm({ name: sub.name, code: sub.code || "" });
-                          setIsCodeManual(true);
-                          setModal({ mode: "edit", item: sub });
-                        }}
-                        className="px-2.5 py-1 border rounded text-xs hover:bg-surface-container font-semibold"
-                      >
-                        Modifier
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(sub)}
-                        className="p-1 text-error hover:bg-error-container/20 rounded"
-                        title="Supprimer la matière"
-                      >
-                        <Icon name="delete" className="text-[16px]" />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead>
+                <tr>
+                  <th className="table-header-cell w-32">Code (5 Car.)</th>
+                  <th className="table-header-cell">Intitulé de la Discipline</th>
+                  <th className="table-header-cell text-center w-36">Cours Actifs</th>
+                  <th className="table-header-cell text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredSubjects.map((sub) => (
+                  <tr key={sub.id} className="table-body-row">
+                    <td className="table-body-cell">
+                      <span className="badge-blue font-mono font-bold">{sub.code || "—"}</span>
+                    </td>
+                    <td className="table-body-cell font-bold text-slate-900">{sub.name}</td>
+                    <td className="table-body-cell text-center font-mono font-bold text-blue-700">
+                      {sub._count?.offerings || 0} classe(s)
+                    </td>
+                    <td className="table-body-cell text-right">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => {
+                            setForm({ name: sub.name, code: sub.code || "" });
+                            setIsCodeManual(true);
+                            setModal({ mode: "edit", item: sub });
+                          }}
+                          className="btn-secondary text-[11px] px-2 py-1"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(sub)}
+                          className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                          title="Supprimer la matière"
+                        >
+                          <Icon name="delete" className="text-[16px]" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {/* PORTAIL DES MODALES SANS VIDE SUPÉRIEUR */}
+      {/* PORTAIL DES MODALES */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
-          {/* 1. MODALE CRÉATION / ÉDITION */}
+          {/* MODALE CRÉATION / ÉDITION */}
           {modal && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.form
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleSubmit}
-                className="w-full max-w-md bg-white p-md sm:p-lg rounded-md shadow-2xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-md bg-white p-5 rounded-xl shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h4 className="font-bold text-sm text-on-surface">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h4 className="font-bold text-sm text-slate-900">
                     {modal.mode === "edit" ? "Modifier la Matière" : "Nouvelle Matière"}
                   </h4>
-                  <button type="button" onClick={() => setModal(null)} className="text-on-surface-variant">
+                  <button type="button" onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-700">
                     <Icon name="close" className="text-[18px]" />
                   </button>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-3 text-xs">
                   <div>
-                    <label className="text-xs font-semibold block mb-1">Intitulé de la matière *</label>
+                    <label className="font-bold text-slate-700 block mb-1">Intitulé de la matière *</label>
                     <input
                       required
                       placeholder="Ex: Thermodynamique appliquée"
                       value={form.name}
                       onChange={(e) => handleNameChange(e.target.value)}
-                      className={inputCls}
+                      className="input-field w-full"
                     />
                   </div>
 
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="text-xs font-semibold">Code de 5 caractères *</label>
-                      <span className={`text-[10px] font-mono font-bold ${isCodeValid ? "text-success" : "text-error"}`}>
-                        {form.code.length} / 5 car. {isCodeValid ? "✓ Valide" : "(Format A-Z 0-9)"}
+                      <label className="font-bold text-slate-700">Code Officiel (5 caractères majuscules) *</label>
+                      <span className={`text-[10px] font-mono font-bold ${isCodeValid ? "text-emerald-700" : "text-rose-700"}`}>
+                        {form.code.length}/5 {isCodeValid ? "✓ Valide" : "(Ex: THM01)"}
                       </span>
                     </div>
                     <input
@@ -236,19 +243,19 @@ export default function SubjectsCatalog() {
                       placeholder="Ex: THM01"
                       value={form.code}
                       onChange={(e) => handleCodeChange(e.target.value)}
-                      className={`${inputCls} font-mono uppercase font-bold ${!isCodeValid && form.code ? "border-error focus:border-error" : ""}`}
+                      className={`input-field w-full font-mono uppercase font-bold ${!isCodeValid && form.code ? "border-rose-500 focus:border-rose-500" : ""}`}
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button type="button" onClick={() => setModal(null)} className="btn-secondary">
                     Annuler
                   </button>
                   <button
                     type="submit"
                     disabled={!isCodeValid || !form.name.trim()}
-                    className="px-4 py-1.5 bg-primary text-white font-bold rounded text-xs shadow-xs disabled:opacity-50"
+                    className="btn-primary"
                   >
                     Enregistrer
                   </button>
@@ -257,27 +264,27 @@ export default function SubjectsCatalog() {
             </div>
           )}
 
-          {/* 2. MODALE CONFIRMATION DE SUPPRESSION */}
+          {/* MODALE SUPPRESSION */}
           {deleteTarget && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-sm rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-sm rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex items-center gap-2 text-error border-b pb-2">
+                <div className="flex items-center gap-2 text-rose-600 border-b border-slate-200 pb-2">
                   <Icon name="warning" className="text-[20px]" />
-                  <h3 className="text-sm font-bold text-on-surface">Supprimer la matière</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Supprimer la matière</h3>
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
+                <p className="text-xs text-slate-600 leading-relaxed">
                   Supprimer définitivement la matière <strong>{deleteTarget.name}</strong> ({deleteTarget.code || "Sans code"}) du référentiel ?
                 </p>
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 border rounded text-xs font-semibold">
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button onClick={() => setDeleteTarget(null)} className="btn-secondary">
                     Annuler
                   </button>
-                  <button onClick={confirmDeleteSubject} className="px-3.5 py-1.5 bg-error text-white font-bold rounded text-xs shadow-xs">
+                  <button onClick={confirmDeleteSubject} className="btn-primary bg-rose-600 hover:bg-rose-700">
                     Confirmer la suppression
                   </button>
                 </div>

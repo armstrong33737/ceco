@@ -1,185 +1,111 @@
+// packages/frontend/src/pages/About.jsx
 import { motion } from "framer-motion";
 import Icon from "../components/Icon";
-import logo from "../../assets/logo2.png";
 
 export default function About() {
-  // packages/frontend/src/pages/About.jsx (Extrait mis à jour du tableau Roadmap)
   const ROADMAP = [
-    { v: "V0", title: "Fondation Technique", desc: "Multi-tenant (centerId), stockage scopé, modélisation académique figée, moteur PostgreSQL embarqué.", status: "Actif" },
-    { v: "V1", title: "Installation Locale & Paramètres", desc: "Configuration Serveur/Client, licence 60j, sauvegardes compressées .zip, gestion des comptes et RBAC.", status: "Actif" },
-    { v: "V2", title: "Gestion des Formations & Apprenants", desc: "Filières, promotions (cohortes), inscriptions annuelles, fiches, cartes d'étudiant découpables duplex et certificats.", status: "Actif" },
-    { v: "V3", title: "Gestion Pédagogique & Évaluations", desc: "Matières & groupes libres, cursus filières, formateurs, bordereau de saisie matricielle, délibérations (S1+S2), verrouillage et KPIs.", status: "Actif" }, // ⬅️ Actif & Scellé
-    { v: "V4", title: "Bulletins Périodiques & Diplômes d'État", desc: "Composition des relevés de notes bilingues, bulletins périodiques et diplômes certifiés par QR Code et scellés d'agrément.", status: "Prochainement" },
-    { v: "V5", title: "Gestion des Stages", desc: "Conventions de stage, entreprises partenaires, encadreurs, évaluations et présences.", status: "Prévu" },
-    { v: "V6", title: "Gestion Financière", desc: "Frais de scolarité, échéanciers de paiement, reçus de versement et comptabilité légère du centre.", status: "Prévu" },
-    { v: "V7", title: "Administration Avancée & KPI", desc: "Journaux d'audit complets, notifications internes/SMS, graphiques statistiques et indicateurs.", status: "Prévu" },
+    { v: "V0", title: "Fondation Technique Multi-Tenant", desc: "Multi-tenant (centerId), stockage scopé, modélisation académique, PostgreSQL embarqué.", status: "Actif" },
+    { v: "V1", title: "Installation Locale & Paramètres", desc: "Configuration Serveur/Client, licence cryptographique, sauvegardes .zip, rôles RBAC.", status: "Actif" },
+    { v: "V2", title: "Formations & Apprenants", desc: "Filières, promotions (cohortes), inscriptions annuelles, fiches, badges CR80 duplex.", status: "Actif" },
+    { v: "V3", title: "Pédagogie & Évaluations", desc: "Matières & codes 5 car., formateurs, grille matricielle, délibérations (S1+S2), verrouillage.", status: "Actif" },
+    { v: "V4", title: "Bulletins Périodiques & Diplômes (Actuel)", desc: "Bulletins semestriels bilingues, relevés annuels (transcripts), diplômes d'État paysage, QR code hors-ligne.", status: "Actif" },
+    { v: "V5", title: "Gestion des Stages & Entreprises", desc: "Conventions de stage, entreprises partenaires, encadreurs, évaluations en atelier.", status: "Prochainement" },
+    { v: "V6", title: "Gestion Financière & Échéanciers", desc: "Frais de scolarité, tranches de paiement, reçus de versement et comptabilité légère.", status: "Prévu" },
+    { v: "V7", title: "Administration Avancée & KPI", desc: "Journaux d'audit complets, notifications SMS/Email, graphiques statistiques décisionnels.", status: "Prévu" },
     { v: "V8-V9", title: "CECO Cloud (Mode SaaS)", desc: "Sous-domaines par centre, passerelles bancaires automatisées, portail d'auto-inscription.", status: "Roadmap Cloud" },
-    { v: "V10-V11", title: "Marketplace & Applications Mobiles", desc: "Plugins tiers, APIs d'intégration, applications mobiles pour parents, apprenants et formateurs.", status: "Roadmap Écosystème" },
   ];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="space-y-md max-w-5xl mx-auto"
+      transition={{ duration: 0.2 }}
+      className="space-y-4 max-w-5xl mx-auto text-slate-800"
     >
-      {/* En-tête officiel avec le Logo */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-md bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
-        <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-md overflow-hidden bg-white border border-outline-variant/30 shadow-inner flex-shrink-0 p-1">
-          <img
-            src={logo}
-            alt="Logo officiel CECO"
-            className="h-full w-full object-contain"
-            onError={(e) => {
-              e.target.style.display = "none";
-              e.target.nextElementSibling.style.display = "flex";
-            }}
-          />
-          <div className="hidden h-full w-full items-center justify-center bg-gradient-to-br from-primary to-violet text-white">
-            <Icon name="school" className="text-[32px]" />
-          </div>
+      {/* 1. En-tête officiel */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white p-5 rounded-lg border border-slate-200 shadow-card">
+        <div className="w-14 h-14 rounded-lg bg-blue-700 flex items-center justify-center text-white font-bold text-2xl shadow-sm shrink-0">
+          <Icon name="school" className="text-[32px]" />
         </div>
 
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold text-on-surface">CECO — Suite ERP Pédagogique</h1>
-            <span className="rounded-md bg-primary-light text-primary font-bold text-xs px-2.5 py-0.5">
-              Version 1.0.0 Stable
-            </span>
-            <span className="rounded-md bg-success-light text-success font-bold text-xs px-2.5 py-0.5">
-              Mode On-Premise (Local)
-            </span>
+            <h1 className="text-lg font-bold text-slate-900">CECO Suite ERP — Plateforme Pédagogique</h1>
+            <span className="badge-blue font-bold font-mono">Version 1.0.0 Stable</span>
+            <span className="badge-emerald font-bold">Mode On-Premise &amp; Réseau LAN</span>
           </div>
-          <p className="text-xs text-on-surface-variant leading-relaxed">
-            Plateforme intégrée de gestion administrative, académique et financière conçue spécifiquement pour les centres de formation professionnelle au Cameroun et en Afrique sub-saharienne.
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Suite logicielle d'ingénierie administrative, pédagogique et réglementaire pour les centres de formation professionnelle.
           </p>
         </div>
       </div>
 
-      {/* Grille 3 colonnes : Vision, Architecture et Sécurité */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-md">
-        
-        {/* Carte 1 : Vision Métier */}
-        <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-2">
-          <div className="flex items-center gap-2 text-primary">
-            <Icon name="lightbulb" className="text-[20px]" />
-            <h2 className="text-sm font-bold text-on-surface">Vision &amp; Philosophie</h2>
-          </div>
-          <p className="text-xs text-on-surface-variant leading-relaxed">
-            Offrir une autonomie numérique totale aux établissements de formation professionnelle. Le logiciel s'exécute localement sans dépendance obligatoire à Internet, garantissant une continuité de service irréprochable.
-          </p>
-        </div>
-
-        {/* Carte 2 : Socle Technique */}
-        <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-2">
-          <div className="flex items-center gap-2 text-primary">
-            <Icon name="memory" className="text-[20px]" />
-            <h2 className="text-sm font-bold text-on-surface">Socle Technologique</h2>
-          </div>
-          <p className="text-xs text-on-surface-variant leading-relaxed">
-            Architecture Desktop Electron 31 couplée à un moteur PostgreSQL 17 embarqué autonome, une API REST Express sous Prisma 5.20 et une interface React 18 / Tailwind CSS réactive.
-          </p>
-        </div>
-
-        {/* Carte 3 : Non-destruction des données */}
-        <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-2">
-          <div className="flex items-center gap-2 text-primary">
-            <Icon name="history_edu" className="text-[20px]" />
-            <h2 className="text-sm font-bold text-on-surface">Régularité &amp; Traçabilité</h2>
-          </div>
-          <p className="text-xs text-on-surface-variant leading-relaxed">
-            Modélisation non-destructive stricte : les parcours étudiants et les pondérations de notes sont historisés par année et semestre afin d'assurer l'authenticité juridique des procès-verbaux émis.
-          </p>
-        </div>
-      </div>
-
-      {/* Fiche Technique & Bibliographie d'Ingénierie */}
-      <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-md">
-        <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-          <div className="flex items-center gap-2">
-            <Icon name="menu_book" className="text-primary text-[20px]" />
-            <h2 className="text-sm font-bold text-on-surface">Bibliographie &amp; Références de Conception</h2>
-          </div>
-          <span className="text-[11px] font-mono text-on-surface-variant">CECO Architecture Blueprint</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-md text-xs leading-relaxed">
-          <div className="space-y-1.5 p-md bg-surface rounded-md border border-outline-variant/20">
-            <h3 className="font-bold text-on-surface flex items-center gap-1.5">
-              <Icon name="verified" className="text-[16px] text-primary" />
-              Isolation Multi-Tenant Native
-            </h3>
-            <p className="text-on-surface-variant">
-              Toutes les tables de la base de données intègrent dès la V0 une colonne d'isolation <code className="bg-white px-1 py-0.5 rounded-md font-mono text-primary border border-outline-variant/30">centerId</code>. Cela permet de migrer sans rupture d'un serveur physique local vers une instance hébergée Cloud (V9).
-            </p>
+      {/* 2. Informations d'Auteur & Conception */}
+      <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-card space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-2">
+          Conception &amp; Ingénierie Logicielle
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 rounded bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-bold block text-[10px] uppercase">Auteur &amp; Concepteur</span>
+            <strong className="text-slate-900 text-sm block">Armstrong Euclador NGALEU</strong>
+            <span className="text-[11px] text-blue-700 font-semibold">Ingénieur Logiciel &amp; Architecte Système</span>
           </div>
 
-          <div className="space-y-1.5 p-md bg-surface rounded-md border border-outline-variant/20">
-            <h3 className="font-bold text-on-surface flex items-center gap-1.5">
-              <Icon name="verified" className="text-[16px] text-primary" />
-              Sécurité &amp; Intégrité Cryptographique
-            </h3>
-            <p className="text-on-surface-variant">
-              Les mots de passe sont hachés sous Bcrypt, les sessions sont scellées par jetons JWT signés par une clé unique générée par machine, et les documents générés disposent d'un token d'authenticité QR Code.
-            </p>
+          <div className="p-3 rounded bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-bold block text-[10px] uppercase">Contact Direct</span>
+            <span className="font-mono text-slate-900 block">armstrongngaleu3@gmail.com</span>
+            <span className="text-[11px] text-slate-500 font-mono">+237 679 78 47 50</span>
           </div>
 
-          <div className="space-y-1.5 p-md bg-surface rounded-md border border-outline-variant/20">
-            <h3 className="font-bold text-on-surface flex items-center gap-1.5">
-              <Icon name="verified" className="text-[16px] text-primary" />
-              Moteur de Sauvegarde Universel
-            </h3>
-            <p className="text-on-surface-variant">
-              Génération d'archives compressées autonomes <code className="bg-white px-1 py-0.5 rounded-md font-mono text-primary border border-outline-variant/30">.zip</code> encapsulant à la fois la structure de données relationnelle et l'arborescence des fichiers médias du centre.
-            </p>
-          </div>
-
-          <div className="space-y-1.5 p-md bg-surface rounded-md border border-outline-variant/20">
-            <h3 className="font-bold text-on-surface flex items-center gap-1.5">
-              <Icon name="verified" className="text-[16px] text-primary" />
-              Agrément &amp; Système Académique
-            </h3>
-            <p className="text-on-surface-variant">
-              Conforme aux exigences des diplômes d'État et de qualification professionnelle (DQP, CQP), avec délibérations semestrielles ou annuelles et arrêtés de fin de cycle.
-            </p>
+          <div className="p-3 rounded bg-slate-50 border border-slate-200 space-y-1">
+            <span className="text-slate-500 font-bold block text-[10px] uppercase">Portfolio Professionnel</span>
+            <a
+              href="https://armstrongngaleu.netlify.app"
+              target="_blank"
+              rel="noreferrer"
+              className="font-bold text-blue-700 hover:underline block text-xs truncate"
+            >
+              armstrongngaleu.netlify.app
+            </a>
+            <span className="text-[10px] text-slate-500">Solutions Numériques B2B</span>
           </div>
         </div>
       </div>
 
-      {/* Feuille de route produit (Roadmap) */}
-      <div className="rounded-md bg-surface-container-lowest p-md sm:p-lg border border-outline-variant/30 shadow-xs space-y-md">
-        <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-          <div className="flex items-center gap-2">
-            <Icon name="alt_route" className="text-primary text-[20px]" />
-            <h2 className="text-sm font-bold text-on-surface">Feuille de Route Produit (Roadmap V0 → V11)</h2>
-          </div>
-          <span className="text-xs font-semibold text-primary">Développement incrémental</span>
+      {/* 3. Feuille de Route Produit (Roadmap V0 → V9) */}
+      <div className="table-container">
+        <div className="p-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+            Feuille de Route Produit &amp; Évolutions
+          </h2>
+          <span className="badge-slate font-mono">V0 → V9</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs whitespace-nowrap">
             <thead>
-              <tr className="border-b border-outline-variant/30 text-on-surface-variant uppercase font-semibold bg-surface">
-                <th className="px-md py-2.5">Version</th>
-                <th className="px-md py-2.5">Module &amp; Objectif</th>
-                <th className="px-md py-2.5">Périmètre fonctionnel</th>
-                <th className="px-md py-2.5 text-right">Statut</th>
+              <tr>
+                <th className="table-header-cell w-20">Version</th>
+                <th className="table-header-cell w-48">Module Métier</th>
+                <th className="table-header-cell">Spécification Fonctionnelle</th>
+                <th className="table-header-cell text-right w-32">Statut</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-outline-variant/15">
+            <tbody>
               {ROADMAP.map((step) => (
-                <tr key={step.v} className="hover:bg-surface-container/20 transition-colors">
-                  <td className="px-md py-3 font-mono font-bold text-primary">{step.v}</td>
-                  <td className="px-md py-3 font-bold text-on-surface">{step.title}</td>
-                  <td className="px-md py-3 text-on-surface-variant whitespace-normal max-w-md">{step.desc}</td>
-                  <td className="px-md py-3 text-right">
-                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                <tr key={step.v} className="table-body-row">
+                  <td className="table-body-cell font-mono font-bold text-blue-700">{step.v}</td>
+                  <td className="table-body-cell font-bold text-slate-900">{step.title}</td>
+                  <td className="table-body-cell text-slate-600 whitespace-normal max-w-md">{step.desc}</td>
+                  <td className="table-body-cell text-right">
+                    <span className={
                       step.status === "Actif"
-                        ? "bg-success-light text-success border border-success/20"
+                        ? "badge-emerald"
                         : step.status === "Prochainement"
-                        ? "bg-primary-light text-primary border border-primary/20"
-                        : "bg-surface text-on-surface-variant border border-outline-variant/30"
-                    }`}>
+                        ? "badge-blue"
+                        : "badge-slate"
+                    }>
                       {step.status}
                     </span>
                   </td>
@@ -187,20 +113,6 @@ export default function About() {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Mentions légales et support */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm p-md rounded-md bg-surface border border-outline-variant/30 text-xs text-on-surface-variant">
-        <div>
-          <span className="font-bold text-on-surface">CECO Africa Development Team</span> • Tous droits réservés 2026
-        </div>
-        <div className="flex items-center gap-3">
-          <span>Licence d'exploitation locale active</span>
-          <span className="text-outline-variant">•</span>
-          <a href="https://ceco.africa" target="_blank" rel="noreferrer" className="font-bold text-primary hover:underline">
-            ceco.africa
-          </a>
         </div>
       </div>
     </motion.div>

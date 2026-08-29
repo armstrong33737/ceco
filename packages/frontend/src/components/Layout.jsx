@@ -1,123 +1,155 @@
 // packages/frontend/src/components/Layout.jsx
 import { useState, useEffect } from "react";
 import { Outlet, Link } from "react-router-dom";
-import Header from "./Header";
 import Sidebar from "./Sidebar";
-import useAuthStore from "../store/authStore";
-import Icon from "./Icon";
+import Header from "./Header";
+import ToastContainer from "./ToastContainer";
+import CommandPaletteModal from "./CommandPaletteModal";
 import OnboardingWizardModal from "./OnboardingWizardModal";
 import UserDocumentationModal from "./UserDocumentationModal";
+import useAuthStore from "../store/authStore";
+import Icon from "./Icon";
 
 export default function Layout() {
-  const user = useAuthStore((s) => s.user);
-  const isSidebarCollapsed = useAuthStore((s) => s.isSidebarCollapsed);
   const licenseStatus = useAuthStore((s) => s.licenseStatus);
   const licenseData = useAuthStore((s) => s.licenseData);
 
-  // Modales d'Assistance
+  // États des modales d'assistance
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
 
-  // Détection du tout premier démarrage pour afficher le guide
-  useEffect(() => {
-    const dismissed = localStorage.getItem("ceco_onboarding_dismissed");
-    if (!dismissed) {
-      setShowWizard(true);
-    }
-  }, []);
+  // État du Mode Audit UI/UX
+  const [uxAuditActive, setUxAuditActive] = useState(false);
 
-  // Écouteur global pour la touche F1
+  const toggleUxAudit = () => {
+    setUxAuditActive((prev) => !prev);
+  };
+
+  // Écouteur global pour les raccourcis clavier (Ctrl+K et F1)
   useEffect(() => {
     function handleGlobalKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+      }
+
       if (e.key === "F1") {
         e.preventDefault();
         setShowDocs((prev) => !prev);
       }
     }
+
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
+
+  // Application dynamique de la classe .ux-highlight sur les éléments balisés [data-ux]
+  useEffect(() => {
+    const uxElements = document.querySelectorAll("[data-ux]");
+    uxElements.forEach((el) => {
+      if (uxAuditActive) {
+        el.classList.add("ux-highlight");
+        el.setAttribute("data-ux-principle", el.getAttribute("data-ux") || "Ergonomie");
+      } else {
+        el.classList.remove("ux-highlight");
+        el.removeAttribute("data-ux-principle");
+      }
+    });
+  }, [uxAuditActive]);
 
   const isGrace = licenseStatus === "GRACE_PERIOD";
   const isReadOnly = licenseStatus === "READ_ONLY";
   const isTampered = licenseStatus === "TAMPERED";
 
   return (
-    <div className="min-h-screen bg-surface">
-      <Header
-        user={user}
-        onOpenWizard={() => setShowWizard(true)}
-        onOpenDocs={() => setShowDocs(true)}
+    <div className="h-screen font-sans antialiased bg-slate-100 text-slate-800 flex overflow-hidden">
+      {/* 1. Barre Latérale Enterprise */}
+      <Sidebar
+        uxAuditActive={uxAuditActive}
+        onToggleUxAudit={toggleUxAudit}
       />
-      <Sidebar />
 
-      <div className={`${isSidebarCollapsed ? "pl-20" : "pl-sidebar-width"} pt-12 transition-all duration-300`}>
-        {/* BANDEAU PERSISTANT EN PÉRIODE DE GRÂCE */}
+      {/* 2. Espace de Travail Principal */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-100">
+        {/* Barre Supérieure Fixe */}
+        <Header
+          onOpenCommandPalette={() => setShowCommandPalette(true)}
+          onOpenWizard={() => setShowWizard(true)}
+          onOpenDocs={() => setShowDocs(true)}
+        />
+
+        {/* 3. Bandeaux d'Alerte de Licence Non-Bloquants */}
         {isGrace && (
-          <div className="bg-amber-400 text-amber-950 px-4 py-2 text-xs font-bold flex items-center justify-between shadow-xs sticky top-12 z-40">
-            <div className="flex items-center gap-2">
-              <Icon name="warning" className="text-[18px]" />
+          <div className="bg-amber-100 border-b border-amber-300 text-amber-950 px-6 py-2 text-xs font-bold flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center space-x-2">
+              <Icon name="warning" className="text-[18px] text-amber-700" />
               <span>
-                Période de grâce active : Il vous reste <strong>{licenseData?.graceDaysRemaining || 7} jour(s)</strong> pour recharger la licence avant le passage en lecture seule.
+                Période de grâce active : Il vous reste <strong>{licenseData?.graceDaysRemaining || 7} jour(s)</strong> pour renouveler la licence avant le passage en lecture seule.
               </span>
             </div>
             <Link
               to="/parametres/licence"
-              className="px-3 py-1 bg-amber-950 text-white rounded text-[11px] font-bold hover:bg-black transition-colors"
+              className="px-3 py-1 bg-amber-800 text-white rounded text-[11px] font-bold hover:bg-amber-900 transition-colors"
             >
-              Recharger Maintenant
+              Recharger
             </Link>
           </div>
         )}
 
-        {/* BANDEAU EN MODE LECTURE SEULE */}
         {isReadOnly && (
-          <div className="bg-error text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-xs sticky top-12 z-40">
-            <div className="flex items-center gap-2">
+          <div className="bg-rose-600 text-white px-6 py-2 text-xs font-bold flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center space-x-2">
               <Icon name="lock" className="text-[18px]" />
               <span>
-                Mode Consultation / Lecture Seule actif : La saisie de données est suspendue. La consultation et l'impression d'actes restent disponibles.
+                Mode Lecture Seule actif : Les saisies et modifications sont verrouillées. La consultation et l'impression restent disponibles.
               </span>
             </div>
             <Link
               to="/parametres/licence"
-              className="px-3 py-1 bg-white text-error rounded text-[11px] font-bold hover:bg-slate-100 transition-colors"
+              className="px-3 py-1 bg-white text-rose-700 rounded text-[11px] font-bold hover:bg-slate-100 transition-colors"
             >
-              Activer une Licence
+              Activer une Clé
             </Link>
           </div>
         )}
 
-        {/* BANDEAU ALERTE HORLOGE MODIFIÉE */}
         {isTampered && (
-          <div className="bg-error text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-xs sticky top-12 z-40">
-            <div className="flex items-center gap-2">
+          <div className="bg-rose-700 text-white px-6 py-2 text-xs font-bold flex items-center justify-between shrink-0 shadow-xs">
+            <div className="flex items-center space-x-2">
               <Icon name="security_update_warning" className="text-[18px]" />
               <span>
-                Alerte de sécurité : L'horloge de votre PC a été reculée. Synchronisez l'heure exacte pour rétablir la session complète.
+                Alerte de sécurité : L'horloge de votre ordinateur a été reculée. Synchronisez l'heure exacte pour rétablir l'accès complet.
               </span>
             </div>
             <Link
               to="/parametres/licence"
-              className="px-3 py-1 bg-white text-error rounded text-[11px] font-bold hover:bg-slate-100 transition-colors"
+              className="px-3 py-1 bg-white text-rose-800 rounded text-[11px] font-bold hover:bg-slate-100 transition-colors"
             >
-              Voir Détails
+              Vérifier
             </Link>
           </div>
         )}
 
-        <main className="min-h-[calc(100vh-48px)] px-md py-md max-w-7xl mx-auto">
+        {/* 4. Canvas Déroulant Principal */}
+        <main className="flex-1 overflow-y-auto p-6 space-y-6">
           <Outlet />
         </main>
       </div>
 
-      {/* Modale Guide de Démarrage Étape par Étape */}
+      {/* 5. Modales & Toasts */}
+      <ToastContainer />
+
+      <CommandPaletteModal
+        isOpen={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+      />
+
       <OnboardingWizardModal
         isOpen={showWizard}
         onClose={() => setShowWizard(false)}
       />
 
-      {/* Modale Manuel d'Utilisation Plein Texte (Accessible par F1) */}
       <UserDocumentationModal
         isOpen={showDocs}
         onClose={() => setShowDocs(false)}

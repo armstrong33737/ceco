@@ -9,22 +9,22 @@ export default function PaginationBar({ pagination, onPageChange, onLimitChange 
   const endItem = Math.min(page * limit, total);
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-surface-container-lowest rounded-md border border-outline-variant/30 text-xs text-on-surface">
-      {/* Indicateur de volume */}
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-2xs text-xs text-slate-700 select-none">
+      {/* 1. Indicateur de Volume Réel */}
       <div className="flex items-center gap-2">
-        <span className="text-on-surface-variant">
-          Affichage de <strong className="text-on-surface font-mono">{startItem}</strong> à <strong className="text-on-surface font-mono">{endItem}</strong> sur <strong className="text-primary font-mono">{total}</strong> enregistrement(s)
+        <span className="text-slate-500">
+          Affichage de <strong className="text-slate-900 font-mono">{startItem}</strong> à <strong className="text-slate-900 font-mono">{endItem}</strong> sur <strong className="text-blue-700 font-mono font-bold">{total}</strong> enregistrement(s)
         </span>
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Sélecteur de taille de page */}
+        {/* 2. Sélecteur de Lignes par Page */}
         <div className="flex items-center gap-1.5">
-          <span className="text-on-surface-variant text-[11px]">Par page :</span>
+          <span className="text-slate-500 text-[11px] font-medium">Lignes par page :</span>
           <select
             value={limit}
-            onChange={(e) => onLimitChange(parseInt(e.target.value))}
-            className="h-8 rounded bg-surface border border-outline-variant/40 px-2 text-xs font-semibold outline-none focus:border-primary"
+            onChange={(e) => onLimitChange(parseInt(e.target.value, 10))}
+            className="h-8 rounded bg-slate-50 border border-slate-300 px-2 text-xs font-semibold text-slate-800 outline-none focus:border-blue-700 focus:bg-white"
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -33,13 +33,13 @@ export default function PaginationBar({ pagination, onPageChange, onLimitChange 
           </select>
         </div>
 
-        {/* Boutons de navigation */}
+        {/* 3. Contrôles de Navigation Séquentielle */}
         <div className="flex items-center gap-1">
           <button
             type="button"
             disabled={!hasPrev}
             onClick={() => onPageChange(1)}
-            className="w-8 h-8 rounded border border-outline-variant/40 flex items-center justify-center hover:bg-surface-container disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="w-8 h-8 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition-colors"
             title="Première page"
           >
             <Icon name="first_page" className="text-[18px]" />
@@ -49,13 +49,13 @@ export default function PaginationBar({ pagination, onPageChange, onLimitChange 
             type="button"
             disabled={!hasPrev}
             onClick={() => onPageChange(page - 1)}
-            className="w-8 h-8 rounded border border-outline-variant/40 flex items-center justify-center hover:bg-surface-container disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="w-8 h-8 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition-colors"
             title="Page précédente"
           >
             <Icon name="chevron_left" className="text-[18px]" />
           </button>
 
-          <span className="px-2.5 py-1 font-mono font-bold text-xs bg-primary-light text-primary rounded border border-primary/20">
+          <span className="px-2.5 py-1 font-mono font-bold text-xs bg-blue-50 text-blue-700 rounded border border-blue-200">
             {page} / {totalPages}
           </span>
 
@@ -63,7 +63,7 @@ export default function PaginationBar({ pagination, onPageChange, onLimitChange 
             type="button"
             disabled={!hasNext}
             onClick={() => onPageChange(page + 1)}
-            className="w-8 h-8 rounded border border-outline-variant/40 flex items-center justify-center hover:bg-surface-container disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="w-8 h-8 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition-colors"
             title="Page suivante"
           >
             <Icon name="chevron_right" className="text-[18px]" />
@@ -73,7 +73,7 @@ export default function PaginationBar({ pagination, onPageChange, onLimitChange 
             type="button"
             disabled={!hasNext}
             onClick={() => onPageChange(totalPages)}
-            className="w-8 h-8 rounded border border-outline-variant/40 flex items-center justify-center hover:bg-surface-container disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="w-8 h-8 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition-colors"
             title="Dernière page"
           >
             <Icon name="last_page" className="text-[18px]" />

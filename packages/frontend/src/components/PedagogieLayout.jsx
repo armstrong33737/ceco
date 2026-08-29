@@ -13,69 +13,77 @@ export default function PedagogieLayout() {
   const TABS = [
     { to: "saisie", label: "Saisie des Notes", icon: "edit_note", visible: true },
     { to: "deliberations", label: "Délibérations du Jury", icon: "gavel", visible: canDeliberate },
-    { to: "bulletins", label: "Bulletins & Diplômes (V4)", icon: "receipt_long", visible: canGenerateBulletins },
+    { to: "bulletins", label: "Bulletins & Diplômes", icon: "receipt_long", visible: canGenerateBulletins, badge: "V4" },
     { to: "maquettes", label: "Maquettes de Classes", icon: "auto_stories", visible: true },
     { to: "programmes-filieres", label: "Cursus Filières", icon: "account_tree", visible: isDirectorOrAdmin },
     { to: "matieres", label: "Matières", icon: "library_books", visible: isDirectorOrAdmin },
-    { to: "categories", label: "Catégories & Groupes", icon: "category", visible: isDirectorOrAdmin },
+    { to: "categories", label: "Groupes & Catégories", icon: "category", visible: isDirectorOrAdmin },
     { to: "formateurs", label: "Formateurs", icon: "badge", visible: isDirectorOrAdmin },
-    { to: "ponderations", label: "Pondérations CC / Examen", icon: "tune", visible: isDirectorOrAdmin },
+    { to: "ponderations", label: "Pondérations CC/Examen", icon: "tune", visible: isDirectorOrAdmin },
   ];
 
   const visibleTabs = TABS.filter((tab) => tab.visible);
 
   return (
-    <div className="space-y-md max-w-7xl mx-auto">
-      {/* En-tête officiel */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
+    <div className="space-y-4  mx-auto">
+      {/* 1. En-tête de Contexte Haute Densité */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-lg border border-slate-200 shadow-card">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-primary uppercase tracking-wider">
-              Pédagogie &amp; Évaluations
+            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+              Pôle Pédagogie &amp; Évaluations
             </span>
-            <span className="text-outline-variant">•</span>
-            <span className="text-xs text-on-surface-variant font-medium">
-              {user?.center?.name || "Espace Académique"}
+            <span className="text-slate-300">•</span>
+            <span className="text-[11px] text-slate-500 font-medium">
+              {user?.center?.name || "Campus Local"}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-on-surface mt-1">
-            {user?.role?.name === "Formateur" ? "Espace Enseignant — Saisie des Notes" : "Gestion Pédagogique, Évaluations & Diplômes (V4)"}
-          </h1>
-          <p className="text-xs text-on-surface-variant mt-0.5">
+          <h1 className="text-base font-bold text-slate-900 mt-0.5">
             {user?.role?.name === "Formateur"
-              ? "Accédez à vos bordereaux de notes, saisissez les évaluations continues et imprimez vos procès-verbaux."
-              : "Saisie des notes, délibérations, bulletins périodiques bilingues, relevés annuels et diplômes certifiés."}
+              ? "Espace Enseignant — Saisie des Évaluations"
+              : "Gestion Pédagogique, Délibérations & Diplômes"}
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {user?.role?.name === "Formateur"
+              ? "Saisissez les notes de contrôle continu et d'examens pour vos cours assignés."
+              : "Bordereaux de saisie, maquettes semestrielles, délibérations souveraines et livrets de diplomation."}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-surface border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface">
-            <Icon name="badge" className="text-primary text-[16px]" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700">
+            <Icon name="badge" className="text-blue-700 text-[16px]" />
             <span>Profil : {user?.role?.name || "Utilisateur"}</span>
           </span>
         </div>
       </div>
 
-      {/* Barre d'onglets filtrée selon les droits */}
-      <div className="flex gap-1.5 p-1 bg-surface-container-lowest rounded-md border border-outline-variant/30 shadow-xs overflow-x-auto">
+      {/* 2. Barre d'Onglets Horizontale Slate Enterprise */}
+      <div className="flex gap-1 p-1 bg-white rounded-lg border border-slate-200 shadow-2xs overflow-x-auto select-none">
         {visibleTabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             className={({ isActive }) =>
-              `flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
+              `flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
                 isActive
-                  ? "bg-primary text-on-primary shadow-xs"
-                  : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60"
+                  ? "bg-blue-700 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               }`
             }
           >
             <Icon name={tab.icon} className="text-[16px]" />
             <span>{tab.label}</span>
+            {tab.badge && (
+              <span className="px-1.5 py-0.2 rounded bg-white/20 text-white font-mono text-[9px] font-bold">
+                {tab.badge}
+              </span>
+            )}
           </NavLink>
         ))}
       </div>
 
+      {/* 3. Zone de Rendu du Contenu Actif */}
       <div>
         <Outlet />
       </div>

@@ -1,8 +1,8 @@
+// packages/frontend/src/pages/Login.jsx
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Icon from "../components/Icon";
 import useAuthStore from "../store/authStore";
-import maPhoto from '/assets/illustration.png';
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -17,192 +17,175 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-paper">
-      {/* Panneau illustration — masqué sur petit écran, gradient Argon */}
-      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br lg:flex lg:flex-col lg:items-center lg:justify-center">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute bottom-0 right-0 h-96 w-96 translate-x-1/3 translate-y-1/3 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute top-1/3 right-10 h-40 w-40 rounded-full bg-info/20 blur-2xl" />
+    <div className="flex min-h-screen w-full bg-slate-100 font-sans antialiased text-slate-800">
+      {/* 1. Panneau Gauche : Vitrine Enterprise Slate */}
+      <div className="relative hidden w-1/2 overflow-hidden bg-slate-900 lg:flex lg:flex-col lg:justify-between p-12 text-slate-300 border-r border-slate-800">
+        <div className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded bg-blue-600 flex items-center justify-center text-white font-bold text-base shadow-sm">
+            <Icon name="school" className="text-[20px]" />
+          </div>
+          <div>
+            <span className="font-bold text-sm text-white tracking-tight block leading-none">
+              CECO <span className="text-blue-400 font-mono text-xs">ERP</span>
+            </span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+              Suite Pédagogique &amp; Administrative
+            </span>
+          </div>
         </div>
-            <img src={maPhoto} alt="image" className="w-500" />
 
-        {/* <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-          className="relative z-10 flex flex-col items-center px-lg text-center"
-        >
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-            className="mb-lg flex h-24 w-24 items-center justify-center rounded-md bg-white/15 backdrop-blur-sm shadow-lg"
-          >
-            <Icon name="school" className="text-white text-[48px]" />
-          </motion.div>
-          <h2 className="text-3xl font-bold text-white">CECO</h2>
-          <p className="mt-3 max-w-sm text-white/80">
-            La gestion de votre centre de formation — apprenants, notes,
-            documents — réunie dans un seul espace simple à utiliser.
+        {/* Message Métier Central */}
+        <div className="space-y-6 max-w-md">
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded bg-slate-800 border border-slate-700 text-xs text-blue-400 font-semibold">
+            <Icon name="verified" className="text-[16px] text-emerald-400" />
+            <span>Mode On-Premise &amp; Réseau Sécurisé</span>
+          </div>
+
+          <h2 className="text-2xl font-black text-white tracking-tight leading-tight">
+            La gestion intégrale de votre centre de formation professionnelle.
+          </h2>
+
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Inscriptions d'apprenants, saisie des évaluations, délibérations souveraines du jury, bulletins semestriels et diplômes certifiés par QR Code hors-ligne.
           </p>
 
-          <div className="mt-xl flex gap-md">
-            {[
-              { icon: "group", label: "Apprenants" },
-              { icon: "grade", label: "Notes" },
-              { icon: "description", label: "Documents" },
-            ].map((f) => (
-              <div key={f.label} className="flex flex-col items-center gap-2 rounded-md bg-white/10 px-4 py-3 backdrop-blur-sm">
-                <Icon name={f.icon} className="text-white text-[22px]" />
-                <span className="text-xs text-white/80">{f.label}</span>
-              </div>
-            ))}
+          <div className="grid grid-cols-3 gap-3 pt-2">
+            <div className="p-3 rounded bg-slate-950/60 border border-slate-800 space-y-1 text-center">
+              <Icon name="group" className="text-blue-400 text-[20px] mx-auto block" />
+              <span className="text-[11px] font-bold text-slate-200 block">Scolarité</span>
+            </div>
+
+            <div className="p-3 rounded bg-slate-950/60 border border-slate-800 space-y-1 text-center">
+              <Icon name="edit_note" className="text-amber-400 text-[20px] mx-auto block" />
+              <span className="text-[11px] font-bold text-slate-200 block">Notes &amp; CC</span>
+            </div>
+
+            <div className="p-3 rounded bg-slate-950/60 border border-slate-800 space-y-1 text-center">
+              <Icon name="workspace_premium" className="text-emerald-400 text-[20px] mx-auto block" />
+              <span className="text-[11px] font-bold text-slate-200 block">Diplômes V4</span>
+            </div>
           </div>
-        </motion.div> */}
+        </div>
+
+        {/* Pied Gauche */}
+        <div className="text-[11px] text-slate-500 font-mono">
+          © 2026 Armstrong Euclador NGALEU • Tous droits réservés.
+        </div>
       </div>
 
-      {/* Panneau formulaire */}
+      {/* 2. Panneau Droit : Formulaire de Connexion Haute Densité */}
       <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="w-full max-w-sm"
+          transition={{ duration: 0.25 }}
+          className="w-full max-w-sm bg-white p-8 rounded-xl border border-slate-200 shadow-modal space-y-5"
         >
-          <div className="mb-xl lg:hidden flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gradient-to-br from-primary to-violet">
-              <Icon name="school" className="text-white text-[20px]" />
+          <div className="space-y-1 text-center sm:text-left">
+            <div className="inline-flex lg:hidden items-center space-x-2 mb-3">
+              <div className="w-7 h-7 rounded bg-blue-700 flex items-center justify-center text-white font-bold text-xs">
+                <Icon name="school" className="text-[16px]" />
+              </div>
+              <span className="font-bold text-sm text-slate-900">CECO ERP</span>
             </div>
-            <span className="text-lg font-bold text-on-surface">CECO</span>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Connexion à votre espace</h1>
+            <p className="text-xs text-slate-500">
+              Saisissez vos identifiants pour ouvrir votre session.
+            </p>
           </div>
 
-          <h1 className="text-center text-2xl font-bold tracking-tight text-on-surface">Bienvenue</h1>
-          <p className="text-center text-sm text-on-surface-variant">
-            Connectez-vous à votre espace CECO
-          </p>
-
-          <form onSubmit={handleSubmit} className="mt-lg flex flex-col gap-md">
-            <div className="group flex flex-col gap-1.5">
-              <label
-                htmlFor="email"
-                className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
-              >
-                Identifiant
+          <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+            <div>
+              <label htmlFor="login-email" className="block text-slate-700 font-bold uppercase text-[10px] tracking-wider mb-1">
+                Identifiant / Email
               </label>
-              <div className="relative flex items-center">
-                <Icon
-                  name="person"
-                  className="pointer-events-none absolute left-3 text-[20px] text-on-surface-variant/50 transition-colors group-focus-within:text-primary"
-                />
+              <div className="relative">
+                <Icon name="person" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]" />
                 <input
-                  id="email"
+                  id="login-email"
                   type="email"
                   required
                   autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="vous@centre.cm"
-                  className="h-12 w-full rounded-md bg-surface pl-10 pr-4 text-base text-on-surface
-                             outline-none shadow-[inset_0_0_0_1px_theme(colors.outline-variant)]
-                             transition-shadow placeholder:text-on-surface-variant/40
-                             focus:shadow-[inset_0_0_0_2px_theme(colors.primary)]"
+                  placeholder="admin@local.ceco"
+                  className="input-field pl-9"
                 />
               </div>
             </div>
 
-            <div className="group flex flex-col gap-1.5">
-              <label
-                htmlFor="password"
-                className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
-              >
+            <div>
+              <label htmlFor="login-password" className="block text-slate-700 font-bold uppercase text-[10px] tracking-wider mb-1">
                 Mot de passe
               </label>
-              <div className="relative flex items-center">
-                <Icon
-                  name="lock"
-                  className="pointer-events-none absolute left-3 text-[20px] text-on-surface-variant/50 transition-colors group-focus-within:text-primary"
-                />
+              <div className="relative">
+                <Icon name="lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]" />
                 <input
-                  id="password"
+                  id="login-password"
                   type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="h-12 w-full rounded-md bg-surface pl-10 pr-12 text-base text-on-surface
-                             outline-none shadow-[inset_0_0_0_1px_theme(colors.outline-variant)]
-                             transition-shadow placeholder:text-on-surface-variant/40
-                             focus:shadow-[inset_0_0_0_2px_theme(colors.primary)]"
+                  className="input-field pl-9 pr-9 font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 text-on-surface-variant/50 transition-colors hover:text-on-surface"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
                 >
-                  <Icon name={showPassword ? "visibility_off" : "visibility"} className="text-[20px]" />
+                  <Icon name={showPassword ? "visibility_off" : "visibility"} className="text-[18px]" />
                 </button>
               </div>
             </div>
 
-            <label className="mt-1 flex cursor-pointer items-center gap-2 select-none">
-              <span className="relative flex items-center">
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center space-x-2 cursor-pointer select-none text-slate-600">
                 <input
                   type="checkbox"
-                  className="peer sr-only"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
+                  className="rounded accent-blue-700 h-4 w-4"
                 />
-                <span className="flex h-4 w-4 items-center justify-center rounded-sm bg-surface shadow-[inset_0_0_0_1px_theme(colors.outline-variant)] transition-all peer-checked:bg-primary peer-checked:shadow-none">
-                  <Icon
-                    name="check"
-                    className="text-[14px] text-on-primary opacity-0 transition-opacity peer-checked:opacity-100"
-                  />
-                </span>
-              </span>
-              <span className="text-sm text-on-surface-variant">Rester connecté</span>
-            </label>
+                <span>Mémoriser ma session</span>
+              </label>
+            </div>
 
             <AnimatePresence>
               {status === "error" && (
-                <motion.p
+                <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="rounded-md bg-error-container px-3 py-2 text-sm text-error"
+                  className="p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold"
                 >
                   {error}
-                </motion.p>
+                </motion.div>
               )}
             </AnimatePresence>
 
-            <motion.button
+            <button
               type="submit"
               disabled={status === "loading"}
-              whileHover={{ y: -2 }}
-              whileTap={{ y: 0, scale: 0.98 }}
-              className="group relative mt-2 flex h-12 w-full items-center justify-center gap-2
-                         overflow-hidden rounded-md bg-gradient-to-r from-primary to-violet font-semibold text-on-primary
-                         shadow-[0_4px_14px_rgba(94,114,228,0.35)] transition-shadow
-                         hover:shadow-[0_6px_20px_rgba(94,114,228,0.45)]
-                         disabled:cursor-not-allowed disabled:opacity-70"
+              className="btn-primary w-full h-10 text-xs font-bold justify-center mt-2"
             >
               {status === "loading" ? (
                 <>
-                  <Icon name="progress_activity" className="animate-spin text-[18px]" />
-                  <span>Connexion en cours...</span>
+                  <Icon name="progress_activity" className="animate-spin text-[16px]" />
+                  <span>Vérification des accès...</span>
                 </>
               ) : (
                 <>
-                  <span>Se connecter</span>
-                  <Icon name="arrow_forward" className="text-[18px]" />
+                  <span>Ouvrir la session</span>
+                  <Icon name="arrow_forward" className="text-[16px]" />
                 </>
               )}
-            </motion.button>
+            </button>
           </form>
 
-          <p className="mt-lg text-center text-xs text-on-surface-variant/70">
-            Besoin d'aide ? Contactez l'administrateur de votre centre.
-          </p>
+          <div className="pt-3 border-t border-slate-100 text-center text-[11px] text-slate-400">
+            Besoin d'aide ? Contactez l'administrateur de votre établissement.
+          </div>
         </motion.div>
       </div>
     </div>

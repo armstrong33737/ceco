@@ -2,22 +2,23 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import { apiFetch, API_BASE, getToken } from "../lib/apiClient";
+import { showToast } from "../store/toastStore";
 import Icon from "../components/Icon";
 import PaginationBar from "../components/PaginationBar";
 import PdfViewerModal from "../components/PdfViewerModal";
-
-const inputCls = "h-10 rounded-md bg-surface px-3.5 text-xs text-on-surface outline-none border border-outline-variant/30 focus:border-primary focus:ring-1 focus:ring-primary transition-all w-full";
+import SlideOverDrawer from "../components/SlideOverDrawer";
 
 function StudentAvatar({ student, size = "md" }) {
   const [hasError, setHasError] = useState(false);
   const token = getToken();
   const photoUrl = student?.photoPath ? `${API_BASE}/students/${student.id}/photo?token=${token}` : null;
-  const sizeCls = size === "xl" ? "w-20 h-20 text-base" : size === "lg" ? "w-14 h-14 text-sm" : "w-8 h-8 text-[11px]";
+  const sizeCls = size === "xl" ? "w-16 h-20 text-sm" : size === "lg" ? "w-12 h-14 text-xs" : "w-8 h-8 text-[11px]";
 
   if (photoUrl && !hasError) {
     return (
-      <div className={`${sizeCls} rounded-md overflow-hidden bg-surface border border-outline-variant/30 flex-shrink-0 shadow-inner`}>
+      <div className={`${sizeCls} rounded overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0 shadow-inner`}>
         <img
           src={photoUrl}
           alt={`${student.firstName} ${student.lastName}`}
@@ -31,13 +32,15 @@ function StudentAvatar({ student, size = "md" }) {
   const initials = `${student?.lastName?.charAt(0) || ""}${student?.firstName?.charAt(0) || ""}`.toUpperCase() || "ST";
 
   return (
-    <div className={`${sizeCls} rounded-md bg-primary-light border border-primary/20 text-primary font-bold flex items-center justify-center flex-shrink-0 shadow-2xs`}>
+    <div className={`${sizeCls} rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold flex items-center justify-center flex-shrink-0 font-mono shadow-2xs`}>
       {initials}
     </div>
   );
 }
 
 export default function Students() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [students, setStudents] = useState([]);
   const [paginationMeta, setPaginationMeta] = useState(null);
   const [page, setPage] = useState(1);
@@ -48,10 +51,8 @@ export default function Students() {
   const [promotions, setPromotions] = useState([]);
   const [academicYears, setAcademicYears] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState("");
 
-  // Vue Active vs Registre des Archives
+  // Vue Active vs Archives
   const [viewMode, setViewMode] = useState("active");
 
   // Filtres
@@ -61,39 +62,36 @@ export default function Students() {
   const [selectedStatus, setSelectedStatus] = useState("");
   const [search, setSearch] = useState("");
 
-  // Modales
+  // Modales & Tiroirs
   const [showCreate, setShowCreate] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [reinscribeTarget, setReinscribeTarget] = useState(null);
+  const [inspectStudent, setInspectStudent] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [showImport, setShowImport] = useState(false);
 
-  // Webcam Capture en direct
+  // Webcam Capture
   const [showWebcam, setShowWebcam] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
-  // Visionneuse & Impression PDF
+  // Visionneuse PDF & Planches A4
   const [pdfModal, setPdfModal] = useState(null);
   const [batchModal, setBatchModal] = useState(false);
   const [batchForm, setBatchForm] = useState({ classeId: "", type: "CARTE_ETUDIANT" });
   const [generatingDoc, setGeneratingDoc] = useState(false);
-  const iframeRef = useRef(null);
 
   // Formulaires
   const initialForm = {
     firstName: "", lastName: "", gender: "M", birthDate: "", birthPlace: "", phone: "",
     guardianName: "", guardianPhone: "", entryDiploma: "BEPC",
-    matricule: "", classeId: "", academicYearId: "", photoDataUrl: null,
+    classeId: "", academicYearId: "", photoDataUrl: null,
   };
   const [createForm, setCreateForm] = useState(initialForm);
   const [editForm, setEditForm] = useState(initialForm);
-  const [reinscribeForm, setReinscribeForm] = useState({ classeId: "", academicYearId: "" });
   const [photoPreview, setPhotoPreview] = useState(null);
 
-  // Import CSV & Bilan d'erreurs
+  // Import CSV
   const [importRows, setImportRows] = useState([]);
   const [importTarget, setImportTarget] = useState({ classeId: "", academicYearId: "" });
   const [importReport, setImportReport] = useState(null);
@@ -101,7 +99,25 @@ export default function Students() {
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState(null);
 
-  // Filtrage intelligent des classes selon l'année et la filière
+  // Détection du paramètre URL ?action=create pour ouvrir le formulaire automatiquement (Loi de Fitts)
+  useEffect(() => {
+    if (searchParams.get("action") === "create" && academicYears.length > 0 && classes.length > 0) {
+      setModalError(null);
+      const activeYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
+      const activeClasses = classes.filter((c) => c.academicYearId === activeYear?.id || c.academicYear?.isCurrent);
+      setCreateForm({
+        ...initialForm,
+        academicYearId: activeYear?.id || "",
+        classeId: activeClasses[0]?.id || classes[0]?.id || "",
+      });
+      setPhotoPreview(null);
+      setShowCreate(true);
+
+      searchParams.delete("action");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, academicYears, classes]);
+
   const availableClassesForFilter = useMemo(() => {
     return classes.filter((c) => {
       const matchYear = !selectedYearId || c.academicYearId === selectedYearId;
@@ -110,7 +126,6 @@ export default function Students() {
     });
   }, [classes, selectedYearId, selectedFiliereId]);
 
-  // Si la classe sélectionnée ne fait plus partie des classes éligibles, on la réinitialise proprement
   useEffect(() => {
     if (selectedClasseId && !availableClassesForFilter.some((c) => c.id === selectedClasseId)) {
       setSelectedClasseId("");
@@ -120,7 +135,6 @@ export default function Students() {
 
   async function loadData() {
     setLoading(true);
-    setError(null);
     try {
       const isArchived = viewMode === "archived";
       const params = new URLSearchParams({
@@ -149,7 +163,7 @@ export default function Students() {
       setPromotions(promoData || []);
       setAcademicYears(yearsData || []);
     } catch (err) {
-      setError(err.message || "Impossible de charger la liste des étudiants.");
+      showToast(err.message || "Impossible de charger le registre des apprenants.", "error");
     } finally {
       setLoading(false);
     }
@@ -171,6 +185,7 @@ export default function Students() {
     setSelectedStatus("");
     setSearch("");
     setPage(1);
+    showToast("Filtres réinitialisés.", "info");
   }
 
   function handlePhotoSelect(e, isEdit = false) {
@@ -195,7 +210,7 @@ export default function Students() {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (err) {
-      setModalError("Impossible d'accéder à la webcam : " + err.message);
+      setModalError("Accès webcam refusé : " + err.message);
       setShowWebcam(false);
     }
   }
@@ -231,10 +246,10 @@ export default function Students() {
     setSaving(true);
     setModalError(null);
     try {
-      await apiFetch("/students", { method: "POST", body: JSON.stringify(createForm) });
+      const result = await apiFetch("/students", { method: "POST", body: JSON.stringify(createForm) });
       setShowCreate(false);
       setPhotoPreview(null);
-      setSuccessMsg("Apprenant inscrit avec succès.");
+      showToast(`Apprenant ${result.firstName} ${result.lastName} (${result.matricule}) inscrit avec succès.`, "success");
       await loadData();
     } catch (err) {
       setModalError(err.message || "Erreur d'inscription.");
@@ -250,26 +265,10 @@ export default function Students() {
     try {
       await apiFetch(`/students/${editingStudent.id}`, { method: "PUT", body: JSON.stringify(editForm) });
       setEditingStudent(null);
-      setSuccessMsg("Dossier mis à jour avec succès.");
+      showToast("Dossier apprenant mis à jour avec succès.", "success");
       await loadData();
     } catch (err) {
       setModalError(err.message || "Erreur de modification.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleReinscribe(e) {
-    e.preventDefault();
-    setSaving(true);
-    setModalError(null);
-    try {
-      await apiFetch(`/students/${reinscribeTarget.id}/inscribe`, { method: "POST", body: JSON.stringify(reinscribeForm) });
-      setReinscribeTarget(null);
-      setSuccessMsg("Réinscription effectuée.");
-      await loadData();
-    } catch (err) {
-      setModalError(err.message || "Erreur lors de la réinscription.");
     } finally {
       setSaving(false);
     }
@@ -279,11 +278,11 @@ export default function Students() {
     if (!deleteTarget) return;
     try {
       await apiFetch(`/students/${deleteTarget.id}`, { method: "DELETE" });
+      showToast(`Apprenant ${deleteTarget.lastName} archivé avec succès.`, "warning");
       setDeleteTarget(null);
-      setSuccessMsg("Apprenant archivé avec succès.");
       await loadData();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Impossible d'archiver ce dossier.", "error");
       setDeleteTarget(null);
     }
   }
@@ -292,11 +291,11 @@ export default function Students() {
     if (!restoreTarget) return;
     try {
       await apiFetch(`/students/${restoreTarget.id}/restore`, { method: "PUT" });
+      showToast(`Apprenant ${restoreTarget.firstName} ${restoreTarget.lastName} réintégré dans le registre actif.`, "success");
       setRestoreTarget(null);
-      setSuccessMsg(`Apprenant ${restoreTarget.firstName} ${restoreTarget.lastName} réintégré dans le registre actif.`);
       await loadData();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Impossible de restaurer ce dossier.", "error");
       setRestoreTarget(null);
     }
   }
@@ -323,8 +322,9 @@ export default function Students() {
       document.body.appendChild(a);
       a.click();
       a.remove();
+      showToast("Fichier CSV des apprenants téléchargé avec succès.", "success");
     } catch (err) {
-      setError(err.message);
+      showToast(err.message || "Erreur lors de l'exportation CSV.", "error");
     }
   }
 
@@ -381,7 +381,7 @@ export default function Students() {
         }),
       });
       setImportReport(res);
-      setSuccessMsg(res.message);
+      showToast(res.message, "success");
       await loadData();
     } catch (err) {
       setModalError(err.message);
@@ -392,7 +392,6 @@ export default function Students() {
 
   async function handleGenerateSingle(student, type, forceRegenerate = false) {
     setGeneratingDoc(true);
-    setError(null);
     try {
       const currentInsc = student.inscriptions?.[0];
       const res = await apiFetch("/documents/generate", {
@@ -413,8 +412,9 @@ export default function Students() {
         type,
         reused: res.reused,
       });
+      showToast("Document généré et prêt pour l'impression.", "info");
     } catch (err) {
-      setError(err.message || "Erreur lors de la génération du document PDF.");
+      showToast(err.message || "Erreur lors de la génération du document.", "error");
     } finally {
       setGeneratingDoc(false);
     }
@@ -437,59 +437,53 @@ export default function Students() {
         downloadUrl: `${API_BASE}${res.batchDocument.downloadUrl}?token=${token}`,
         previewUrl: `${API_BASE}${res.batchDocument.previewUrl}?token=${token}`,
       });
+      showToast(`Planche de ${res.count} documents compilée avec succès.`, "success");
     } catch (err) {
-      setModalError(err.message || "Erreur lors de la génération groupée.");
+      setModalError(err.message || "Erreur lors de la compilation groupée.");
     } finally {
       setGeneratingDoc(false);
     }
   }
 
-  function handlePrintClient() {
-    if (iframeRef.current) {
-      iframeRef.current.contentWindow?.focus();
-      iframeRef.current.contentWindow?.print();
-    }
-  }
-
   const hasActiveFilters = Boolean(selectedYearId || selectedFiliereId || selectedClasseId || selectedStatus || search);
 
-  if (loading && !paginationMeta) return <p className="text-sm text-on-surface-variant font-medium">Chargement du registre...</p>;
+  if (loading && !paginationMeta) return <p className="text-xs text-slate-500 font-medium p-6">Chargement du registre des apprenants...</p>;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-md max-w-7xl mx-auto">
-      {/* En-tête avec bascule Actifs vs Archives */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-sm bg-surface-container-lowest p-md sm:p-lg rounded-md border border-outline-variant/30 shadow-xs">
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4  mx-auto">
+      {/* 1. En-tête avec Bascule Actifs vs Archives */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 sm:p-5 rounded-lg border border-slate-200 shadow-card">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-on-surface">
-              {viewMode === "active" ? "Gestion des Apprenants" : "Registre des Archives &amp; Traçabilité"}
+            <h1 className="text-base font-bold text-slate-900">
+              {viewMode === "active" ? "Registre des Apprenants" : "Archives Historiques des Apprenants"}
             </h1>
-            <span className="rounded-md bg-primary-light text-primary font-bold text-[11px] px-2 py-0.5 font-mono">
+            <span className="badge-blue font-mono font-bold">
               {paginationMeta?.total || 0} {viewMode === "active" ? "actif(s)" : "archivé(s)"}
             </span>
           </div>
-          <p className="text-xs text-on-surface-variant mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             {viewMode === "active"
-              ? "Dossiers d'urgence, badges ID sécurisés, certificats et impression par classe."
-              : "Historique immuable des anciens apprenants archivés avec possibilité de réintégration."}
+              ? "Inscriptions, badges d'identité CR80, attestations et fiches individuelles."
+              : "Historique scellé des anciens apprenants archivés avec possibilité de réintégration."}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Bascule Actifs / Archives */}
-          <div className="flex p-0.5 bg-surface rounded-md border border-outline-variant/30">
+          <div className="flex p-0.5 bg-slate-100 rounded border border-slate-200">
             <button
               onClick={() => { setViewMode("active"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                viewMode === "active" ? "bg-primary text-white shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-all ${
+                viewMode === "active" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
               }`}
             >
               Actifs
             </button>
             <button
               onClick={() => { setViewMode("archived"); setPage(1); }}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${
-                viewMode === "archived" ? "bg-primary text-white shadow-xs" : "text-on-surface-variant hover:text-on-surface"
+              className={`px-3 py-1.5 text-xs font-bold rounded transition-all flex items-center gap-1 ${
+                viewMode === "archived" ? "bg-blue-700 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <Icon name="archive" className="text-[14px]" />
@@ -508,10 +502,11 @@ export default function Students() {
                   });
                   setBatchModal(true);
                 }}
-                className="flex items-center gap-1.5 rounded-md bg-primary-light border border-primary/20 px-3 py-2 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all shadow-xs"
+                className="btn-secondary"
+                title="Imprimer les cartes d'étudiant découpables pour toute une classe"
               >
-                <Icon name="layers" className="text-[16px]" />
-                <span>Impression par Classe (A4)</span>
+                <Icon name="layers" className="text-[16px] text-blue-700" />
+                <span>Planche Badges (A4)</span>
               </button>
 
               <button
@@ -527,7 +522,7 @@ export default function Students() {
                   });
                   setShowImport(true);
                 }}
-                className="flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container transition-colors shadow-xs"
+                className="btn-secondary"
               >
                 <Icon name="upload_file" className="text-[16px]" />
                 <span>Importer CSV</span>
@@ -535,7 +530,7 @@ export default function Students() {
 
               <button
                 onClick={handleExportCsv}
-                className="flex items-center gap-1.5 rounded-md border border-outline-variant px-3 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container transition-colors shadow-xs"
+                className="btn-secondary"
               >
                 <Icon name="download" className="text-[16px]" />
                 <span>Exporter CSV</span>
@@ -554,7 +549,7 @@ export default function Students() {
                   setPhotoPreview(null);
                   setShowCreate(true);
                 }}
-                className="flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark transition-colors shadow-xs"
+                className="btn-primary"
               >
                 <Icon name="person_add" className="text-[16px]" />
                 <span>Nouvel Apprenant</span>
@@ -564,26 +559,12 @@ export default function Students() {
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-md bg-error-container p-md text-sm text-error border border-error/20 flex items-center justify-between">
-          <p className="text-xs font-semibold">{error}</p>
-          <button onClick={() => setError(null)} className="text-xs font-bold underline">Fermer</button>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="rounded-md bg-success-light p-md text-sm text-success border border-success/20 flex items-center justify-between">
-          <p className="text-xs font-semibold">{successMsg}</p>
-          <button onClick={() => setSuccessMsg("")} className="text-xs font-bold underline">Fermer</button>
-        </div>
-      )}
-
-      {/* Barre de Filtres Combinés */}
-      <div className="bg-surface-container-lowest p-md rounded-md border border-outline-variant/30 shadow-xs space-y-2">
+      {/* 2. Barre de Filtres Combinés Haute Densité */}
+      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-card space-y-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">1. Session</label>
-            <select value={selectedYearId} onChange={(e) => handleFilterChange(setSelectedYearId, e.target.value)} className={inputCls}>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">1. Session</label>
+            <select value={selectedYearId} onChange={(e) => handleFilterChange(setSelectedYearId, e.target.value)} className="input-field w-full">
               <option value="">Toutes les sessions</option>
               {academicYears.map((y) => (
                 <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Active)" : ""}</option>
@@ -592,24 +573,24 @@ export default function Students() {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">2. Filière</label>
-            <select value={selectedFiliereId} onChange={(e) => handleFilterChange(setSelectedFiliereId, e.target.value)} className={inputCls}>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">2. Filière</label>
+            <select value={selectedFiliereId} onChange={(e) => handleFilterChange(setSelectedFiliereId, e.target.value)} className="input-field w-full">
               <option value="">Toutes les filières</option>
               {filieres.map((f) => <option key={f.id} value={f.id}>{f.name} ({f.programType?.code})</option>)}
             </select>
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">3. Classe</label>
-            <select value={selectedClasseId} onChange={(e) => handleFilterChange(setSelectedClasseId, e.target.value)} className={inputCls}>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">3. Classe</label>
+            <select value={selectedClasseId} onChange={(e) => handleFilterChange(setSelectedClasseId, e.target.value)} className="input-field w-full">
               <option value="">Toutes les classes ({availableClassesForFilter.length})</option>
               {availableClassesForFilter.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">4. Statut</label>
-            <select value={selectedStatus} onChange={(e) => handleFilterChange(setSelectedStatus, e.target.value)} className={inputCls}>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">4. Statut</label>
+            <select value={selectedStatus} onChange={(e) => handleFilterChange(setSelectedStatus, e.target.value)} className="input-field w-full">
               <option value="">Tous les statuts</option>
               <option value="en_cours">En cours</option>
               <option value="admis">Admis</option>
@@ -620,12 +601,12 @@ export default function Students() {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-1">5. Recherche</label>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">5. Recherche</label>
             <input
               placeholder="Nom, matricule, contact..."
               value={search}
               onChange={(e) => handleFilterChange(setSearch, e.target.value)}
-              className={inputCls}
+              className="input-field w-full"
             />
           </div>
         </div>
@@ -634,7 +615,7 @@ export default function Students() {
           <div className="flex justify-end pt-1">
             <button
               onClick={handleResetFilters}
-              className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
+              className="text-[11px] font-semibold text-blue-700 hover:underline flex items-center gap-1"
             >
               <Icon name="restart_alt" className="text-[14px]" />
               <span>Réinitialiser les filtres</span>
@@ -643,118 +624,105 @@ export default function Students() {
         )}
       </div>
 
-      {/* Tableau des apprenants */}
-      <div className="overflow-hidden rounded-md bg-surface-container-lowest border border-outline-variant/30 shadow-xs">
+      {/* 3. Tableau Haute Densité des Apprenants */}
+      <div className="table-container">
         {students.length === 0 ? (
-          <p className="p-lg text-xs text-on-surface-variant text-center">
-            {viewMode === "active" ? "Aucun apprenant ne correspond aux critères de filtre sélectionnés." : "Aucun dossier archivé trouvé."}
+          <p className="p-8 text-xs text-slate-500 text-center">
+            {viewMode === "active" ? "Aucun apprenant ne correspond aux filtres appliqués." : "Aucun dossier archivé trouvé."}
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs whitespace-nowrap">
               <thead>
-                <tr className="border-b border-outline-variant/30 font-semibold uppercase text-on-surface-variant bg-surface">
-                  <th className="px-md py-3">Matricule</th>
-                  <th className="px-md py-3">Apprenant</th>
-                  <th className="px-md py-3">Classe &amp; Cohorte</th>
-                  <th className="px-md py-3">
-                    {viewMode === "active" ? "Urgence (Tuteur)" : "Date d'Archivage"}
-                  </th>
-                  <th className="px-md py-3">Statut</th>
-                  <th className="px-md py-3 text-right">Actions &amp; Traçabilité</th>
+                <tr>
+                  <th className="table-header-cell">Matricule</th>
+                  <th className="table-header-cell">Apprenant</th>
+                  <th className="table-header-cell">Classe &amp; Cohorte</th>
+                  <th className="table-header-cell">{viewMode === "active" ? "Contact & Tuteur" : "Date d'Archivage"}</th>
+                  <th className="table-header-cell text-center">Statut</th>
+                  <th className="table-header-cell text-right">Actions &amp; Documents</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-outline-variant/15">
+              <tbody>
                 {students.map((s) => {
-                  // Résolution contextuelle de l'inscription correspondant aux filtres appliqués
                   const currentInsc = (selectedYearId || selectedClasseId)
                     ? s.inscriptions?.find((i) => (!selectedYearId || i.academicYearId === selectedYearId) && (!selectedClasseId || i.classeId === selectedClasseId)) || s.inscriptions?.[0]
                     : s.inscriptions?.[0];
 
                   return (
-                    <tr key={s.id} className="hover:bg-surface-container/20 transition-colors">
-                      <td className="px-md py-3 font-mono font-bold text-primary">{s.matricule}</td>
-                      <td className="px-md py-3">
+                    <tr
+                      key={s.id}
+                      onClick={() => setInspectStudent(s)}
+                      className="table-body-row"
+                    >
+                      <td className="table-body-cell font-mono font-bold text-blue-700">{s.matricule}</td>
+                      <td className="table-body-cell">
                         <div className="flex items-center gap-2.5">
                           <StudentAvatar student={s} size="md" />
                           <div>
-                            <div className="font-bold text-on-surface">{s.lastName} {s.firstName}</div>
-                            <div className="text-[10px] text-on-surface-variant font-mono">
+                            <span className="font-bold text-slate-900 block">{s.lastName} {s.firstName}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">
                               {s.gender === "F" ? "Féminin" : "Masculin"} • {s.birthDate ? new Date(s.birthDate).toLocaleDateString("fr-FR") : "—"}
-                            </div>
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-md py-3 font-medium text-on-surface">
-                        <div>{currentInsc?.classe?.label || "Non assigné"}</div>
-                        <div className="text-[10px] text-on-surface-variant font-mono">{currentInsc?.promotion?.label || "—"}</div>
+                      <td className="table-body-cell">
+                        <span className="font-semibold text-slate-800 block">{currentInsc?.classe?.label || "Non assigné"}</span>
+                        <span className="text-[10px] text-slate-500 font-mono">{currentInsc?.promotion?.label || "—"}</span>
                       </td>
-                      <td className="px-md py-3 text-on-surface-variant">
+                      <td className="table-body-cell">
                         {viewMode === "active" ? (
                           <>
-                            <div className="font-semibold text-on-surface">{s.guardianName || "—"}</div>
-                            <div className="text-[10px] font-mono">{s.guardianPhone || s.phone || "—"}</div>
+                            <span className="font-semibold text-slate-800 block">{s.guardianName || "—"}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">{s.guardianPhone || s.phone || "—"}</span>
                           </>
                         ) : (
-                          <div className="font-mono text-error font-semibold">
+                          <span className="font-mono text-rose-600 font-semibold">
                             {s.deletedAt ? new Date(s.deletedAt).toLocaleString("fr-FR") : "—"}
-                          </div>
+                          </span>
                         )}
                       </td>
-                      <td className="px-md py-3">
+                      <td className="table-body-cell text-center">
                         {viewMode === "active" ? (
-                          <span className={`rounded-md px-2 py-0.5 font-bold text-[10px] uppercase border ${
-                            currentInsc?.status === "diplome"
-                              ? "bg-success-light text-success border-success/20"
-                              : currentInsc?.status === "admis"
-                              ? "bg-success-light text-success border-success/20"
+                          <span className={
+                            currentInsc?.status === "diplome" || currentInsc?.status === "admis"
+                              ? "badge-emerald uppercase"
                               : currentInsc?.status === "redouble" || currentInsc?.status === "abandon"
-                              ? "bg-error-container text-error border-error/20"
-                              : "bg-primary-light text-primary border-primary/20"
-                          }`}>
+                              ? "badge-rose uppercase"
+                              : "badge-blue uppercase"
+                          }>
                             {currentInsc?.status || "en_cours"}
                           </span>
                         ) : (
-                          <span className="rounded-md bg-error-container text-error border border-error/20 px-2 py-0.5 font-bold text-[10px] uppercase">
-                            Archivé
-                          </span>
+                          <span className="badge-rose uppercase">Archivé</span>
                         )}
                       </td>
-                      <td className="px-md py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="table-body-cell text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
                           {viewMode === "active" ? (
                             <>
                               <button
                                 onClick={() => handleGenerateSingle(s, "CARTE_ETUDIANT")}
                                 disabled={generatingDoc}
-                                className="rounded-md bg-primary-light border border-primary/20 px-2 py-1 text-primary font-bold hover:bg-primary hover:text-white transition-all text-[11px] flex items-center gap-1 shadow-2xs"
-                                title="Consulter la carte d'apprenant (Badge)"
+                                className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200 hover:bg-blue-700 hover:text-white transition-all text-[11px]"
+                                title="Générer la carte d'apprenant (Badge CR80)"
                               >
-                                <Icon name="badge" className="text-[14px]" />
-                                <span>Carte</span>
+                                Carte
                               </button>
 
                               <button
                                 onClick={() => handleGenerateSingle(s, "ATTESTATION_INSCRIPTION")}
                                 disabled={generatingDoc}
-                                className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container transition-colors text-[11px] shadow-2xs"
-                                title="Consulter le certificat de scolarité"
+                                className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-100 transition-colors text-[11px]"
+                                title="Certificat de scolarité"
                               >
                                 Certificat
                               </button>
 
                               <button
-                                onClick={() => handleGenerateSingle(s, "FICHE_INSCRIPTION")}
-                                disabled={generatingDoc}
-                                className="rounded-md border border-outline-variant px-2 py-1 text-on-surface font-semibold hover:bg-surface-container transition-colors text-[11px] shadow-2xs"
-                                title="Consulter la fiche d'inscription individuelle"
-                              >
-                                Fiche
-                              </button>
-
-                              <button
-                                onClick={() => setSelectedStudent(s)}
-                                className="rounded-md border border-outline-variant px-2 py-1 text-on-surface-variant font-semibold hover:bg-surface-container transition-colors text-[11px]"
+                                onClick={() => setInspectStudent(s)}
+                                className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-600 font-semibold hover:bg-slate-100 transition-colors text-[11px]"
                               >
                                 Dossier
                               </button>
@@ -772,19 +740,20 @@ export default function Students() {
                                     guardianName: s.guardianName || "",
                                     guardianPhone: s.guardianPhone || "",
                                     entryDiploma: s.entryDiploma || "BEPC",
-                                    matricule: s.matricule,
+                                    classeId: currentInsc?.classeId || "",
+                                    academicYearId: currentInsc?.academicYearId || "",
                                     photoDataUrl: null,
                                   });
                                   setPhotoPreview(s.photoPath ? `${API_BASE}/students/${s.id}/photo?token=${getToken()}` : null);
                                 }}
-                                className="rounded-md border border-outline-variant px-2 py-1 text-on-surface-variant hover:text-primary transition-colors text-[11px]"
+                                className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-600 hover:text-blue-700 transition-colors text-[11px]"
                               >
                                 Éditer
                               </button>
 
                               <button
                                 onClick={() => setDeleteTarget(s)}
-                                className="text-error hover:bg-error-container/20 p-1 rounded-md transition-colors"
+                                className="p-1 text-rose-600 hover:bg-rose-50 rounded transition-colors"
                                 title="Archiver ce dossier"
                               >
                                 <Icon name="delete" className="text-[16px]" />
@@ -793,14 +762,14 @@ export default function Students() {
                           ) : (
                             <>
                               <button
-                                onClick={() => setSelectedStudent(s)}
-                                className="rounded-md border border-outline-variant px-2.5 py-1 text-on-surface font-semibold hover:bg-surface-container transition-colors text-[11px]"
+                                onClick={() => setInspectStudent(s)}
+                                className="btn-secondary text-[11px] px-2.5 py-1"
                               >
-                                Dossier Historique
+                                Dossier
                               </button>
                               <button
                                 onClick={() => setRestoreTarget(s)}
-                                className="rounded-md bg-success-light border border-success/20 px-2.5 py-1 text-success font-bold hover:bg-success hover:text-white transition-all text-[11px] flex items-center gap-1 shadow-2xs"
+                                className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-[11px] px-2.5 py-1"
                               >
                                 <Icon name="restore" className="text-[14px]" />
                                 <span>Restaurer</span>
@@ -818,7 +787,7 @@ export default function Students() {
         )}
       </div>
 
-      {/* BARRE DE PAGINATION SERVEUR */}
+      {/* 4. BARRE DE PAGINATION SERVEUR */}
       <PaginationBar
         pagination={paginationMeta}
         onPageChange={setPage}
@@ -828,37 +797,111 @@ export default function Students() {
         }}
       />
 
-      {/* PORTAIL DES MODALES */}
+      {/* 5. TIROIR LATÉRAL COULISSANT D'INSPECTION (SLIDE-OVER DRAWER) */}
+      <SlideOverDrawer
+        isOpen={Boolean(inspectStudent)}
+        onClose={() => setInspectStudent(null)}
+        title={inspectStudent ? `${inspectStudent.lastName} ${inspectStudent.firstName}` : "Dossier Apprenant"}
+        subtitle={`Matricule Officiel : ${inspectStudent?.matricule || "—"}`}
+        footerActions={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const st = inspectStudent;
+                setInspectStudent(null);
+                handleGenerateSingle(st, "CARTE_ETUDIANT");
+              }}
+              className="flex-1 btn-primary"
+            >
+              <Icon name="badge" className="text-[16px]" />
+              <span>Générer Carte d'Identité</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInspectStudent(null)}
+              className="btn-secondary"
+            >
+              Fermer
+            </button>
+          </>
+        }
+      >
+        {inspectStudent && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <StudentAvatar student={inspectStudent} size="xl" />
+              <div>
+                <h4 className="text-sm font-bold text-slate-900">{inspectStudent.lastName} {inspectStudent.firstName}</h4>
+                <span className="badge-blue font-mono font-bold mt-0.5">{inspectStudent.matricule}</span>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {inspectStudent.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le {inspectStudent.birthDate ? new Date(inspectStudent.birthDate).toLocaleDateString("fr-FR") : "—"}{inspectStudent.birthPlace ? ` à ${inspectStudent.birthPlace}` : ""}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs p-3 bg-slate-50 rounded-lg border border-slate-200 font-medium">
+              <div><strong className="text-slate-500 block text-[10px] uppercase">Téléphone</strong> {inspectStudent.phone || "—"}</div>
+              <div><strong className="text-slate-500 block text-[10px] uppercase">Diplôme Entrée</strong> {inspectStudent.entryDiploma || "—"}</div>
+              <div><strong className="text-slate-500 block text-[10px] uppercase">Parent / Tuteur</strong> {inspectStudent.guardianName || "—"}</div>
+              <div><strong className="text-slate-500 block text-[10px] uppercase">Urgence</strong> {inspectStudent.guardianPhone || "—"}</div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 border-b border-slate-200 pb-1">
+                Historique des Inscriptions &amp; Promotions
+              </h4>
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+                {inspectStudent.inscriptions?.map((insc) => (
+                  <div key={insc.id} className="p-3 bg-white flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-slate-900 block">{insc.classe?.label}</span>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Cohorte : <strong className="text-blue-700">{insc.promotion?.label || "—"}</strong> • Session : {insc.academicYear?.label}
+                      </span>
+                    </div>
+                    <span className="badge-slate uppercase font-bold text-[10px]">
+                      {insc.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </SlideOverDrawer>
+
+      {/* 6. PORTAIL DES MODALES */}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
-          {/* 1. MODALE IMPRESSION GROUPÉE PAR CLASSE (PLANCHE A4) */}
+          {/* MODALE IMPRESSION PLANCHE BADGES A4 */}
           {batchModal && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.form
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleGenerateBatch}
-                className="w-full max-w-md rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-md rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div className="flex items-center gap-2">
-                    <Icon name="layers" className="text-primary text-[20px]" />
-                    <h3 className="text-sm font-bold text-on-surface">Impression par Classe (Planche A4)</h3>
+                    <Icon name="layers" className="text-blue-700 text-[20px]" />
+                    <h3 className="text-sm font-bold text-slate-900">Impression Groupée (Planche A4)</h3>
                   </div>
-                  <button type="button" onClick={() => setBatchModal(false)} className="text-on-surface-variant hover:text-on-surface">
+                  <button type="button" onClick={() => setBatchModal(false)} className="text-slate-400 hover:text-slate-700">
                     <Icon name="close" className="text-[18px]" />
                   </button>
                 </div>
 
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Classe sélectionnée</label>
+                    <label className="text-xs font-bold text-slate-600 uppercase block mb-1">Classe</label>
                     <select
                       required
                       value={batchForm.classeId}
                       onChange={(e) => setBatchForm({ ...batchForm, classeId: e.target.value })}
-                      className={inputCls}
+                      className="input-field w-full"
                     >
                       <option value="">Sélectionner une classe</option>
                       {classes.map((c) => (
@@ -868,48 +911,32 @@ export default function Students() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Type d'acte à compiler</label>
+                    <label className="text-xs font-bold text-slate-600 uppercase block mb-1">Type d'acte</label>
                     <select
                       required
                       value={batchForm.type}
                       onChange={(e) => setBatchForm({ ...batchForm, type: e.target.value })}
-                      className={inputCls}
+                      className="input-field w-full"
                     >
                       <option value="CARTE_ETUDIANT">Planche Badges Duplex A4 (Recto/Verso avec repères)</option>
-                      <option value="ATTESTATION_INSCRIPTION">Livret d'Attestations A4 (Multi-pages)</option>
+                      <option value="ATTESTATION_INSCRIPTION">Livret d'Attestations de Scolarité (Multi-pages)</option>
                     </select>
                   </div>
                 </div>
 
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
+                {modalError && <p className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold">{modalError}</p>}
 
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setBatchModal(false)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
-                    Annuler
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={generatingDoc || !batchForm.classeId}
-                    className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
-                  >
-                    {generatingDoc ? (
-                      <>
-                        <Icon name="progress_activity" className="animate-spin text-[16px]" />
-                        <span>Compilation PDF serveur...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Icon name="print" className="text-[16px]" />
-                        <span>Compiler le document A4</span>
-                      </>
-                    )}
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button type="button" onClick={() => setBatchModal(false)} className="btn-secondary">Annuler</button>
+                  <button type="submit" disabled={generatingDoc || !batchForm.classeId} className="btn-primary">
+                    {generatingDoc ? "Compilation en cours..." : "Générer la Planche PDF"}
                   </button>
                 </div>
               </motion.form>
             </div>
           )}
 
-          {/* VISIONNEUSE PDF UNIFIÉE */}
+          {/* VISIONNEUSE PDF MODALE */}
           <PdfViewerModal
             isOpen={Boolean(pdfModal)}
             title={pdfModal?.title}
@@ -921,210 +948,83 @@ export default function Students() {
             onClose={() => setPdfModal(null)}
           />
 
-          {/* 3. MODALE CONFIRMATION DE RESTAURATION D'ARCHIVE */}
-          {restoreTarget && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-md rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
-              >
-                <div className="flex items-center gap-2 text-success">
-                  <Icon name="restore" className="text-[22px]" />
-                  <h3 className="text-base font-bold text-on-surface">Restaurer l'apprenant</h3>
-                </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Réintégrer le dossier de <strong>{restoreTarget.firstName} {restoreTarget.lastName}</strong> ({restoreTarget.matricule}) dans le registre actif ? Ses inscriptions et historiques restent intacts.
-                </p>
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button onClick={() => setRestoreTarget(null)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
-                    Annuler
-                  </button>
-                  <button onClick={confirmRestore} className="rounded-md bg-success px-4 py-2 text-xs font-bold text-white hover:opacity-90 shadow-xs">
-                    Confirmer la réintégration
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* 4. MODALE IMPORTATION CSV */}
-          {showImport && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
-              <motion.form
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                onSubmit={handleExecuteImport}
-                className="w-full max-w-xl rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md max-h-[90vh] overflow-y-auto"
-              >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-                  <h3 className="text-sm font-bold text-on-surface">Importer des Apprenants par CSV</h3>
-                  <button type="button" onClick={() => setShowImport(false)} className="text-on-surface-variant hover:text-on-surface">
-                    <Icon name="close" className="text-[18px]" />
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session active</label>
-                      <select
-                        required
-                        value={importTarget.academicYearId}
-                        onChange={(e) => {
-                          const yearId = e.target.value;
-                          const matchingClasses = classes.filter((c) => c.academicYearId === yearId);
-                          setImportTarget({
-                            academicYearId: yearId,
-                            classeId: matchingClasses[0]?.id || "",
-                          });
-                        }}
-                        className={inputCls}
-                      >
-                        {academicYears.filter((y) => y.isCurrent).map((y) => (
-                          <option key={y.id} value={y.id}>{y.label} (Active)</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Classe d'inscription</label>
-                      <select required value={importTarget.classeId} onChange={(e) => setImportTarget({ ...importTarget, classeId: e.target.value })} className={inputCls}>
-                        {classes.filter((c) => c.academicYearId === importTarget.academicYearId || c.academicYear?.isCurrent).map((c) => (
-                          <option key={c.id} value={c.id}>{c.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="p-4 border-2 border-dashed border-outline-variant/60 rounded-md text-center bg-surface space-y-2">
-                    <Icon name="file_upload" className="text-3xl text-primary" />
-                    <p className="text-xs font-semibold text-on-surface">Sélectionner un fichier CSV</p>
-                    <p className="text-[11px] text-on-surface-variant">Colonnes : Matricule; Nom; Prenom; Genre; DateNaissance; LieuNaissance; Telephone; Tuteur; TelUrgence; DiplomeEntree</p>
-                    <input type="file" accept=".csv,text/csv" onChange={handleCsvFileSelect} className="text-xs mx-auto" />
-                  </div>
-
-                  {importRows.length > 0 && !importReport && (
-                    <div className="p-2.5 rounded-md bg-primary-light text-primary text-xs font-bold">
-                      {importRows.length} ligne(s) d'apprenants prêtes à être analysées.
-                    </div>
-                  )}
-
-                  {importReport && (
-                    <div className="p-3 rounded-md bg-surface border border-outline-variant/30 space-y-2 text-xs">
-                      <div className="font-bold text-success flex items-center gap-1.5">
-                        <Icon name="check_circle" className="text-[18px]" />
-                        <span>{importReport.createdCount} apprenant(s) importé(s) avec succès sur {importReport.totalCount} lignes.</span>
-                      </div>
-                      {importReport.errors?.length > 0 && (
-                        <div className="space-y-1 text-error">
-                          <p className="font-bold">{importReport.errors.length} anomalie(s) détectée(s) :</p>
-                          <ul className="list-disc pl-4 space-y-0.5 text-[11px] max-h-32 overflow-y-auto">
-                            {importReport.errors.map((err, i) => (
-                              <li key={i}>Ligne {err.row} {err.matricule ? `(${err.matricule})` : ""} : {err.reason}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setShowImport(false)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Fermer</button>
-                  <button type="submit" disabled={saving || importRows.length === 0} className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark disabled:opacity-50">
-                    {saving ? "Importation..." : "Lancer l'import"}
-                  </button>
-                </div>
-              </motion.form>
-            </div>
-          )}
-
-          {/* 5. MODALE WEBCAM CAPTURE EN DIRECT */}
+          {/* MODALE WEBCAM */}
           {showWebcam && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 px-4 backdrop-blur-xs">
-              <div className="bg-white p-4 rounded-md shadow-2xl border border-outline-variant/30 space-y-3 w-full max-w-md text-center">
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h4 className="text-xs font-bold uppercase text-on-surface">Prise de photo par Webcam</h4>
-                  <button onClick={stopWebcam} className="text-on-surface-variant"><Icon name="close" className="text-[18px]" /></button>
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-xs">
+              <div className="bg-white p-4 rounded-xl shadow-modal border border-slate-200 space-y-3 w-full max-w-md text-center">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <h4 className="text-xs font-bold uppercase text-slate-800">Prise de Photo par Webcam</h4>
+                  <button onClick={stopWebcam} className="text-slate-400 hover:text-slate-700"><Icon name="close" className="text-[18px]" /></button>
                 </div>
-                <div className="w-[300px] h-[360px] mx-auto rounded-md overflow-hidden bg-black relative border-2 border-primary">
+                <div className="w-[280px] h-[340px] mx-auto rounded-lg overflow-hidden bg-black relative border-2 border-blue-700">
                   <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                  <div className="pointer-events-none absolute inset-0 border-2 border-dashed border-white/50 rounded-md m-4" />
                 </div>
                 <div className="flex justify-center gap-2">
-                  <button onClick={stopWebcam} className="rounded-md px-3 py-1.5 text-xs font-semibold border">Annuler</button>
-                  <button onClick={() => capturePhoto(Boolean(editingStudent))} className="rounded-md bg-primary px-4 py-1.5 text-xs font-bold text-white flex items-center gap-1 shadow-xs">
+                  <button onClick={stopWebcam} className="btn-secondary">Annuler</button>
+                  <button onClick={() => capturePhoto(Boolean(editingStudent))} className="btn-primary">
                     <Icon name="photo_camera" className="text-[16px]" />
-                    <span>Capturer la photo</span>
+                    <span>Capturer</span>
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 6. MODALE CRÉATION APPRENANT */}
+          {/* MODALE INSCRIPTION APPRENANT */}
           {showCreate && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.form
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleCreateStudent}
-                className="w-full max-w-2xl rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md max-h-[90vh] overflow-y-auto"
+                className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-                  <h3 className="text-sm font-bold text-on-surface">Inscription d'un Nouvel Apprenant (Fiche Complète)</h3>
-                  <button type="button" onClick={() => setShowCreate(false)} className="text-on-surface-variant hover:text-on-surface">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <h3 className="text-sm font-bold text-slate-900">Nouvelle Inscription d'Apprenant</h3>
+                  <button type="button" onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-700">
                     <Icon name="close" className="text-[18px]" />
                   </button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3 text-xs">
                   {/* Photo & Webcam */}
-                  <div className="flex items-center gap-4 p-3 rounded-md bg-surface border border-outline-variant/20">
-                    <div className="w-20 h-24 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
+                  <div className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <div className="w-16 h-20 rounded bg-white border border-slate-300 overflow-hidden flex items-center justify-center flex-shrink-0 shadow-inner">
                       {photoPreview ? (
                         <img src={photoPreview} alt="Aperçu" className="w-full h-full object-cover" />
                       ) : (
-                        <Icon name="account_circle" className="text-on-surface-variant/30 text-[42px]" />
+                        <Icon name="person" className="text-slate-300 text-[36px]" />
                       )}
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <div className="flex gap-2">
-                        <label className="cursor-pointer rounded-md border border-outline-variant px-3 py-1.5 text-xs font-bold text-primary bg-white hover:bg-primary-light transition-all inline-block shadow-xs">
-                          Fichier image
+                        <label className="cursor-pointer btn-secondary">
+                          Fichier photo
                           <input type="file" accept="image/*" onChange={(e) => handlePhotoSelect(e, false)} className="hidden" />
                         </label>
-                        <button
-                          type="button"
-                          onClick={startWebcam}
-                          className="rounded-md bg-primary-light border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all flex items-center gap-1 shadow-xs"
-                        >
-                          <Icon name="photo_camera" className="text-[16px]" />
-                          <span>Prendre par Webcam</span>
+                        <button type="button" onClick={startWebcam} className="btn-secondary">
+                          <Icon name="photo_camera" className="text-[14px] text-blue-700" />
+                          <span>Webcam</span>
                         </button>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant">Format portrait 3:4 centré (PNG ou JPG 3 Mo max)</p>
+                      <p className="text-[10px] text-slate-500">Portrait 3:4 (JPEG ou PNG, max 3 Mo)</p>
                     </div>
                   </div>
 
                   {/* État Civil */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Nom de famille *</label>
-                      <input required placeholder="Nom" value={createForm.lastName} onChange={(e) => setCreateForm({ ...createForm, lastName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Nom *</label>
+                      <input required placeholder="Nom" value={createForm.lastName} onChange={(e) => setCreateForm({ ...createForm, lastName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Prénom(s) *</label>
-                      <input required placeholder="Prénom" value={createForm.firstName} onChange={(e) => setCreateForm({ ...createForm, firstName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Prénom *</label>
+                      <input required placeholder="Prénom" value={createForm.firstName} onChange={(e) => setCreateForm({ ...createForm, firstName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Genre *</label>
-                      <select value={createForm.gender} onChange={(e) => setCreateForm({ ...createForm, gender: e.target.value })} className={inputCls}>
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Genre</label>
+                      <select value={createForm.gender} onChange={(e) => setCreateForm({ ...createForm, gender: e.target.value })} className="input-field w-full">
                         <option value="M">Masculin</option>
                         <option value="F">Féminin</option>
                       </select>
@@ -1133,69 +1033,63 @@ export default function Students() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Date de naissance</label>
-                      <input type="date" value={createForm.birthDate} onChange={(e) => setCreateForm({ ...createForm, birthDate: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Date de Naissance</label>
+                      <input type="date" value={createForm.birthDate} onChange={(e) => setCreateForm({ ...createForm, birthDate: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Lieu de naissance</label>
-                      <input placeholder="Ex: Bafoussam" value={createForm.birthPlace} onChange={(e) => setCreateForm({ ...createForm, birthPlace: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Lieu de Naissance</label>
+                      <input placeholder="Ex: Bafoussam" value={createForm.birthPlace} onChange={(e) => setCreateForm({ ...createForm, birthPlace: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Contact Apprenant</label>
-                      <input placeholder="Ex: 670000000" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Téléphone</label>
+                      <input placeholder="Ex: 670000000" value={createForm.phone} onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })} className="input-field w-full" />
                     </div>
                   </div>
 
-                  {/* Urgence & Tuteur */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-surface rounded-md border border-outline-variant/20">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Parent / Tuteur légal</label>
-                      <input placeholder="Nom du tuteur" value={createForm.guardianName} onChange={(e) => setCreateForm({ ...createForm, guardianName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Parent / Tuteur</label>
+                      <input placeholder="Nom du tuteur" value={createForm.guardianName} onChange={(e) => setCreateForm({ ...createForm, guardianName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Téléphone d'urgence *</label>
-                      <input placeholder="Numéro du tuteur" value={createForm.guardianPhone} onChange={(e) => setCreateForm({ ...createForm, guardianPhone: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Tél. Urgence</label>
+                      <input placeholder="Numéro d'urgence" value={createForm.guardianPhone} onChange={(e) => setCreateForm({ ...createForm, guardianPhone: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Niveau / Diplôme d'entrée</label>
-                      <select value={createForm.entryDiploma} onChange={(e) => setCreateForm({ ...createForm, entryDiploma: e.target.value })} className={inputCls}>
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Diplôme d'entrée</label>
+                      <select value={createForm.entryDiploma} onChange={(e) => setCreateForm({ ...createForm, entryDiploma: e.target.value })} className="input-field w-full">
                         <option value="Aucun">Sans diplôme</option>
-                        <option value="CEP">CEP / Primary</option>
-                        <option value="BEPC">BEPC / O-Level</option>
-                        <option value="CAP">CAP Professionnel</option>
+                        <option value="CEP">CEP</option>
+                        <option value="BEPC">BEPC</option>
+                        <option value="CAP">CAP</option>
                         <option value="Probatoire">Probatoire</option>
-                        <option value="BAC">Baccalauréat / A-Level</option>
-                        <option value="Superieur">BTS / Licence</option>
+                        <option value="BAC">Baccalauréat</option>
                       </select>
                     </div>
                   </div>
 
-                  {/* Affectation académique (Matricule automatique) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-outline-variant/15">
+                  {/* Affectation */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-200">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Session active</label>
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Session</label>
                       <select
                         required
                         value={createForm.academicYearId}
                         onChange={(e) => {
                           const yearId = e.target.value;
                           const matchingClasses = classes.filter((c) => c.academicYearId === yearId || c.academicYear?.isCurrent);
-                          setCreateForm({
-                            ...createForm,
-                            academicYearId: yearId,
-                            classeId: matchingClasses[0]?.id || "",
-                          });
+                          setCreateForm({ ...createForm, academicYearId: yearId, classeId: matchingClasses[0]?.id || "" });
                         }}
-                        className={inputCls}
+                        className="input-field w-full"
                       >
                         {academicYears.map((y) => (
-                          <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Session Active)" : ""}</option>
+                          <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Active)" : ""}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Classe d'affectation</label>
-                      <select required value={createForm.classeId} onChange={(e) => setCreateForm({ ...createForm, classeId: e.target.value })} className={inputCls}>
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Classe d'affectation</label>
+                      <select required value={createForm.classeId} onChange={(e) => setCreateForm({ ...createForm, classeId: e.target.value })} className="input-field w-full">
                         <option value="">Sélectionner une classe</option>
                         {classes.filter((c) => c.academicYearId === createForm.academicYearId || c.academicYear?.isCurrent).map((c) => (
                           <option key={c.id} value={c.id}>{c.label}</option>
@@ -1203,68 +1097,56 @@ export default function Students() {
                       </select>
                     </div>
                   </div>
-
-                  {/* Note informative sur le matricule */}
-                  <div className="p-2.5 rounded bg-primary-light text-primary text-[11px] font-semibold flex items-center gap-1.5 border border-primary/20">
-                    <Icon name="verified" className="text-[16px]" />
-                    <span>Le matricule officiel (ex: STU26-0042) sera généré automatiquement par le serveur de manière sécurisée.</span>
-                  </div>
                 </div>
 
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
+                {modalError && <p className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold">{modalError}</p>}
 
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setShowCreate(false)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Annuler</button>
-                  <button type="submit" disabled={saving} className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark">
-                    {saving ? "Enregistrement..." : "Inscrire au registre"}
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button type="button" onClick={() => setShowCreate(false)} className="btn-secondary">Annuler</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
+                    {saving ? "Inscription en cours..." : "Inscrire l'Apprenant"}
                   </button>
                 </div>
               </motion.form>
             </div>
           )}
 
-          {/* 7. MODALE MODIFICATION APPRENANT (MATRICULE EN LECTURE SEULE) */}
+          {/* MODALE ÉDITION */}
           {editingStudent && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.form
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 onSubmit={handleSaveEdit}
-                className="w-full max-w-2xl rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md max-h-[90vh] overflow-y-auto"
+                className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-on-surface">Modifier le Dossier Apprenant</h3>
-                    <span className="font-mono text-xs font-bold bg-primary-light text-primary px-2 py-0.5 rounded border border-primary/20">
-                      {editingStudent.matricule}
-                    </span>
+                    <h3 className="text-sm font-bold text-slate-900">Modifier le Dossier Apprenant</h3>
+                    <span className="badge-blue font-mono font-bold">{editingStudent.matricule}</span>
                   </div>
-                  <button type="button" onClick={() => setEditingStudent(null)} className="text-on-surface-variant hover:text-on-surface">
+                  <button type="button" onClick={() => setEditingStudent(null)} className="text-slate-400 hover:text-slate-700">
                     <Icon name="close" className="text-[18px]" />
                   </button>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center gap-4 p-3 rounded-md bg-surface border border-outline-variant/20">
-                    <div className="w-20 h-24 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center gap-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <div className="w-16 h-20 rounded bg-white border border-slate-300 overflow-hidden flex items-center justify-center flex-shrink-0 shadow-inner">
                       {photoPreview ? (
                         <img src={photoPreview} alt="Aperçu" className="w-full h-full object-cover" />
                       ) : (
-                        <Icon name="account_circle" className="text-on-surface-variant/30 text-[42px]" />
+                        <Icon name="person" className="text-slate-300 text-[36px]" />
                       )}
                     </div>
                     <div className="flex gap-2">
-                      <label className="cursor-pointer rounded-md border border-outline-variant px-3 py-1.5 text-xs font-bold text-primary bg-white hover:bg-primary-light transition-all inline-block shadow-xs">
+                      <label className="cursor-pointer btn-secondary">
                         Changer photo
                         <input type="file" accept="image/*" onChange={(e) => handlePhotoSelect(e, true)} className="hidden" />
                       </label>
-                      <button
-                        type="button"
-                        onClick={startWebcam}
-                        className="rounded-md bg-primary-light border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all flex items-center gap-1 shadow-xs"
-                      >
-                        <Icon name="photo_camera" className="text-[16px]" />
+                      <button type="button" onClick={startWebcam} className="btn-secondary">
+                        <Icon name="photo_camera" className="text-[14px] text-blue-700" />
                         <span>Webcam</span>
                       </button>
                     </div>
@@ -1272,16 +1154,16 @@ export default function Students() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Nom *</label>
-                      <input required value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Nom *</label>
+                      <input required value={editForm.lastName} onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Prénom *</label>
-                      <input required value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Prénom *</label>
+                      <input required value={editForm.firstName} onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Genre</label>
-                      <select value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })} className={inputCls}>
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Genre</label>
+                      <select value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })} className="input-field w-full">
                         <option value="M">Masculin</option>
                         <option value="F">Féminin</option>
                       </select>
@@ -1290,40 +1172,40 @@ export default function Students() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Date de naissance</label>
-                      <input type="date" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Date de Naissance</label>
+                      <input type="date" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Lieu de naissance</label>
-                      <input value={editForm.birthPlace} onChange={(e) => setEditForm({ ...editForm, birthPlace: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Lieu de Naissance</label>
+                      <input value={editForm.birthPlace} onChange={(e) => setEditForm({ ...editForm, birthPlace: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Contact Apprenant</label>
-                      <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Téléphone</label>
+                      <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className="input-field w-full" />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-surface rounded-md border border-outline-variant/20">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Parent / Tuteur</label>
-                      <input value={editForm.guardianName} onChange={(e) => setEditForm({ ...editForm, guardianName: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Parent / Tuteur</label>
+                      <input value={editForm.guardianName} onChange={(e) => setEditForm({ ...editForm, guardianName: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Téléphone d'urgence</label>
-                      <input value={editForm.guardianPhone} onChange={(e) => setEditForm({ ...editForm, guardianPhone: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Tél. Urgence</label>
+                      <input value={editForm.guardianPhone} onChange={(e) => setEditForm({ ...editForm, guardianPhone: e.target.value })} className="input-field w-full" />
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-on-surface-variant uppercase block mb-1">Diplôme d'entrée</label>
-                      <input value={editForm.entryDiploma} onChange={(e) => setEditForm({ ...editForm, entryDiploma: e.target.value })} className={inputCls} />
+                      <label className="font-bold text-slate-700 uppercase block mb-1">Diplôme d'entrée</label>
+                      <input value={editForm.entryDiploma} onChange={(e) => setEditForm({ ...editForm, entryDiploma: e.target.value })} className="input-field w-full" />
                     </div>
                   </div>
                 </div>
 
-                {modalError && <p className="rounded-md bg-error-container px-3 py-2 text-xs text-error font-semibold">{modalError}</p>}
+                {modalError && <p className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold">{modalError}</p>}
 
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button type="button" onClick={() => setEditingStudent(null)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Annuler</button>
-                  <button type="submit" disabled={saving} className="rounded-md bg-primary px-4 py-2 text-xs font-bold text-on-primary hover:bg-primary-dark">
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button type="button" onClick={() => setEditingStudent(null)} className="btn-secondary">Annuler</button>
+                  <button type="submit" disabled={saving} className="btn-primary">
                     {saving ? "Enregistrement..." : "Enregistrer"}
                   </button>
                 </div>
@@ -1331,85 +1213,48 @@ export default function Students() {
             </div>
           )}
 
-          {/* 8. MODALE DOSSIER APPRENANT */}
-          {selectedStudent && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+          {/* MODALE SUPPRESSION */}
+          {deleteTarget && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-2xl rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md max-h-[90vh] overflow-y-auto"
+                className="w-full max-w-sm rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-                  <div className="flex items-center gap-3">
-                    <StudentAvatar student={selectedStudent} size="xl" />
-                    <div>
-                      <h3 className="text-base font-bold text-on-surface">{selectedStudent.lastName} {selectedStudent.firstName}</h3>
-                      <span className="text-xs font-mono font-bold text-primary">{selectedStudent.matricule}</span>
-                      <p className="text-[11px] text-on-surface-variant mt-0.5">
-                        {selectedStudent.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le {selectedStudent.birthDate ? new Date(selectedStudent.birthDate).toLocaleDateString("fr-FR") : "—"}{selectedStudent.birthPlace ? ` à ${selectedStudent.birthPlace}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <button onClick={() => setSelectedStudent(null)} className="text-on-surface-variant hover:text-on-surface">
-                    <Icon name="close" className="text-[18px]" />
-                  </button>
+                <div className="flex items-center gap-2 text-rose-600 border-b border-slate-200 pb-2">
+                  <Icon name="warning" className="text-[20px]" />
+                  <h3 className="text-sm font-bold text-slate-900">Archiver le dossier</h3>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs p-3 bg-surface rounded-md border border-outline-variant/30">
-                  <div><strong>Téléphone :</strong> {selectedStudent.phone || "—"}</div>
-                  <div><strong>Diplôme d'entrée :</strong> {selectedStudent.entryDiploma || "—"}</div>
-                  <div><strong>Tuteur / Urgence :</strong> {selectedStudent.guardianName || "—"}</div>
-                  <div><strong>Contact d'urgence :</strong> {selectedStudent.guardianPhone || "—"}</div>
-                </div>
-
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-on-surface uppercase tracking-wider">Historique académique &amp; promotions</h4>
-                  <div className="divide-y divide-outline-variant/15 border border-outline-variant/30 rounded-md overflow-hidden">
-                    {selectedStudent.inscriptions?.map((insc) => (
-                      <div key={insc.id} className="p-3 bg-surface-container-lowest flex items-center justify-between text-xs">
-                        <div>
-                          <span className="font-bold text-on-surface">{insc.classe?.label}</span>
-                          <div className="text-[11px] text-on-surface-variant mt-0.5">
-                            Cohorte : <span className="font-mono font-semibold text-primary">{insc.promotion?.label || "—"}</span> • Session : {insc.academicYear?.label}
-                          </div>
-                        </div>
-                        <span className="rounded-md bg-surface px-2 py-0.5 font-bold border border-outline-variant/30 uppercase text-[10px]">
-                          {insc.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-2 border-t border-outline-variant/20">
-                  <button onClick={() => setSelectedStudent(null)} className="rounded-md px-4 py-2 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">
-                    Fermer
-                  </button>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Archiver l'apprenant <strong>{deleteTarget.lastName} {deleteTarget.firstName}</strong> ({deleteTarget.matricule}) ? Le dossier sera déplacé dans le registre des archives historiques.
+                </p>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button onClick={() => setDeleteTarget(null)} className="btn-secondary">Annuler</button>
+                  <button onClick={confirmDelete} className="btn-primary bg-rose-600 hover:bg-rose-700">Archiver</button>
                 </div>
               </motion.div>
             </div>
           )}
 
-          {/* 9. MODALE ARCHIVAGE */}
-          {deleteTarget && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 px-4 backdrop-blur-xs">
+          {restoreTarget && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-xs">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
-                className="w-full max-w-sm rounded-md bg-white p-md sm:p-lg shadow-xl border border-outline-variant/30 space-y-md"
+                className="w-full max-w-sm rounded-xl bg-white p-5 shadow-modal border border-slate-200 space-y-4"
               >
-                <div className="flex items-center gap-2 text-error">
-                  <Icon name="warning" className="text-[20px]" />
-                  <h3 className="text-sm font-bold text-on-surface">Archiver le dossier</h3>
+                <div className="flex items-center gap-2 text-emerald-600 border-b border-slate-200 pb-2">
+                  <Icon name="restore" className="text-[20px]" />
+                  <h3 className="text-sm font-bold text-slate-900">Restaurer l'apprenant</h3>
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Archiver l'apprenant <strong>{deleteTarget.lastName} {deleteTarget.firstName}</strong> ({deleteTarget.matricule}) ? Le dossier sera déplacé dans le registre des archives historiques et pourra être restauré à tout moment.
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Réintégrer le dossier de <strong>{restoreTarget.firstName} {restoreTarget.lastName}</strong> dans le registre actif ?
                 </p>
-                <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/20">
-                  <button onClick={() => setDeleteTarget(null)} className="rounded-md px-3.5 py-1.5 text-xs font-semibold text-on-surface-variant hover:bg-surface-container">Annuler</button>
-                  <button onClick={confirmDelete} className="rounded-md bg-error px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90">Archiver</button>
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                  <button onClick={() => setRestoreTarget(null)} className="btn-secondary">Annuler</button>
+                  <button onClick={confirmRestore} className="btn-primary bg-emerald-600 hover:bg-emerald-700">Confirmer la réintégration</button>
                 </div>
               </motion.div>
             </div>
