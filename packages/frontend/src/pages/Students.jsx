@@ -210,11 +210,19 @@ export default function Students() {
 
   function capturePhoto(isEdit = false) {
     if (!videoRef.current) return;
+    const video = videoRef.current;
+    const vw = video.videoWidth || video.clientWidth || 640;
+    const vh = video.videoHeight || video.clientHeight || 480;
+    const side = Math.min(vw, vh);
+    const sx = Math.max(0, Math.floor((vw - side) / 2));
+    const sy = Math.max(0, Math.floor((vh - side) / 2));
+
+    const outSize = 360; // square output in pixels
     const canvas = document.createElement("canvas");
-    canvas.width = 300;
-    canvas.height = 360;
+    canvas.width = outSize;
+    canvas.height = outSize;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(videoRef.current, 120, 0, 400, 480, 0, 0, 300, 360);
+    ctx.drawImage(video, sx, sy, side, side, 0, 0, outSize, outSize);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
 
     if (isEdit) {
@@ -1051,7 +1059,7 @@ export default function Students() {
                   <h4 className="text-xs font-bold uppercase text-on-surface">Prise de photo par Webcam</h4>
                   <button onClick={stopWebcam} className="text-on-surface-variant"><Icon name="close" className="text-[18px]" /></button>
                 </div>
-                <div className="w-[300px] h-[360px] mx-auto rounded-md overflow-hidden bg-black relative border-2 border-primary">
+                <div className="w-[300px] h-[300px] mx-auto rounded-md overflow-hidden bg-black relative border-2 border-primary">
                   <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                   <div className="pointer-events-none absolute inset-0 border-2 border-dashed border-white/50 rounded-md m-4" />
                 </div>
@@ -1086,7 +1094,7 @@ export default function Students() {
                 <div className="space-y-4">
                   {/* Photo & Webcam */}
                   <div className="flex items-center gap-4 p-3 rounded-md bg-surface border border-outline-variant/20">
-                    <div className="w-20 h-24 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
+                    <div className="w-20 h-20 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
                       {photoPreview ? (
                         <img src={photoPreview} alt="Aperçu" className="w-full h-full object-cover" />
                       ) : (
@@ -1108,7 +1116,7 @@ export default function Students() {
                           <span>Prendre par Webcam</span>
                         </button>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant">Format portrait 3:4 centré (PNG ou JPG 3 Mo max)</p>
+                      <p className="text-[10px] text-on-surface-variant">Format portrait 4:4 centré (PNG ou JPG 3 Mo max)</p>
                     </div>
                   </div>
 
@@ -1247,7 +1255,7 @@ export default function Students() {
 
                 <div className="space-y-4">
                   <div className="flex items-center gap-4 p-3 rounded-md bg-surface border border-outline-variant/20">
-                    <div className="w-20 h-24 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
+                    <div className="w-20 h-20 rounded-md bg-white border border-outline-variant/30 overflow-hidden flex items-center justify-center shadow-inner flex-shrink-0">
                       {photoPreview ? (
                         <img src={photoPreview} alt="Aperçu" className="w-full h-full object-cover" />
                       ) : (
