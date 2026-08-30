@@ -75,12 +75,15 @@ importers:
 
   packages/frontend:
     dependencies:
-      '@fontsource/inter':
-        specifier: ^5.3.0
+      '@fontsource/ibm-plex-sans':
+        specifier: ^5.1.0
         version: 5.3.0
       '@fontsource/material-symbols-outlined':
         specifier: ^5.3.2
         version: 5.3.2
+      '@fontsource/sora':
+        specifier: ^5.1.0
+        version: 5.3.0
       '@tanstack/react-query':
         specifier: ^5.56.0
         version: 5.101.4(react@18.3.1)
@@ -564,11 +567,14 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fontsource/inter@5.3.0':
-    resolution: {integrity: sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==}
+  '@fontsource/ibm-plex-sans@5.3.0':
+    resolution: {integrity: sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w==}
 
   '@fontsource/material-symbols-outlined@5.3.2':
     resolution: {integrity: sha512-yHGq5aOBpvNntjlQVMWmZibX1FwnCdRrHesW3T+N/TEVUHFb5CAj8FhJtQI9BeXikIS2etiOpXf1qvuqyny+vQ==}
+
+  '@fontsource/sora@5.3.0':
+    resolution: {integrity: sha512-SqW3OpKxxfKvxDLPlbdrWf2KooPfbd+W3jaYn483o+Y/JrmU87vjFPNptDqwP428c3vY+gnranLhjcbRaXB0Jw==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -3131,9 +3137,11 @@ snapshots:
   '@esbuild/win32-x64@0.23.1':
     optional: true
 
-  '@fontsource/inter@5.3.0': {}
+  '@fontsource/ibm-plex-sans@5.3.0': {}
 
   '@fontsource/material-symbols-outlined@5.3.2': {}
+
+  '@fontsource/sora@5.3.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:

@@ -1,7 +1,10 @@
 // packages/frontend/src/components/UserDocumentationModal.jsx
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import Button from "../design-system/primitives/Button";
+import Input from "../design-system/primitives/Input";
+import Badge from "../design-system/primitives/Badge";
 import Icon from "./Icon";
 
 const MANUAL_CHAPTERS = [
@@ -15,7 +18,7 @@ const MANUAL_CHAPTERS = [
       {
         title: "1.1 Mode Serveur vs Mode Client",
         content:
-          "CECO fonctionne selon une architecture hybride On-Premise : un ordinateur principal héberge la base PostgreSQL embarquée et l'API locale (Mode Serveur), tandis que les autres ordinateurs de l'établissement s'y connectent via le réseau local Wi-Fi ou câble Ethernet (Mode Client).",
+          "CECO fonctionne selon une architecture hybride On-Premise : un ordinateur principal héberge la base PostgreSQL 17 embarquée et l'API locale (Mode Serveur), tandis que les autres ordinateurs de l'établissement s'y connectent via le réseau local Wi-Fi ou câble Ethernet (Mode Client).",
       },
       {
         title: "1.2 Découverte automatique des serveurs sur le réseau (LAN)",
@@ -23,7 +26,7 @@ const MANUAL_CHAPTERS = [
           "En Mode Client, l'application effectue un balayage automatique du sous-réseau local sur le port 4000 (/health) pour détecter instantanément l'adresse IP de la machine serveur sans nécessiter de configuration manuelle complexe.",
       },
       {
-        title: "1.3 Sécurité et sauvegarde des données",
+        title: "1.3 Sécurité et souveraineté des données",
         content:
           "Toutes les données sont stockées localement sur la machine serveur dans les dossiers sécurisés pgdata et storage. Aucune dépendance Internet n'est requise pour le fonctionnement quotidien.",
       },
@@ -34,7 +37,7 @@ const MANUAL_CHAPTERS = [
     number: "02",
     title: "Administration, Sécurité RBAC & Licences",
     icon: "security",
-    summary: "Gestion des comptes utilisateurs, matrice des permissions, clés Ed25519 et sauvegardes.",
+    summary: "Comptes utilisateurs, matrice des permissions, clés Ed25519 et sauvegardes .zip.",
     sections: [
       {
         title: "2.1 Contrôle d'accès basé sur les rôles (RBAC)",
@@ -47,12 +50,7 @@ const MANUAL_CHAPTERS = [
           "La validité de la licence locale est scellée par une signature asymétrique Ed25519. À l'échéance, une période de grâce de 7 jours est accordée avant le passage en mode Consultation / Lecture seule (zéro arrêt brutal des opérations en cours).",
       },
       {
-        title: "2.3 Activation Hors-Ligne & Rechargement Mobile Money",
-        content:
-          "Pour recharger sans Internet : transmettez votre Center ID à l'éditeur pour recevoir une clé signée de 24 caractères à coller dans l'application. En ligne : utilisez le module Mobile Money direct (MTN MoMo / Orange Money).",
-      },
-      {
-        title: "2.4 Sauvegardes Hybrides (.zip) et Restauration",
+        title: "2.3 Sauvegardes Hybrides (.zip) et Restauration",
         content:
           "Chaque archive générée rassemble le dump relationnel PostgreSQL complet et les pièces jointes (photos, logos, documents). Vous pouvez exporter les sauvegardes sur clé USB et les réinjecter en 1 clic.",
       },
@@ -92,7 +90,7 @@ const MANUAL_CHAPTERS = [
     number: "04",
     title: "Gestion des Apprenants & Badges ID",
     icon: "group",
-    summary: "Inscriptions, matricules scellés, capture photo webcam, import CSV et cartes d'étudiant.",
+    summary: "Inscriptions, matricules scellés, capture webcam 4:4, import CSV et cartes d'étudiant.",
     sections: [
       {
         title: "4.1 Matricule Officiel Auto-Généré",
@@ -102,15 +100,10 @@ const MANUAL_CHAPTERS = [
       {
         title: "4.2 Prise de Photo en Direct par Webcam",
         content:
-          "Lors de l'inscription, vous pouvez téléverser un fichier image ou activer directement la webcam de l'ordinateur pour capturer la photo d'identité au format portrait 3:4 centré.",
+          "Lors de l'inscription, vous pouvez téléverser un fichier image ou activer directement la webcam pour capturer la photo d'identité au format carré 4:4 centré.",
       },
       {
-        title: "4.3 Importation en Masse par CSV",
-        content:
-          "Importez des promotions entières à partir d'un fichier Excel exporté en CSV. Le système valide automatiquement les lignes et auto-génère les matricules manquants.",
-      },
-      {
-        title: "4.4 Planche de Badges Duplex Découpable (Format A4)",
+        title: "4.3 Planche de Badges Duplex Découpable (Format A4)",
         content:
           "Générez et imprimez en 1 clic la planche A4 contenant jusqu'à 8 cartes d'étudiants recto/verso au format standard CR80 avec repères de découpe d'imprimerie et QR Code de certification.",
       },
@@ -121,32 +114,22 @@ const MANUAL_CHAPTERS = [
     number: "05",
     title: "Gestion Pédagogique & Saisie des Notes",
     icon: "edit_note",
-    summary: "Cursus filières, formateurs, bordereaux de saisie matricielle et politiques de pondération.",
+    summary: "Grille matricielle rapide type tableur, qualifications des absences et verrouillage.",
     sections: [
       {
-        title: "5.1 Catalogue Universel des Matières (Codes à 5 Caractères)",
+        title: "5.1 Catalogue des Matières (Codes 5 Caractères)",
         content:
           "Chaque discipline dispose d'un code normalisé à 5 caractères (ex: THM01, INF02) et est rattachée aux groupes d'enseignement définis par votre établissement (Spécialité, Général, Pratique).",
       },
       {
-        title: "5.2 Annuaire des Formateurs & Compte Accès 1 Clic",
-        content:
-          "Générez instantanément des comptes utilisateurs pour vos formateurs afin qu'ils puissent saisir leurs notes depuis leur propre ordinateur ou smartphone sur le réseau local.",
-      },
-      {
-        title: "5.3 Grille de Saisie Matricielle Rapide (Excel-Like)",
+        title: "5.2 Grille de Saisie Matricielle Rapide (Excel-Like)",
         content:
           "Saisissez les notes de CC1, CC2, Examen Final et Rattrapage avec navigation fluide au clavier (flèches directionnelles, Entrée). Le calcul des moyennes de contrôle continu et des moyennes finales est instantané.",
       },
       {
-        title: "5.4 Gestion des Absences Justifiées vs Injustifiées",
+        title: "5.3 Absences Justifiées vs Injustifiées",
         content:
           "Un bouton ABS dédié permet de qualifier les absences : une absence justifiée (certificat médical) n'est pas pénalisée, tandis qu'une absence injustifiée est comptabilisée comme 0.00/20.",
-      },
-      {
-        title: "5.5 Verrouillage Officiel & Déverrouillage d'Urgence",
-        content:
-          "La direction peut verrouiller un bordereau pour figer les notes avant délibération. Tout déverrouillage exceptionnel est tracé de manière indélébile dans le Journal d'Audit.",
       },
     ],
   },
@@ -163,12 +146,12 @@ const MANUAL_CHAPTERS = [
           "La délibération semestrielle valide le semestre en cours. La délibération annuelle cumule les semestres 1 et 2 pour arrêter la décision définitive : Admis au niveau supérieur, Redouble ou Diplômé.",
       },
       {
-        title: "6.2 Application des Règles & Alertes Éliminatoires",
+        title: "6.2 Seuil Éliminatoire Spécialité (<08.00/20)",
         content:
           "Le moteur détecte automatiquement les notes inférieures à 08.00/20 dans les matières de spécialité (1er Groupe) et alerte le jury sur les cas éliminatoires.",
       },
       {
-        title: "6.3 Délibération Globale de Tout l'Établissement en 1 Clic",
+        title: "6.3 Délibération Globale de Tout l'Établissement",
         content:
           "Un bouton souverain permet de calculer et sceller automatiquement les décisions et rangs de toutes les classes de la session active en une seule opération.",
       },
@@ -179,7 +162,7 @@ const MANUAL_CHAPTERS = [
     number: "07",
     title: "Bulletins, Relevés & Diplômes d'État (V4)",
     icon: "workspace_premium",
-    summary: "Certification QR Code autonome hors-ligne, livrets de classe et diplômes paysage.",
+    summary: "Certification par QR Code autonome hors-ligne, livrets de classe et diplômes paysage.",
     sections: [
       {
         title: "7.1 Certification par QR Code Autonome (Offline)",
@@ -189,22 +172,12 @@ const MANUAL_CHAPTERS = [
       {
         title: "7.2 Bulletin Semestriel Bilingue (A4 Portrait)",
         content:
-          "Affiche l'en-tête bilingue FR/EN, la photo, le tableau ventilé par groupes d'enseignement avec sous-totaux, et le profil complet de la classe (moyenne élève, rang, moyenne classe, max et min).",
+          "Affiche l'en-tête bilingue FR/EN, la photo, le tableau ventilé par groupes d'enseignement avec sous-totaux, et la double grille récapitulative (profil élève, rang, moyenne classe, max et min).",
       },
       {
-        title: "7.3 Relevé de Notes Annuel (Academic Transcript)",
+        title: "7.3 Diplôme de Fin de Formation (A4 Paysage Ornemental)",
         content:
-          "Synthétise l'ensemble du cursus annuel de l'apprenant en agrégeant les résultats des semestres 1 et 2 avec la mention de la décision souveraine du jury.",
-      },
-      {
-        title: "7.4 Diplôme de Fin de Formation (A4 Paysage Ornemental)",
-        content:
-          "Document officiel ornemental avec double bordure classique, mentions légales complètes de l'arrêté d'agrément ministériel, mention obtenue (Passable, Assez Bien, Bien, Très Bien) et signatures officielles.",
-      },
-      {
-        title: "7.5 Impression des Livrets de Classe en 1 Clic",
-        content:
-          "Depuis le menu Pédagogie > Bulletins & Diplômes, imprimez d'un seul clic l'ensemble des bulletins ou diplômes de toute une classe compilés dans un unique fichier PDF prêt pour le tirage.",
+          "Document officiel ornemental avec double bordure classique, mentions légales de l'arrêté ministériel, mention obtenue (Passable, Assez Bien, Bien, Très Bien) et signatures officielles.",
       },
     ],
   },
@@ -214,7 +187,6 @@ export default function UserDocumentationModal({ isOpen, onClose }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedChapterId, setSelectedChapterId] = useState("chapitre-1");
 
-  // Écouteur global pour la touche F1
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.key === "F1") {
@@ -226,7 +198,6 @@ export default function UserDocumentationModal({ isOpen, onClose }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Filtrage plein texte par mots-clés
   const filteredChapters = useMemo(() => {
     if (!searchQuery.trim()) return MANUAL_CHAPTERS;
     const q = searchQuery.toLowerCase();
@@ -259,148 +230,116 @@ export default function UserDocumentationModal({ isOpen, onClose }) {
 
   return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 px-4 backdrop-blur-xs">
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 backdrop-blur-xs p-4">
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="w-full max-w-5xl rounded-md bg-white p-md sm:p-lg shadow-2xl border border-outline-variant/30 space-y-md flex flex-col justify-between h-[92vh] overflow-hidden"
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={{ duration: 0.1 }}
+          className="w-full max-w-5xl rounded bg-surface border border-border shadow-modal h-[92vh] flex flex-col justify-between overflow-hidden dark:bg-surface-dark dark:border-border-dark"
         >
-          {/* En-tête avec Recherche et Raccourci F1 */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-outline-variant/20 pb-3 flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-light text-primary flex-shrink-0">
-                <Icon name="menu_book" className="text-[24px]" />
+          {/* HEADER */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border px-6 py-4 flex-shrink-0 dark:border-border-dark">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-[2px] bg-brand-900/10 text-brand-900 dark:bg-brand-500/20 dark:text-brand-500">
+                <Icon name="menu_book" className="text-[22px]" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-on-surface">Manuel d'Utilisation &amp; Documentation CECO</h3>
-                  <span className="px-2 py-0.5 rounded bg-surface border border-outline-variant/40 font-mono text-[10px] font-bold text-primary">
-                    Touche [F1]
-                  </span>
+                  <h3 className="text-body-md font-semibold text-ink-primary font-sans dark:text-white">
+                    Documentation Officielle &amp; Manuel d'Utilisation
+                  </h3>
+                  <Badge variant="brand">Touche [F1]</Badge>
                 </div>
-                <p className="text-xs text-on-surface-variant">Guide opérationnel complet pour l'administration et la pédagogie.</p>
+                <p className="text-caption text-ink-muted">Guide opérationnel complet pour l'administration et la pédagogie.</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Moteur de recherche plein texte */}
-              <div className="relative w-full sm:w-72">
-                <Icon name="search" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant/60" />
-                <input
-                  type="text"
-                  placeholder="Rechercher par mot-clé (notes, diplômes...)"
+            <div className="flex items-center gap-3">
+              <div className="w-full sm:w-72">
+                <Input
+                  placeholder="Rechercher (notes, délibérations, diplômes...)"
+                  leftIcon="search"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-9 rounded-md bg-surface pl-8 pr-7 text-xs text-on-surface outline-none border border-outline-variant/40 focus:border-primary"
                 />
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-on-surface">
-                    <Icon name="close" className="text-[14px]" />
-                  </button>
-                )}
               </div>
 
-              <button type="button" onClick={onClose} className="text-on-surface-variant hover:text-on-surface p-1">
-                <Icon name="close" className="text-[20px]" />
+              <button type="button" onClick={onClose} className="text-ink-muted hover:text-ink-primary p-1 rounded dark:hover:text-white">
+                <Icon name="close" className="text-[18px]" />
               </button>
             </div>
           </div>
 
-          {/* Corps : Navigation Chapitres (Gauche) + Contenu Détaillé (Droite) */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-md flex-1 overflow-hidden">
-            {/* Sommaire des chapitres */}
-            <div className="md:col-span-4 border-r border-outline-variant/20 pr-2 space-y-1 overflow-y-auto max-h-full">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block px-2 pb-1">
+          {/* CORPS SCINDÉ : SOMMAIRE GAUCHE (4 cols) | CONTENU DROITE (8 cols) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 flex-1 overflow-hidden">
+            {/* Sommaire */}
+            <div className="md:col-span-4 border-r border-border p-3 space-y-1.5 overflow-y-auto bg-[#F5F7FA] dark:bg-[#07111D] dark:border-border-dark">
+              <span className="text-overline text-ink-secondary uppercase tracking-wider font-semibold px-2 block mb-1">
                 Sommaire des Chapitres ({filteredChapters.length})
               </span>
 
-              {filteredChapters.length === 0 ? (
-                <p className="text-xs text-on-surface-variant p-3 italic">Aucun chapitre ne correspond à votre recherche.</p>
-              ) : (
-                filteredChapters.map((ch) => {
-                  const isSelected = ch.id === activeChapter.id;
-
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      onClick={() => setSelectedChapterId(ch.id)}
-                      className={`w-full p-2.5 rounded-md text-left text-xs transition-all flex items-start gap-2.5 border ${
-                        isSelected
-                          ? "bg-primary text-white border-primary shadow-xs font-bold"
-                          : "bg-surface text-on-surface border-outline-variant/20 hover:bg-surface-container/60"
-                      }`}
-                    >
-                      <span className={`font-mono text-[11px] px-1.5 py-0.5 rounded font-bold ${
-                        isSelected ? "bg-white/20 text-white" : "bg-primary-light text-primary"
-                      }`}>
-                        {ch.number}
-                      </span>
-                      <div className="truncate flex-1">
-                        <div className="truncate font-semibold">{ch.title}</div>
-                        <div className={`text-[10px] truncate ${isSelected ? "text-white/80" : "text-on-surface-variant"}`}>
-                          {ch.summary}
-                        </div>
+              {filteredChapters.map((ch) => {
+                const isSelected = ch.id === activeChapter.id;
+                return (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => setSelectedChapterId(ch.id)}
+                    className={`w-full p-2.5 rounded text-left transition-colors flex items-start gap-2.5 border ${
+                      isSelected
+                        ? "bg-brand-900 text-white border-brand-900 shadow-xs font-semibold dark:bg-brand-500"
+                        : "bg-surface text-ink-primary border-border hover:bg-white dark:bg-surface-dark dark:border-border-dark dark:text-ink-primary-dark"
+                    }`}
+                  >
+                    <span className={`font-mono text-[11px] px-1.5 py-0.2 rounded font-bold ${
+                      isSelected ? "bg-white/20 text-white" : "bg-brand-900/10 text-brand-900 dark:bg-brand-500/20 dark:text-brand-500"
+                    }`}>
+                      {ch.number}
+                    </span>
+                    <div className="truncate flex-1">
+                      <div className="text-body-sm font-semibold truncate leading-tight">{ch.title}</div>
+                      <div className={`text-[11px] truncate mt-0.5 ${isSelected ? "text-white/80" : "text-ink-muted"}`}>
+                        {ch.summary}
                       </div>
-                    </button>
-                  );
-                })
-              )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Contenu Détaillé du Chapitre Actif */}
-            <div className="md:col-span-8 pl-1 space-y-md overflow-y-auto max-h-full pr-2 text-xs leading-relaxed">
-              <div className="border-b border-outline-variant/20 pb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-md bg-primary-light text-primary font-bold flex items-center justify-center font-mono">
-                    {activeChapter.number}
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-on-surface">{activeChapter.title}</h4>
-                    <p className="text-[11px] text-on-surface-variant">{activeChapter.summary}</p>
-                  </div>
+            {/* Contenu Détaillé */}
+            <div className="md:col-span-8 p-6 space-y-4 overflow-y-auto text-body-sm leading-relaxed">
+              <div className="border-b border-border pb-3 flex items-center gap-3 dark:border-border-dark">
+                <span className="w-8 h-8 rounded-[2px] bg-brand-900 text-white font-heading font-bold flex items-center justify-center dark:bg-brand-500">
+                  {activeChapter.number}
+                </span>
+                <div>
+                  <h4 className="text-body-md font-heading font-semibold text-ink-primary dark:text-white">{activeChapter.title}</h4>
+                  <p className="text-caption text-ink-muted">{activeChapter.summary}</p>
                 </div>
               </div>
 
-              {/* Sections du chapitre */}
               <div className="space-y-3">
                 {activeChapter.sections.map((sec, sidx) => (
-                  <div key={sidx} className="p-3 bg-surface rounded-md border border-outline-variant/30 space-y-1.5">
-                    <h5 className="font-bold text-xs text-primary flex items-center gap-1.5">
-                      <Icon name="bookmark" className="text-[14px]" />
+                  <div key={sidx} className="p-4 rounded bg-surface border border-border space-y-1.5 dark:bg-surface-dark dark:border-border-dark">
+                    <h5 className="font-semibold text-body-sm text-brand-900 flex items-center gap-1.5 dark:text-brand-500">
+                      <Icon name="bookmark" className="text-[16px]" />
                       <span>{sec.title}</span>
                     </h5>
-                    <p className="text-on-surface text-xs leading-relaxed whitespace-pre-line">
-                      {sec.content}
-                    </p>
+                    <p className="text-ink-secondary leading-relaxed dark:text-ink-secondary-dark">{sec.content}</p>
                   </div>
                 ))}
-              </div>
-
-              {/* Encadré d'aide contextuelle */}
-              <div className="p-3 bg-primary-light/40 border border-primary/20 rounded-md text-xs text-on-surface space-y-1">
-                <strong className="text-primary flex items-center gap-1">
-                  <Icon name="help_outline" className="text-[16px]" />
-                  <span>Besoin d'une assistance personnalisée ?</span>
-                </strong>
-                <p className="text-[11px] text-on-surface-variant">
-                  Pour toute question technique relative aux délibérations, au déploiement en réseau local ou aux licences : contactez le support à <strong>armstrongngaleu3@gmail.com</strong>.
-                </p>
               </div>
             </div>
           </div>
 
-          {/* Pied de visionneuse */}
-          <div className="flex items-center justify-between border-t border-outline-variant/20 pt-3 flex-shrink-0 text-xs text-on-surface-variant">
-            <span className="font-mono text-[11px]">CECO Suite ERP • Manuel de Référence Officiel</span>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-1.5 rounded-md bg-primary text-white font-bold hover:bg-primary-dark shadow-xs"
-            >
-              Fermer la documentation
-            </button>
+          {/* FOOTER */}
+          <div className="border-t border-border bg-[#FAFBFD] px-6 py-3 flex items-center justify-between text-caption text-ink-muted flex-shrink-0 dark:border-border-dark dark:bg-[#07111D]/40">
+            <span className="font-mono">CECO Suite ERP • Manuel de Référence Officiel</span>
+            <Button variant="primary" size="sm" onClick={onClose}>
+              Fermer la Documentation
+            </Button>
           </div>
         </motion.div>
       </div>

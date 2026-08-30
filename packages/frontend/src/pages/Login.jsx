@@ -1,8 +1,10 @@
-import { useState } from "react";
+// packages/frontend/src/pages/Login.jsx
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Icon from "../components/Icon";
 import useAuthStore from "../store/authStore";
-import maPhoto from '/assets/illustration.png';
+import { Button, Input, Checkbox } from "../components/ui";
+import logo from "../../assets/logo2.png";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -17,192 +19,152 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-paper">
-      {/* Panneau illustration — masqué sur petit écran, gradient Argon */}
-      <div className="relative hidden w-1/2 overflow-hidden bg-gradient-to-br lg:flex lg:flex-col lg:items-center lg:justify-center">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute bottom-0 right-0 h-96 w-96 translate-x-1/3 translate-y-1/3 rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute top-1/3 right-10 h-40 w-40 rounded-full bg-info/20 blur-2xl" />
-        </div>
-            <img src={maPhoto} alt="image" className="w-500" />
-
-        {/* <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-          className="relative z-10 flex flex-col items-center px-lg text-center"
-        >
-          <motion.div
-            animate={{ y: [0, -10, 0] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-            className="mb-lg flex h-24 w-24 items-center justify-center rounded-md bg-white/15 backdrop-blur-sm shadow-lg"
-          >
-            <Icon name="school" className="text-white text-[48px]" />
-          </motion.div>
-          <h2 className="text-3xl font-bold text-white">CECO</h2>
-          <p className="mt-3 max-w-sm text-white/80">
-            La gestion de votre centre de formation — apprenants, notes,
-            documents — réunie dans un seul espace simple à utiliser.
-          </p>
-
-          <div className="mt-xl flex gap-md">
-            {[
-              { icon: "group", label: "Apprenants" },
-              { icon: "grade", label: "Notes" },
-              { icon: "description", label: "Documents" },
-            ].map((f) => (
-              <div key={f.label} className="flex flex-col items-center gap-2 rounded-md bg-white/10 px-4 py-3 backdrop-blur-sm">
-                <Icon name={f.icon} className="text-white text-[22px]" />
-                <span className="text-xs text-white/80">{f.label}</span>
-              </div>
-            ))}
+    <div className="flex min-h-screen w-full bg-canvas-light text-ink-primary font-sans antialiased dark:bg-canvas-dark dark:text-ink-primary-dark">
+      {/* Panneau Latéral Gauche : Identité Institutionnelle Sobre (Masqué sur mobile) */}
+      <div className="relative hidden w-5/12 bg-brand-900 border-r border-border-strong-dark lg:flex lg:flex-col lg:justify-between p-12 text-white">
+        {/* En-tête */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-24 items-center justify-center rounded bg-white p-1 shadow-xs">
+            <img src={logo} alt="Logo CECO" className="h-full w-full object-contain" />
           </div>
-        </motion.div> */}
+          <div>
+            <h2 className="text-body-md font-heading font-semibold text-white tracking-tight leading-tight">
+              CECO Suite ERP
+            </h2>
+            <span className="text-overline text-white/60 uppercase tracking-wider block">
+              Édition Professionnelle On-Premise
+            </span>
+          </div>
+        </div>
+
+        {/* Corps d'information de l'établissement */}
+        <div className="space-y-6 max-w-sm">
+          <div className="space-y-2">
+            <h1 className="text-h2 font-heading font-semibold text-white tracking-tight">
+              Gestion intégrée de centre de formation.
+            </h1>
+            <p className="text-body text-white/70 leading-relaxed">
+              Administration, scolarité, évaluations continues, délibérations souveraines et certification sécurisée par QR Code.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-white/10 text-body-sm text-white/80">
+            <div className="flex items-start gap-3">
+              <Icon name="verified_user" className="text-[18px] text-success mt-0.5 flex-shrink-0" />
+              <span>Base PostgreSQL locale autonome sans dépendance Internet obligatoire.</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <Icon name="qr_code_2" className="text-[18px] text-info mt-0.5 flex-shrink-0" />
+              <span>Authentification hors-ligne inviolable scellée par cryptographie Ed25519.</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Pied de panneau */}
+        <div className="text-caption text-white/50 font-mono">
+          © 2026 CECO Africa • Version 1.0.0 Stable
+        </div>
       </div>
 
-      {/* Panneau formulaire */}
-      <div className="flex w-full items-center justify-center px-6 lg:w-1/2">
+      {/* Panneau Droit : Formulaire d'Authentification */}
+      <div className="flex flex-1 items-center justify-center p-6 sm:p-12">
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="w-full max-w-sm"
+          transition={{ duration: 0.15 }}
+          className="w-full max-w-[400px] space-y-6"
         >
-          <div className="mb-xl lg:hidden flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gradient-to-br from-primary to-violet">
-              <Icon name="school" className="text-white text-[20px]" />
+          {/* Logo visible sur écran mobile */}
+          <div className="lg:hidden flex items-center gap-3 mb-6">
+            <div className="flex h-10 w-24 items-center justify-center rounded bg-white p-1 border border-border shadow-xs">
+              <img src={logo} alt="Logo CECO" className="h-full w-full object-contain" />
             </div>
-            <span className="text-lg font-bold text-on-surface">CECO</span>
+            <div>
+              <h2 className="text-body-md font-heading font-semibold text-ink-primary">CECO ERP</h2>
+              <span className="text-overline text-ink-muted uppercase">Connexion</span>
+            </div>
           </div>
 
-          <h1 className="text-center text-2xl font-bold tracking-tight text-on-surface">Bienvenue</h1>
-          <p className="text-center text-sm text-on-surface-variant">
-            Connectez-vous à votre espace CECO
-          </p>
+          <div className="space-y-1">
+            <h1 className="text-h3 font-heading font-semibold text-ink-primary tracking-tight">
+              Espace de Connexion
+            </h1>
+            <p className="text-body text-ink-secondary">
+              Saisissez vos identifiants pour accéder à votre poste de travail.
+            </p>
+          </div>
 
-          <form onSubmit={handleSubmit} className="mt-lg flex flex-col gap-md">
-            <div className="group flex flex-col gap-1.5">
-              <label
-                htmlFor="email"
-                className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
-              >
-                Identifiant
-              </label>
-              <div className="relative flex items-center">
-                <Icon
-                  name="person"
-                  className="pointer-events-none absolute left-3 text-[20px] text-on-surface-variant/50 transition-colors group-focus-within:text-primary"
-                />
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="vous@centre.cm"
-                  className="h-12 w-full rounded-md bg-surface pl-10 pr-4 text-base text-on-surface
-                             outline-none shadow-[inset_0_0_0_1px_theme(colors.outline-variant)]
-                             transition-shadow placeholder:text-on-surface-variant/40
-                             focus:shadow-[inset_0_0_0_2px_theme(colors.primary)]"
-                />
-              </div>
+          <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+            <Input
+              label="Adresse Email / Identifiant"
+              id="email"
+              type="email"
+              required
+              autoFocus
+              leftIcon="person"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@local.ceco"
+            />
+
+            <Input
+              label="Mot de passe"
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              leftIcon="lock"
+              rightIcon={showPassword ? "visibility_off" : "visibility"}
+              onRightIconClick={() => setShowPassword((v) => !v)}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+
+            <div className="flex items-center justify-between pt-1">
+              <Checkbox
+                label="Rester connecté sur ce poste"
+                id="remember"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
             </div>
-
-            <div className="group flex flex-col gap-1.5">
-              <label
-                htmlFor="password"
-                className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant"
-              >
-                Mot de passe
-              </label>
-              <div className="relative flex items-center">
-                <Icon
-                  name="lock"
-                  className="pointer-events-none absolute left-3 text-[20px] text-on-surface-variant/50 transition-colors group-focus-within:text-primary"
-                />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="h-12 w-full rounded-md bg-surface pl-10 pr-12 text-base text-on-surface
-                             outline-none shadow-[inset_0_0_0_1px_theme(colors.outline-variant)]
-                             transition-shadow placeholder:text-on-surface-variant/40
-                             focus:shadow-[inset_0_0_0_2px_theme(colors.primary)]"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 text-on-surface-variant/50 transition-colors hover:text-on-surface"
-                >
-                  <Icon name={showPassword ? "visibility_off" : "visibility"} className="text-[20px]" />
-                </button>
-              </div>
-            </div>
-
-            <label className="mt-1 flex cursor-pointer items-center gap-2 select-none">
-              <span className="relative flex items-center">
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                />
-                <span className="flex h-4 w-4 items-center justify-center rounded-sm bg-surface shadow-[inset_0_0_0_1px_theme(colors.outline-variant)] transition-all peer-checked:bg-primary peer-checked:shadow-none">
-                  <Icon
-                    name="check"
-                    className="text-[14px] text-on-primary opacity-0 transition-opacity peer-checked:opacity-100"
-                  />
-                </span>
-              </span>
-              <span className="text-sm text-on-surface-variant">Rester connecté</span>
-            </label>
 
             <AnimatePresence>
               {status === "error" && (
-                <motion.p
+                <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="rounded-md bg-error-container px-3 py-2 text-sm text-error"
+                  className="rounded bg-error-subtle p-3 border border-error/30 text-error text-caption font-medium flex items-center gap-2"
                 >
-                  {error}
-                </motion.p>
+                  <Icon name="error" className="text-[16px] flex-shrink-0" />
+                  <span>{error || "Identifiants incorrects. Veuillez vérifier vos accès."}</span>
+                </motion.div>
               )}
             </AnimatePresence>
 
-            <motion.button
+            <Button
               type="submit"
-              disabled={status === "loading"}
-              whileHover={{ y: -2 }}
-              whileTap={{ y: 0, scale: 0.98 }}
-              className="group relative mt-2 flex h-12 w-full items-center justify-center gap-2
-                         overflow-hidden rounded-md bg-gradient-to-r from-primary to-violet font-semibold text-on-primary
-                         shadow-[0_4px_14px_rgba(94,114,228,0.35)] transition-shadow
-                         hover:shadow-[0_6px_20px_rgba(94,114,228,0.45)]
-                         disabled:cursor-not-allowed disabled:opacity-70"
+              variant="primary"
+              size="lg"
+              className="w-full mt-2"
+              isLoading={status === "loading"}
+              icon={status !== "loading" ? "arrow_forward" : undefined}
+              iconPosition="right"
             >
-              {status === "loading" ? (
-                <>
-                  <Icon name="progress_activity" className="animate-spin text-[18px]" />
-                  <span>Connexion en cours...</span>
-                </>
-              ) : (
-                <>
-                  <span>Se connecter</span>
-                  <Icon name="arrow_forward" className="text-[18px]" />
-                </>
-              )}
-            </motion.button>
+              Se Connecter
+            </Button>
           </form>
 
-          <p className="mt-lg text-center text-xs text-on-surface-variant/70">
-            Besoin d'aide ? Contactez l'administrateur de votre centre.
-          </p>
+          <div className="p-4 rounded bg-surface border border-border text-caption text-ink-muted space-y-1 dark:bg-surface-dark dark:border-border-dark">
+            <div className="flex items-center gap-1.5 font-semibold text-ink-secondary">
+              <Icon name="info" className="text-[16px] text-info" />
+              <span>Assistance &amp; Déploiement</span>
+            </div>
+            <p>
+              Pour toute réinitialisation d'accès ou ajout d'un poste sur le réseau local, contactez l'administrateur système de l'établissement.
+            </p>
+          </div>
         </motion.div>
       </div>
     </div>
