@@ -1,6 +1,7 @@
 // packages/frontend/src/modules/pedagogie/GradesEntryPage.jsx
 import React, { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useSearchParams } from "react-router-dom";
 import { apiFetch, API_BASE, getToken } from "../../lib/apiClient";
 import { showToast } from "../../store/toastStore";
 import useAuthStore from "../../store/authStore";
@@ -24,7 +25,13 @@ import Icon from "../../components/Icon";
 export default function GradesEntryPage() {
   const { user, hasPermission } = useAuthStore();
   const isTeacher = user?.role?.name?.toLowerCase() === "formateur";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryOfferingId = searchParams.get("offeringId");
 
+  // Mode Enseignant : Liste directe de ses cours assignés
+  const [myOfferings, setMyOfferings] = useState([]);
+
+  // Mode Administrateur : Entonnoir séquentiel 4 étapes
   const [years, setYears] = useState([]);
   const [selectedYearId, setSelectedYearId] = useState("");
   const [classes, setClasses] = useState([]);
@@ -32,28 +39,48 @@ export default function GradesEntryPage() {
   const [selectedClassId, setSelectedClassId] = useState("");
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [offerings, setOfferings] = useState([]);
-  const [selectedOfferingId, setSelectedOfferingId] = useState("");
 
+  // Cours sélectionné & Données de la Grille Matricielle
+  const [selectedOfferingId, setSelectedOfferingId] = useState(queryOfferingId || "");
   const [gridData, setGridData] = useState(null);
   const [inputGrades, setInputGrades] = useState({});
   const [saving, setSaving] = useState(false);
 
+  // Modales
   const [absenceModal, setAbsenceModal] = useState(null);
   const [confirmLockModal, setConfirmLockModal] = useState(false);
   const [pdfModal, setPdfModal] = useState(null);
 
+  // 1. CHARGEMENT SELON LE RÔLE
   useEffect(() => {
-    apiFetch("/academic-years")
-      .then((yrs) => {
-        setYears(yrs || []);
-        const active = yrs?.find((y) => y.isCurrent) || yrs?.[0];
-        if (active) setSelectedYearId(active.id);
-      })
-      .catch((e) => showToast(e.message, "error"));
-  }, []);
+    if (isTeacher) {
+      // Pour l'enseignant : chargement direct de ses cours sans passer par les registres d'administration
+      apiFetch("/pedagogie/my-offerings")
+        .then((data) => {
+          const list = Array.isArray(data) ? data : [];
+          setMyOfferings(list);
+          if (queryOfferingId && list.some((o) => o.id === queryOfferingId)) {
+            setSelectedOfferingId(queryOfferingId);
+          } else if (list.length > 0 && !selectedOfferingId) {
+            setSelectedOfferingId(list[0].id);
+          }
+        })
+        .catch((e) => showToast(e.message, "error"));
+    } else {
+      // Pour l'administrateur : chargement de l'entonnoir
+      apiFetch("/academic-years")
+        .then((yrs) => {
+          setYears(yrs || []);
+          const active = yrs?.find((y) => y.isCurrent) || yrs?.[0];
+          if (active) setSelectedYearId(active.id);
+        })
+        .catch((e) => showToast(e.message, "error"));
+    }
+  }, [isTeacher, queryOfferingId]);
 
+  // Chargement des classes (Mode Admin)
   useEffect(() => {
-    if (!selectedYearId) return;
+    if (isTeacher || !selectedYearId) return;
     apiFetch("/classes")
       .then((clsList) => {
         const filtered = (clsList || []).filter((c) => c.academicYearId === selectedYearId);
@@ -68,36 +95,42 @@ export default function GradesEntryPage() {
         }
       })
       .catch((e) => showToast(e.message, "error"));
-  }, [selectedYearId]);
+  }, [selectedYearId, isTeacher]);
 
   const filteredClasses = useMemo(() => {
     if (!classSearch.trim()) return classes;
     return classes.filter((c) => c.label.toLowerCase().includes(classSearch.toLowerCase()));
   }, [classes, classSearch]);
 
+  // Chargement des matières de la classe (Mode Admin)
   useEffect(() => {
-    if (!selectedClassId) return;
+    if (isTeacher || !selectedClassId) return;
     apiFetch(`/classes/${selectedClassId}/offerings`)
       .then((data) => {
         const offs = Array.isArray(data) ? data : data.offerings || [];
         setOfferings(offs);
       })
       .catch(() => setOfferings([]));
-  }, [selectedClassId]);
+  }, [selectedClassId, isTeacher]);
 
   const semesterOfferings = useMemo(() => {
     return offerings.filter((o) => o.gradePeriod?.order === selectedSemesterOrder);
   }, [offerings, selectedSemesterOrder]);
 
   useEffect(() => {
-    if (semesterOfferings.length > 0) {
-      setSelectedOfferingId(semesterOfferings[0].id);
-    } else {
-      setSelectedOfferingId("");
-      setGridData(null);
+    if (!isTeacher) {
+      if (semesterOfferings.length > 0) {
+        if (!queryOfferingId || !semesterOfferings.some((o) => o.id === queryOfferingId)) {
+          setSelectedOfferingId(semesterOfferings[0].id);
+        }
+      } else {
+        setSelectedOfferingId("");
+        setGridData(null);
+      }
     }
-  }, [semesterOfferings]);
+  }, [semesterOfferings, isTeacher, queryOfferingId]);
 
+  // 2. CHARGEMENT DE LA GRILLE MATRICIELLE DU COURS SÉLECTIONNÉ
   useEffect(() => {
     if (!selectedOfferingId) {
       setGridData(null);
@@ -136,6 +169,7 @@ export default function GradesEntryPage() {
       });
   }, [selectedOfferingId]);
 
+  // CLAMPING STRICT DES NOTES (0.00 à 20.00)
   function handleGradeValueChange(studentId, field, rawVal) {
     if (rawVal === "" || rawVal === undefined || rawVal === null) {
       setInputGrades((prev) => ({
@@ -156,6 +190,7 @@ export default function GradesEntryPage() {
     }));
   }
 
+  // NAVIGATION AU CLAVIER FLUIDE STYLE EXCEL
   function handleKeyDown(e, stIdx, colIdx) {
     const totalStudents = gridData?.students?.length || 0;
     const totalCols = 4;
@@ -211,6 +246,7 @@ export default function GradesEntryPage() {
     setAbsenceModal(null);
   }
 
+  // CALCUL MATHÉMATIQUE INSTANTANÉ DE PRÉVISUALISATION
   function computePreview(stId) {
     const row = inputGrades[stId] || {};
     const validCcs = [];
@@ -328,109 +364,151 @@ export default function GradesEntryPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
-        contextBadge={<Badge variant="brand">Évaluation • Saisie Matricielle</Badge>}
-        title="Saisie des Notes &amp; Évaluations"
-        subtitle="Bordereau matriciel type tableur (CC1, CC2, Examen, Rattrapage) avec calcul instantané et verrouillage officiel"
+        contextBadge={<Badge variant="brand">{isTeacher ? "Espace Enseignant • Saisie Directe" : "Pédagogie • Saisie Matricielle"}</Badge>}
+        title={isTeacher ? "Saisie de Mes Notes d'Évaluation" : "Saisie des Notes &amp; Évaluations"}
+        subtitle={isTeacher
+          ? "Sélectionnez directement votre cours assigné ci-dessous et remplissez les notes dans la grille"
+          : "Bordereau matriciel type tableur (CC1, CC2, Examen, Rattrapage) avec verrouillage officiel"}
       />
 
-      {/* Entonnoir Séquentiel en 4 Étapes */}
+      {/* SÉLECTEUR DE COURS (ADAPTATIF SELON LE RÔLE) */}
       <StructuredPanel
-        title="Sélection Séquentielle du Cours"
-        subtitle="Session → Classe → Semestre → Discipline"
+        title={isTeacher ? "Mon Cours à Évaluer" : "Sélection Séquentielle du Cours"}
+        subtitle={isTeacher ? "Liste de vos cours assignés sur la session active" : "Session → Classe → Semestre → Discipline"}
         icon="tune"
       >
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Select
-            label="1. Session Académique"
-            value={selectedYearId}
-            onChange={(e) => setSelectedYearId(e.target.value)}
-            disabled={isTeacher}
-          >
-            {years.map((y) => (
-              <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Active)" : "(Clôturée)"}</option>
-            ))}
-          </Select>
+        {isTeacher ? (
+          /* VUE ENSEIGNANT : SÉLECTEUR UNIQUE DIRECT EN 1 CLIC */
+          <div className="space-y-2">
+            {myOfferings.length === 0 ? (
+              <div className="p-4 rounded bg-[#F5F7FA] border border-border text-caption text-ink-muted dark:bg-[#07111D] dark:border-border-dark">
+                Aucun cours ne vous est actuellement assigné pour la session active. Contactez la direction des études.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                <div className="sm:col-span-8">
+                  <Select
+                    label="Mes Cours Assignés (Session Active)"
+                    value={selectedOfferingId}
+                    onChange={(e) => {
+                      setSelectedOfferingId(e.target.value);
+                      setSearchParams({ offeringId: e.target.value });
+                    }}
+                  >
+                    {myOfferings.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        [{o.subjectCode}] {o.subjectName} • {o.classeLabel} • {o.semesterLabel} (Coef {o.coefficient})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
 
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary select-none dark:text-ink-secondary-dark">
-                2. Classe
-              </label>
-              <input
-                type="text"
-                placeholder="Filtrer..."
-                value={classSearch}
-                onChange={(e) => setClassSearch(e.target.value)}
-                className="h-6 px-1.5 text-[11px] rounded bg-surface border border-border outline-none w-20 dark:bg-surface-dark dark:border-border-dark"
-              />
-            </div>
-            <select
-              value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="h-[40px] w-full rounded bg-surface px-3 py-2 text-body text-ink-primary border border-border outline-none dark:bg-surface-dark dark:border-border-dark dark:text-white"
-              disabled={classes.length === 0}
+                <div className="sm:col-span-4 flex items-end h-full pt-6">
+                  <Badge variant={gridData?.isLocked ? "warning" : "success"} className="h-[40px] w-full justify-center text-body-sm font-semibold">
+                    {gridData?.isLocked ? "🔒 Bordereau Verrouillé" : "✓ Saisie Active Autorisée"}
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* VUE ADMINISTRATEUR : ENTONNOIR SÉQUENTIEL COMPLET */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <Select
+              label="1. Session Académique"
+              value={selectedYearId}
+              onChange={(e) => setSelectedYearId(e.target.value)}
             >
-              {filteredClasses.length === 0 ? (
-                <option value="">Aucune classe trouvée</option>
+              {years.map((y) => (
+                <option key={y.id} value={y.id}>{y.label} {y.isCurrent ? "(Active)" : "(Clôturée)"}</option>
+              ))}
+            </Select>
+
+            <div>
+              <div className="flex justify-between items-center mb-1.5">
+                <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary select-none dark:text-ink-secondary-dark">
+                  2. Classe
+                </label>
+                <input
+                  type="text"
+                  placeholder="Filtrer..."
+                  value={classSearch}
+                  onChange={(e) => setClassSearch(e.target.value)}
+                  className="h-6 px-1.5 text-[11px] rounded bg-surface border border-border outline-none w-20 dark:bg-surface-dark dark:border-border-dark"
+                />
+              </div>
+              <select
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="h-[40px] w-full rounded bg-surface px-3 py-2 text-body text-ink-primary border border-border outline-none dark:bg-surface-dark dark:border-border-dark dark:text-white"
+                disabled={classes.length === 0}
+              >
+                {filteredClasses.length === 0 ? (
+                  <option value="">Aucune classe trouvée</option>
+                ) : (
+                  filteredClasses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label} ({c._count?.inscriptions || 0} élèves)</option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-1.5 select-none dark:text-ink-secondary-dark">
+                3. Semestre
+              </label>
+              <div className="flex p-0.5 bg-[#F5F7FA] rounded border border-border h-[40px] dark:bg-[#07111D] dark:border-border-dark">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSemesterOrder(1)}
+                  className={`flex-1 rounded-[2px] text-body-sm font-semibold transition-colors ${
+                    selectedSemesterOrder === 1 ? "bg-brand-900 text-white shadow-xs dark:bg-brand-500" : "text-ink-secondary hover:text-ink-primary"
+                  }`}
+                >
+                  Semestre 1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSemesterOrder(2)}
+                  className={`flex-1 rounded-[2px] text-body-sm font-semibold transition-colors ${
+                    selectedSemesterOrder === 2 ? "bg-brand-900 text-white shadow-xs dark:bg-brand-500" : "text-ink-secondary hover:text-ink-primary"
+                  }`}
+                >
+                  Semestre 2
+                </button>
+              </div>
+            </div>
+
+            <Select
+              label="4. Matière / Cours"
+              value={selectedOfferingId}
+              onChange={(e) => setSelectedOfferingId(e.target.value)}
+              disabled={semesterOfferings.length === 0}
+            >
+              {semesterOfferings.length === 0 ? (
+                <option value="">Aucun cours configuré</option>
               ) : (
-                filteredClasses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label} ({c._count?.inscriptions || 0} élèves)</option>
+                semesterOfferings.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.subject?.code || "—"} • {o.subject?.name} (Coef {o.coefficient})
+                  </option>
                 ))
               )}
-            </select>
+            </Select>
           </div>
-
-          <div>
-            <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-1.5 select-none dark:text-ink-secondary-dark">
-              3. Semestre
-            </label>
-            <div className="flex p-0.5 bg-[#F5F7FA] rounded border border-border h-[40px] dark:bg-[#07111D] dark:border-border-dark">
-              <button
-                type="button"
-                onClick={() => setSelectedSemesterOrder(1)}
-                className={`flex-1 rounded-[2px] text-body-sm font-semibold transition-colors ${
-                  selectedSemesterOrder === 1 ? "bg-brand-900 text-white shadow-xs dark:bg-brand-500" : "text-ink-secondary hover:text-ink-primary"
-                }`}
-              >
-                Semestre 1
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSemesterOrder(2)}
-                className={`flex-1 rounded-[2px] text-body-sm font-semibold transition-colors ${
-                  selectedSemesterOrder === 2 ? "bg-brand-900 text-white shadow-xs dark:bg-brand-500" : "text-ink-secondary hover:text-ink-primary"
-                }`}
-              >
-                Semestre 2
-              </button>
-            </div>
-          </div>
-
-          <Select
-            label="4. Matière / Cours"
-            value={selectedOfferingId}
-            onChange={(e) => setSelectedOfferingId(e.target.value)}
-            disabled={semesterOfferings.length === 0}
-          >
-            {semesterOfferings.length === 0 ? (
-              <option value="">Aucun cours configuré</option>
-            ) : (
-              semesterOfferings.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.subject?.code || "—"} • {o.subject?.name} (Coef {o.coefficient})
-                </option>
-              ))
-            )}
-          </Select>
-        </div>
+        )}
       </StructuredPanel>
 
-      {/* Grille Matricielle Fluidifiée */}
+      {/* GRILLE MATRICIELLE DE SAISIE */}
       {!gridData ? (
         <div className="rounded bg-surface p-12 border border-border text-center space-y-2 dark:bg-surface-dark dark:border-border-dark">
           <Icon name="table_rows" className="text-4xl text-ink-muted" />
           <h3 className="text-body-md font-semibold text-ink-primary dark:text-white">Bordereau en attente de sélection</h3>
-          <p className="text-caption text-ink-muted">Sélectionnez un cours ci-dessus pour ouvrir la saisie des notes.</p>
+          <p className="text-caption text-ink-muted">
+            {isTeacher && myOfferings.length === 0
+              ? "Aucun cours ne vous est assigné actuellement."
+              : "Sélectionnez un cours ci-dessus pour ouvrir la saisie des notes."}
+          </p>
         </div>
       ) : (
         <div className="rounded bg-surface border border-border shadow-xs overflow-hidden dark:bg-surface-dark dark:border-border-dark">

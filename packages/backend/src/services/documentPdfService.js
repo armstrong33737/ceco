@@ -562,9 +562,9 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
 
   // Cartouche Informations Apprenant
   const infoY = 132;
-  const infoH = 58;
+  const infoH = 60;
   const photoW = 54;
-  const textW = fullWidth - photoW - 6;
+  const textW = fullWidth;
 
   doc.rect(startX, infoY, textW, infoH).fillAndStroke("#F8FAFC", "#CBD5E1");
 
@@ -598,7 +598,7 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   );
 
   // Photo / Silhouette propre à droite
-  drawStudentAvatar(doc, photoBuf, startX + textW + 6, infoY, photoW, infoH);
+  drawStudentAvatar(doc, photoBuf, startX + textW - photoW - 10, infoY + 3, photoW, photoW);
 
   // Tableau des Notes & Catégories (Haute Densité)
   let y = 194;
@@ -698,7 +698,7 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text(String(totals.totalPoints), startX + colModW + colCcW + colExamW + colCoefW, y + 3, { width: colTotW, align: "center" });
 
   // Double Grille Synoptique Récapitulative
-  drawRecapMatrix(doc, totals, startX, 640, fullWidth, 58);
+  drawRecapMatrix(doc, totals, startX, y + 15, fullWidth, 58);
 
   // Bas de page, Signatures & QR Code Hors-Ligne
   const signatories = tmpl.signatories || [
@@ -775,9 +775,9 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
   );
 
   const infoY = 132;
-  const infoH = 58;
+  const infoH = 60;
   const photoW = 54;
-  const textW = fullWidth - photoW - 6;
+  const textW = fullWidth;
 
   doc.rect(startX, infoY, textW, infoH).fillAndStroke("#F8FAFC", "#CBD5E1");
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("NOM & PRÉNOM :", startX + 8, infoY + 6);
@@ -801,7 +801,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
     startX + 52, infoY + 44.5, { width: 254, truncate: true }
   );
 
-  drawStudentAvatar(doc, photoBuf, startX + textW + 6, infoY, photoW, infoH);
+  drawStudentAvatar(doc, photoBuf, startX + textW - photoW - 10, infoY+3, photoW, photoW);
 
   let y = 194;
   doc.rect(startX, y, fullWidth, 15).fill(primaryColor);
@@ -817,7 +817,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
   doc.text("MODULES / DISCIPLINES", startX + 4, y + 4.5, { width: colModW2 });
   doc.text("COEF", startX + colModW2, y + 4.5, { width: colCoefW2, align: "center" });
   doc.text("MOY. CC /20", startX + colModW2 + colCoefW2, y + 4.5, { width: colCcW2, align: "center" });
-  doc.text("POINTS (CC*COEF)", startX + colModW2 + colCoefW2 + colCcW2, y + 4.5, { width: colTotW2, align: "center" });
+  doc.text("CC*COEF", startX + colModW2 + colCoefW2 + colCcW2, y + 4.5, { width: colTotW2, align: "center" });
   doc.text("APPRÉCIATION", startX + colModW2 + colCoefW2 + colCcW2 + colTotW2, y + 4.5, { width: colAppW2, align: "center" });
   doc.text("ENSEIGNANT", startX + fullWidth - colProfW2 + 4, y + 4.5, { width: colProfW2 - 4 });
 
@@ -848,7 +848,17 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
     });
   });
 
-  drawRecapMatrix(doc, totals, startX, 640, fullWidth, 58);
+  // Ligne de Total Général
+  doc.rect(startX, y, fullWidth, 14).fill("#F0F0F0");
+  doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold");
+  doc.text("TOTAL GÉNÉRAL", startX + 4, y + 3.5, { width: colModW2 + colCcW2  });
+  doc.text(String(totals.totalCoefficients), startX + colModW2 + colCcW2, y + 3.5, { width: colCoefW2, align: "center" });
+
+  doc.rect(startX + colModW2 + colCcW2 + colCoefW2, y + 1, colTotW2, 12).fill(primaryColor);
+  doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text(String(totals.totalPoints), startX + colModW2 + colCcW2 + colCoefW2, y + 3, { width: colTotW2, align: "center" });
+
+
+  drawRecapMatrix(doc, totals, startX, y+15, fullWidth, 58);
 
   const signatories = tmpl.signatories || [
     { title: "Le Promoteur", roleKey: "promoteur" },
@@ -1292,11 +1302,16 @@ async function generateFicheInscriptionPdf(snapshot, outputPath) {
       doc.fillColor("#0F172A").fontSize(11).font("Helvetica-Bold").text(tmpl.documentTitle || "FICHE INDIVIDUELLE D'INSCRIPTION & D'ENGAGEMENT", startX, 120, { width: fullWidth, align: "center", underline: true });
       doc.fillColor("#64748B").fontSize(7.5).font("Helvetica-Bold").text(`SESSION ACADÉMIQUE : ${classe.academicYearLabel || "—"} • ${classe.promotionLabel || ""}`, startX, 135, { width: fullWidth, align: "center" });
 
-      const photoW = 85;
-      const photoH = 115;
-      drawStudentAvatar(doc, photoBuf, startX + fullWidth - photoW, 155, photoW, photoH);
+      doc.save();
+      doc.opacity(0.5);
+      doc.rect(startX, 155, fullWidth, 115).fillAndStroke("#F8FAFC", "#CBD5E1");
+      doc.restore();
+      doc.opacity(1.0);
 
-      doc.rect(startX, 155, fullWidth - photoW - 10, photoH).fillAndStroke("#F8FAFC", "#CBD5E1");
+      const photoW = 65;
+      const photoH = 65;
+      drawStudentAvatar(doc, photoBuf, startX + fullWidth - photoW - 20, 180, photoW, photoH);
+
       let ly = 163;
       doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Matricule Officiel :", startX + 10, ly);
       doc.fillColor(primaryColor).fontSize(8.5).font("Courier-Bold").text(student.matricule || "—", startX + 130, ly);
@@ -1327,7 +1342,11 @@ async function generateFicheInscriptionPdf(snapshot, outputPath) {
       doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Diplôme d'entrée :", startX + 10, ly);
       doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(student.entryDiploma || "Aucun / Entrée directe", startX + 130, ly);
 
+      doc.save();
+      doc.opacity(0.5);
       doc.rect(startX, 280, fullWidth, 55).fillAndStroke("#FFFFFF", "#CBD5E1");
+      doc.restore();
+      doc.opacity(1.0);
       doc.rect(startX, 280, fullWidth, 16).fill(primaryColor);
       doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text("AFFECTATION PÉDAGOGIQUE & CYCLE CHOISI", startX + 10, 284.5);
 
@@ -1337,7 +1356,11 @@ async function generateFicheInscriptionPdf(snapshot, outputPath) {
       doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Classe & Promotion :", startX + 10, 319);
       doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(`${classe.label || "—"} • ${classe.promotionLabel || ""}`, startX + 130, 319);
 
+      doc.save();
+      doc.opacity(0.5);
       doc.rect(startX, 345, fullWidth, 75).fillAndStroke("#F8FAFC", "#CBD5E1");
+      doc.restore();
+      doc.opacity(1.0);
       doc.fillColor("#0F172A").fontSize(8).font("Helvetica-Bold").text("ENGAGEMENT DE L'APPRENANT(E) :", startX + 10, 355);
       doc.fillColor("#334155").fontSize(7.5).font("Helvetica").text(
         tmpl.engagementText || "Je soussigné(e), certifie sur l'honneur l'exactitude des informations mentionnées ci-dessus et déclare avoir pris pleine connaissance du règlement intérieur de l'établissement. Je m'engage à faire preuve d'assiduité, de rigueur et de probité tout au long de mon cycle de formation.",

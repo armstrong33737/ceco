@@ -1,0 +1,4 @@
+tout compte fait je pense que le fait que les roles manquant reviennent est une bonne chose. cela permet de s'assurer que le role soit utile. donc ajoute juste le istrue. ajuste aussi les roles par defaut pour permetre un filtre adequat sur l''interface. si possible fat que lorsque un utilisateur modifie un role syteme il est informe que le role ne peut pas etre reduit mais seulement augmenter.
+sur les releve le taux de reussite est fige a 100 et l'observation est statique. 
+certain ducument (pv) n'ont pas les couleurs par defaut du design system et la personalisation ne marche pas. je veux aussi la possibilite de generer les pv du cc et les pv annuelles.
+

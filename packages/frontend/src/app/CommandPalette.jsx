@@ -11,13 +11,16 @@ import Badge from "../design-system/primitives/Badge";
 
 export default function CommandPalette() {
   const { isOpen, close, searchQuery, setSearchQuery } = useCommandPaletteStore();
-  const { hasPermission } = useAuthStore();
+  const { user, hasPermission } = useAuthStore();
   const navigate = useNavigate();
+
+  const isTeacher = user?.role?.name?.toLowerCase() === "formateur";
+  const canReadStudents = hasPermission("students.read");
 
   const [learners, setLearners] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Écouteur global pour Ctrl+K / Cmd+K
+  // Raccourci universel Ctrl+K / Cmd+K
   useEffect(() => {
     function handleKeyDown(e) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -29,50 +32,49 @@ export default function CommandPalette() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Recherche dynamique des apprenants dès la saisie
+  // Recherche apprenants exécutée uniquement si l'utilisateur possède la permission students.read
   useEffect(() => {
-    if (!isOpen || !searchQuery.trim()) {
+    if (!isOpen || !searchQuery.trim() || !canReadStudents) {
       setLearners([]);
       return;
     }
 
     const timer = setTimeout(() => {
       apiFetch(`/students?search=${encodeURIComponent(searchQuery.trim())}&limit=5`)
-        .then((res) => setLearners(res.data || []))
+        .then((res) => setLearners(res?.data || []))
         .catch(() => setLearners([]));
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, isOpen]);
+  }, [searchQuery, isOpen, canReadStudents]);
 
-  // Catalogue des routes & actions rapides
+  // Actions autorisées pour l'utilisateur
   const QUICK_ACTIONS = useMemo(() => [
     { label: "Tableau de Bord", path: "/", icon: "dashboard", category: "Navigation" },
+    { label: "Saisie des Notes (Matrice)", path: "/pedagogie/saisie", icon: "edit_note", category: "Évaluation", permission: "grades.read" },
     { label: "Registre des Apprenants", path: "/apprenants", icon: "group", category: "Scolarité", permission: "students.read" },
     { label: "Archives des Apprenants", path: "/apprenants/archives", icon: "archive", category: "Scolarité", permission: "students.read" },
-    { label: "Cycles & Filières", path: "/academie/filieres", icon: "account_tree", category: "Structure", permission: "formations.read" },
-    { label: "Promotions & Cohortes", path: "/academie/promotions", icon: "school", category: "Structure", permission: "formations.read" },
-    { label: "Classes Promotionnelles", path: "/academie/classes", icon: "groups", category: "Structure", permission: "formations.read" },
-    { label: "Sessions & Transitions", path: "/academie/sessions", icon: "calendar_month", category: "Structure", permission: "center.update" },
-    { label: "Salles & Ateliers", path: "/academie/salles", icon: "meeting_room", category: "Structure", permission: "formations.read" },
-    { label: "Saisie des Notes (Matrice)", path: "/pedagogie/saisie", icon: "edit_note", category: "Évaluation", permission: "grades.read" },
     { label: "Délibérations du Jury", path: "/pedagogie/deliberations", icon: "gavel", category: "Évaluation", permission: "grades.validate" },
     { label: "Bulletins & Diplômes", path: "/pedagogie/bulletins", icon: "receipt_long", category: "Évaluation", permission: "bulletins.generate" },
-    { label: "Maquettes de Cours", path: "/pedagogie/maquettes", icon: "auto_stories", category: "Pédagogie", permission: "formations.read" },
+    { label: "Cycles & Filières", path: "/academie/filieres", icon: "account_tree", category: "Structure", permission: "formations.create" },
+    { label: "Promotions & Cohortes", path: "/academie/promotions", icon: "school", category: "Structure", permission: "formations.create" },
+    { label: "Classes Promotionnelles", path: "/academie/classes", icon: "groups", category: "Structure", permission: "formations.create" },
+    { label: "Sessions Académiques", path: "/academie/sessions", icon: "calendar_month", category: "Structure", permission: "center.update" },
+    { label: "Salles & Ateliers", path: "/academie/salles", icon: "meeting_room", category: "Structure", permission: "formations.create" },
+    { label: "Maquettes de Cours", path: "/pedagogie/maquettes", icon: "auto_stories", category: "Pédagogie", permission: "formations.update" },
     { label: "Cursus Filières", path: "/pedagogie/cursus", icon: "account_tree", category: "Pédagogie", permission: "formations.update" },
-    { label: "Corps Professoral", path: "/pedagogie/formateurs", icon: "badge", category: "Pédagogie", permission: "formations.read" },
-    { label: "Référentiel des Matières", path: "/pedagogie/matieres", icon: "library_books", category: "Pédagogie", permission: "formations.read" },
+    { label: "Corps Professoral", path: "/pedagogie/formateurs", icon: "badge", category: "Pédagogie", permission: "formations.create" },
+    { label: "Référentiel des Matières", path: "/pedagogie/matieres", icon: "library_books", category: "Pédagogie", permission: "formations.create" },
     { label: "Établissement & Sceau", path: "/administration/centre", icon: "storefront", category: "Administration", permission: "center.update" },
     { label: "Studio Gabarits d'Actes", path: "/administration/modeles", icon: "palette", category: "Administration", permission: "center.update" },
     { label: "Comptes Utilisateurs", path: "/administration/utilisateurs", icon: "group", category: "Administration", permission: "users.read" },
-    { label: "Rôles & Permissions (RBAC)", path: "/administration/roles", icon: "badge", category: "Administration", permission: "roles.read" },
-    { label: "Licence & Validité", path: "/administration/licence", icon: "verified_user", category: "Système", permission: "center.update" },
-    { label: "Sauvegardes & Restauration", path: "/administration/sauvegardes", icon: "archive", category: "Système", permission: "backups.read" },
-    { label: "Journal d'Audit Système", path: "/administration/audit", icon: "history", category: "Système", permission: "center.update" },
+    { label: "Rôles & Permissions", path: "/administration/roles", icon: "badge", category: "Administration", permission: "roles.read" },
+    { label: "Licence Locale", path: "/administration/licence", icon: "verified_user", category: "Système", permission: "center.update" },
+    { label: "Sauvegardes .zip", path: "/administration/sauvegardes", icon: "archive", category: "Système", permission: "backups.read" },
+    { label: "Journal d'Audit", path: "/administration/audit", icon: "history", category: "Système", permission: "center.update" },
     { label: "Fiche Technique & À Propos", path: "/administration/apropos", icon: "bookmark", category: "Système" },
   ].filter((item) => !item.permission || hasPermission(item.permission)), [hasPermission]);
 
-  // Filtrage des résultats selon la saisie
   const filteredActions = useMemo(() => {
     if (!searchQuery.trim()) return QUICK_ACTIONS.slice(0, 8);
     const q = searchQuery.toLowerCase();
@@ -93,7 +95,6 @@ export default function CommandPalette() {
     return [...studentItems, ...filteredActions.map((a) => ({ ...a, type: "action" }))];
   }, [learners, filteredActions]);
 
-  // Navigation au clavier dans la liste
   useEffect(() => {
     setSelectedIndex(0);
   }, [searchQuery]);
@@ -129,8 +130,7 @@ export default function CommandPalette() {
 
   return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[10000] flex items-start justify-center pt-20 bg-black/60 backdrop-blur-xs p-4">
-        {/* Backdrop click */}
+      <div className="fixed inset-0 z-[10000] flex items-start justify-center pt-20 bg-black/65 backdrop-blur-xs p-4">
         <div className="absolute inset-0" onClick={close} />
 
         <motion.div
@@ -140,16 +140,16 @@ export default function CommandPalette() {
           transition={{ duration: 0.1 }}
           className="relative z-10 w-full max-w-2xl rounded bg-surface border border-border shadow-modal overflow-hidden flex flex-col dark:bg-surface-dark dark:border-border-dark"
         >
-          {/* Barre de recherche omnibar */}
+          {/* Champ de recherche */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border dark:border-border-dark">
             <Icon name="search" className="text-[20px] text-brand-900 dark:text-brand-500" />
             <input
               autoFocus
               type="text"
-              placeholder="Rechercher un apprenant, une matière, une classe, un menu..."
+              placeholder={isTeacher ? "Rechercher une action, mes cours..." : "Rechercher un apprenant, une matière, une classe..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 bg-transparent text-body-md text-ink-primary outline-none placeholder:text-ink-muted/50 dark:text-ink-primary-dark"
+              className="flex-1 bg-transparent text-body-md text-ink-primary outline-none placeholder:text-ink-muted/50 dark:text-white"
             />
             {searchQuery && (
               <button onClick={() => setSearchQuery("")} className="text-ink-muted hover:text-ink-primary p-1">
@@ -161,13 +161,13 @@ export default function CommandPalette() {
             </span>
           </div>
 
-          {/* Liste des résultats */}
+          {/* Liste des résultats filtrés */}
           <div className="max-h-[380px] overflow-y-auto p-2 space-y-1">
             {allItems.length === 0 ? (
               <div className="p-8 text-center text-caption text-ink-muted space-y-1">
                 <Icon name="search_off" className="text-3xl text-ink-muted/60" />
                 <p className="font-semibold text-ink-primary dark:text-white">Aucun résultat trouvé</p>
-                <p>Essayez avec un autre nom, matricule ou intitulé de module.</p>
+                <p>Essayez avec d'autres termes de recherche.</p>
               </div>
             ) : (
               allItems.map((item, idx) => {
@@ -186,7 +186,7 @@ export default function CommandPalette() {
                   >
                     <div className="flex items-center gap-3 truncate">
                       <div className={`flex h-7 w-7 items-center justify-center rounded-[2px] flex-shrink-0 ${
-                        isSelected ? "bg-white/20 text-white" : "bg-brand-900/5 text-brand-900 dark:bg-brand-500/10 dark:text-brand-500"
+                        isSelected ? "bg-white/20 text-white" : "bg-brand-900/10 text-brand-900 dark:bg-brand-500/20 dark:text-brand-500"
                       }`}>
                         <Icon name={item.icon || "arrow_forward"} className="text-[16px]" />
                       </div>
@@ -216,7 +216,6 @@ export default function CommandPalette() {
             )}
           </div>
 
-          {/* Pied d'aide raccourcis */}
           <div className="px-4 py-2 bg-[#F5F7FA] border-t border-border flex items-center justify-between text-[11px] text-ink-muted dark:bg-[#07111D] dark:border-border-dark">
             <div className="flex items-center gap-3">
               <span><strong>↑↓</strong> Naviguer</span>

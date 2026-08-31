@@ -1,20 +1,23 @@
 // packages/frontend/src/app/Sidebar.jsx
-import React from "react";
+import React, { useMemo } from "react";
 import { NavLink } from "react-router-dom";
 import Icon from "../components/Icon";
 import useAuthStore from "../store/authStore";
 
 export default function Sidebar() {
-  const { hasPermission, logout, isSidebarCollapsed } = useAuthStore();
+  const { user, hasPermission, logout, isSidebarCollapsed } = useAuthStore();
 
+  // Habilitations RBAC granulaires
   const canSeeStudents = hasPermission(["students.read", "students.create"]);
-  const canSeeFormations = hasPermission(["formations.read", "formations.create", "center.update"]);
-  const canSeePedagogie = hasPermission(["grades.read", "grades.create", "formations.read"]);
-  const canSeeDeliberation = hasPermission("grades.validate");
-  const canSeeBulletins = hasPermission(["bulletins.generate", "grades.read"]);
-  const canSeeSettings = hasPermission(["center.update", "users.read", "roles.read", "backups.read"]);
+  const canManageAcademicStructure = hasPermission(["formations.create", "formations.update", "center.update"]);
+  const canSeeGradesEntry = hasPermission(["grades.read", "grades.create"]);
+  const canDeliberate = hasPermission("grades.validate");
+  const canGenerateBulletins = hasPermission(["bulletins.generate", "grades.read"]);
+  const canManageCurriculum = hasPermission(["formations.create", "formations.update", "center.update"]);
+  const canManageAdminSettings = hasPermission(["center.update", "users.read", "roles.read", "backups.read"]);
 
-  const SECTIONS = [
+  // Matrice de navigation sectionnée avec étanchéité par rôle
+  const SECTIONS = useMemo(() => [
     {
       title: "PRINCIPAL",
       items: [
@@ -26,41 +29,50 @@ export default function Sidebar() {
       items: [
         { to: "/apprenants", label: "Registre apprenants", icon: "group", visible: canSeeStudents },
         { to: "/apprenants/archives", label: "Archives historiques", icon: "archive", visible: canSeeStudents },
-        { to: "/academie/filieres", label: "Filières & Cycles", icon: "account_tree", visible: canSeeFormations },
-        { to: "/academie/promotions", label: "Promotions", icon: "school", visible: canSeeFormations },
-        { to: "/academie/classes", label: "Classes", icon: "groups", visible: canSeeFormations },
-        { to: "/academie/sessions", label: "Sessions & Transition", icon: "calendar_month", visible: canSeeFormations },
-        { to: "/academie/salles", label: "Salles & Espaces", icon: "meeting_room", visible: canSeeFormations },
+        { to: "/academie/filieres", label: "Filières & Cycles", icon: "account_tree", visible: canManageAcademicStructure },
+        { to: "/academie/promotions", label: "Promotions", icon: "school", visible: canManageAcademicStructure },
+        { to: "/academie/classes", label: "Classes", icon: "groups", visible: canManageAcademicStructure },
+        { to: "/academie/sessions", label: "Sessions & Transition", icon: "calendar_month", visible: hasPermission("center.update") },
+        { to: "/academie/salles", label: "Salles & Espaces", icon: "meeting_room", visible: canManageAcademicStructure },
       ],
     },
     {
       title: "PÉDAGOGIE & ÉVALUATION",
       items: [
-        { to: "/pedagogie/saisie", label: "Saisie des notes", icon: "edit_note", visible: canSeePedagogie },
-        { to: "/pedagogie/deliberations", label: "Délibérations", icon: "gavel", visible: canSeeDeliberation },
-        { to: "/pedagogie/bulletins", label: "Bulletins & Diplômes", icon: "receipt_long", visible: canSeeBulletins },
-        { to: "/pedagogie/maquettes", label: "Maquettes de cours", icon: "auto_stories", visible: canSeePedagogie },
-        { to: "/pedagogie/cursus", label: "Cursus filières", icon: "account_tree", visible: canSeeFormations },
-        { to: "/pedagogie/formateurs", label: "Formateurs", icon: "badge", visible: canSeeFormations },
-        { to: "/pedagogie/matieres", label: "Référentiel matières", icon: "library_books", visible: canSeeFormations },
-        { to: "/pedagogie/categories", label: "Catégories", icon: "category", visible: canSeeFormations },
-        { to: "/pedagogie/ponderations", label: "Pondérations", icon: "tune", visible: canSeeFormations },
+        { to: "/pedagogie/saisie", label: "Saisie des notes", icon: "edit_note", visible: canSeeGradesEntry },
+        { to: "/pedagogie/deliberations", label: "Délibérations", icon: "gavel", visible: canDeliberate },
+        { to: "/pedagogie/bulletins", label: "Bulletins & Diplômes", icon: "receipt_long", visible: canGenerateBulletins },
+        { to: "/pedagogie/maquettes", label: "Maquettes de cours", icon: "auto_stories", visible: canManageCurriculum },
+        { to: "/pedagogie/cursus", label: "Cursus filières", icon: "account_tree", visible: canManageCurriculum },
+        { to: "/pedagogie/formateurs", label: "Formateurs", icon: "badge", visible: canManageCurriculum },
+        { to: "/pedagogie/matieres", label: "Référentiel matières", icon: "library_books", visible: canManageCurriculum },
+        { to: "/pedagogie/categories", label: "Catégories", icon: "category", visible: canManageCurriculum },
+        { to: "/pedagogie/ponderations", label: "Pondérations", icon: "tune", visible: canManageCurriculum },
       ],
     },
     {
       title: "ADMINISTRATION",
       items: [
-        { to: "/administration/centre", label: "Centre & Sceau", icon: "storefront", visible: canSeeSettings },
-        { to: "/administration/modeles", label: "Gabarits d'actes", icon: "palette", visible: canSeeSettings },
+        { to: "/administration/centre", label: "Centre & Sceau", icon: "storefront", visible: hasPermission("center.update") },
+        { to: "/administration/modeles", label: "Gabarits d'actes", icon: "palette", visible: hasPermission("center.update") },
         { to: "/administration/utilisateurs", label: "Utilisateurs", icon: "group", visible: hasPermission("users.read") },
         { to: "/administration/roles", label: "Rôles & Permissions", icon: "badge", visible: hasPermission("roles.read") },
-        { to: "/administration/licence", label: "Licence & Validité", icon: "verified_user", visible: canSeeSettings },
+        { to: "/administration/licence", label: "Licence & Validité", icon: "verified_user", visible: hasPermission("center.update") },
         { to: "/administration/sauvegardes", label: "Sauvegardes", icon: "archive", visible: hasPermission("backups.read") },
-        { to: "/administration/audit", label: "Journal d'audit", icon: "history", visible: canSeeSettings },
-        { to: "/administration/apropos", label: "Fiche technique", icon: "bookmark", visible: true },
+        { to: "/administration/audit", label: "Journal d'audit", icon: "history", visible: hasPermission("center.update") },
+        { to: "/administration/apropos", label: "Fiche technique", icon: "bookmark", visible: canManageAdminSettings },
       ],
     },
-  ];
+  ], [
+    canSeeStudents,
+    canManageAcademicStructure,
+    canSeeGradesEntry,
+    canDeliberate,
+    canGenerateBulletins,
+    canManageCurriculum,
+    canManageAdminSettings,
+    hasPermission,
+  ]);
 
   return (
     <aside
@@ -122,8 +134,19 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Déconnexion */}
-      <div className="p-2 border-t border-border bg-surface dark:bg-surface-dark dark:border-border-dark">
+      {/* Profil connecté & Déconnexion */}
+      <div className="p-2.5 border-t border-border bg-surface space-y-2 dark:bg-surface-dark dark:border-border-dark">
+        {!isSidebarCollapsed && (
+          <div className="px-2 py-1 flex items-center justify-between text-[11px] text-ink-muted">
+            <span className="truncate max-w-[120px] font-semibold text-ink-primary dark:text-white">
+              {user ? `${user.firstName} ${user.lastName}` : "Utilisateur"}
+            </span>
+            <span className="font-mono px-1.5 py-0.2 rounded bg-[#F5F7FA] border border-border dark:bg-[#07111D] dark:border-border-dark text-[10px]">
+              {user?.role?.name || "Rôle"}
+            </span>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={logout}

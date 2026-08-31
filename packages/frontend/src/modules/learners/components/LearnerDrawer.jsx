@@ -66,7 +66,7 @@ export default function LearnerDrawer({
               {student.matricule}
             </span>
             <p className="text-caption text-ink-muted">
-              {student.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le {safeFormatDate(student.birthDate)}{student.birthPlace ? ` à ${student.birthPlace}` : ""}
+              {student.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le {student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "—"}{student.birthPlace ? ` à ${student.birthPlace}` : ""}
             </p>
           </div>
         </div>

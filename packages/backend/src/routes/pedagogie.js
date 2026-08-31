@@ -965,6 +965,58 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
   }
 });
 
+// Endpoint contextuel direct pour les formateurs connectés
+router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
+  try {
+    const connectedFormateur = await getConnectedFormateur(req);
+    if (!connectedFormateur) {
+      return res.json([]);
+    }
+
+    const offerings = await prisma.subjectOffering.findMany({
+      where: {
+        formateurId: connectedFormateur.id,
+        classe: {
+          centerId: req.centerId,
+          academicYear: { isCurrent: true },
+        },
+      },
+      include: {
+        subject: true,
+        category: true,
+        gradePeriod: true,
+        classe: { include: { filiere: true } },
+        _count: { select: { grades: true } },
+      },
+      orderBy: [
+        { gradePeriod: { order: "asc" } },
+        { classe: { label: "asc" } },
+        { subject: { name: "asc" } },
+      ],
+    });
+
+    res.json(
+      offerings.map((o) => ({
+        id: o.id,
+        subjectId: o.subjectId,
+        subjectName: o.subject.name,
+        subjectCode: o.subject.code,
+        categoryName: o.category?.name || "Général",
+        coefficient: o.coefficient,
+        volumeHoraire: o.volumeHoraire,
+        classeId: o.classeId,
+        classeLabel: o.classe.label,
+        filiereName: o.classe.filiere.name,
+        semesterOrder: o.gradePeriod.order,
+        semesterLabel: o.gradePeriod.label,
+        academicYearId: o.classe.academicYearId,
+        hasGrades: (o._count?.grades || 0) > 0,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
 // ============================================================================
 // 8. MOTEUR DE DÉLIBÉRATION (SEMESTRE & ANNUEL PAR AGRÉGATION S1+S2)
 // ============================================================================
