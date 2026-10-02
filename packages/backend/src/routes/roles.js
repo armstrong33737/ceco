@@ -1,3 +1,4 @@
+// packages/backend/src/routes/roles.js
 const express = require("express");
 const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
@@ -53,8 +54,7 @@ router.post("/roles", verifyJwt, requirePermission("roles.create"), async (req, 
   }
 });
 
-// Remplace entièrement la liste de permissions d'un rôle — plus simple et
-// moins source d'erreur qu'un diff partiel côté serveur.
+// Modification d'un rôle : Autorise l'augmentation des permissions sur un rôle système, mais interdit son renommage
 router.put("/roles/:id", verifyJwt, requirePermission("roles.update"), async (req, res, next) => {
   try {
     const { name, permissions } = req.body || {};
@@ -63,8 +63,10 @@ router.put("/roles/:id", verifyJwt, requirePermission("roles.update"), async (re
       where: { id: req.params.id, centerId: req.centerId },
     });
     if (!existing) return res.status(404).json({ error: "Rôle introuvable." });
-    if (existing.isSystem) {
-      return res.status(403).json({ error: "Les rôles système ne peuvent pas être modifiés." });
+
+    // Si c'est un rôle système, interdire la modification du nom, mais autoriser l'augmentation des permissions
+    if (existing.isSystem && name && name.trim() !== existing.name) {
+      return res.status(403).json({ error: "Les rôles système ne peuvent pas être renommés." });
     }
 
     await prisma.permission.deleteMany({ where: { roleId: req.params.id } });
@@ -72,7 +74,7 @@ router.put("/roles/:id", verifyJwt, requirePermission("roles.update"), async (re
     const role = await prisma.role.update({
       where: { id: req.params.id },
       data: {
-        ...(name !== undefined && { name }),
+        ...(!existing.isSystem && name !== undefined && { name: name.trim() }),
         permissions: { create: (permissions || []).map((action) => ({ action })) },
       },
       include: { permissions: true },
@@ -84,6 +86,7 @@ router.put("/roles/:id", verifyJwt, requirePermission("roles.update"), async (re
   }
 });
 
+// Suppression : Interdiction stricte de supprimer un rôle système
 router.delete("/roles/:id", verifyJwt, requirePermission("roles.delete"), async (req, res, next) => {
   try {
     const role = await prisma.role.findFirst({ where: { id: req.params.id, centerId: req.centerId } });

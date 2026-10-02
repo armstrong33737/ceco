@@ -17,6 +17,7 @@ import {
 } from "../../design-system/data-grid/Table";
 import Modal from "../../design-system/overlays/Modal";
 import ConfirmDialog from "../../design-system/overlays/ConfirmDialog";
+import Icon from "../../components/Icon";
 
 function derive5CharCode(name, existingList = [], currentId = null) {
   if (!name || !name.trim()) return "";
@@ -43,13 +44,28 @@ function derive5CharCode(name, existingList = [], currentId = null) {
 export default function SubjectsCatalogPage() {
   const [subjects, setSubjects] = useState([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  // Modales CRUD
   const [modal, setModal] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [form, setForm] = useState({ name: "", code: "" });
   const [isCodeManual, setIsCodeManual] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Modale Importation CSV
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importReport, setImportReport] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
 
   function load() {
-    apiFetch("/subjects").then(setSubjects).catch((e) => showToast(e.message, "error"));
+    setLoading(true);
+    apiFetch("/subjects")
+      .then((data) => setSubjects(data || []))
+      .catch((e) => showToast(e.message, "error"))
+      .finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, []);
@@ -82,6 +98,7 @@ export default function SubjectsCatalogPage() {
       return;
     }
 
+    setSaving(true);
     try {
       if (modal.mode === "edit") {
         await apiFetch(`/subjects/${modal.item.id}`, { method: "PUT", body: JSON.stringify(form) });
@@ -94,6 +111,58 @@ export default function SubjectsCatalogPage() {
       load();
     } catch (err) {
       showToast(err.message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCsvFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target.result;
+      const lines = text.split("\n").filter((l) => l.trim().length > 0);
+      if (lines.length <= 1) {
+        setImportError("Fichier CSV vide ou invalide.");
+        return;
+      }
+      const parsed = [];
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(/[;,]/).map((p) => p.replace(/^"|"$/g, "").trim());
+        if (parts.length >= 2) {
+          parsed.push({ code: parts[0], name: parts[1] });
+        } else if (parts[0]) {
+          parsed.push({ code: "", name: parts[0] });
+        }
+      }
+      setImportRows(parsed);
+      setImportReport(null);
+      setImportError(null);
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+
+  async function handleExecuteImport(e) {
+    e.preventDefault();
+    if (importRows.length === 0) {
+      setImportError("Veuillez sélectionner un fichier CSV valide.");
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await apiFetch("/subjects/import", {
+        method: "POST",
+        body: JSON.stringify({ subjects: importRows }),
+      });
+      setImportReport(res);
+      showToast(res.message, "success");
+      load();
+    } catch (err) {
+      setImportError(err.message);
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -117,17 +186,31 @@ export default function SubjectsCatalogPage() {
         title="Référentiel des Matières &amp; Disciplines"
         subtitle="Catalogue des modules avec codes normalisés à 5 caractères pour les procès-verbaux"
         actions={
-          <Button
-            variant="primary"
-            icon="add"
-            onClick={() => {
-              setForm({ name: "", code: "" });
-              setIsCodeManual(false);
-              setModal({ mode: "create" });
-            }}
-          >
-            Nouvelle Matière
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              icon="upload_file"
+              onClick={() => {
+                setImportRows([]);
+                setImportReport(null);
+                setImportError(null);
+                setShowImport(true);
+              }}
+            >
+              Importer CSV
+            </Button>
+            <Button
+              variant="primary"
+              icon="add"
+              onClick={() => {
+                setForm({ name: "", code: "" });
+                setIsCodeManual(false);
+                setModal({ mode: "create" });
+              }}
+            >
+              Nouvelle Matière
+            </Button>
+          </>
         }
       />
 
@@ -147,49 +230,54 @@ export default function SubjectsCatalogPage() {
       </div>
 
       <div className="rounded bg-surface border border-border shadow-xs overflow-hidden dark:bg-surface-dark dark:border-border-dark">
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell className="w-32">Code (5 Car.)</TableHeaderCell>
-              <TableHeaderCell>Intitulé de la Discipline</TableHeaderCell>
-              <TableHeaderCell className="w-36 text-center">Cours Actifs</TableHeaderCell>
-              <TableHeaderCell align="right">Actions</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredSubjects.map((sub) => (
-              <TableRow key={sub.id}>
-                <TableCell className="font-mono font-bold text-brand-900 dark:text-brand-500">{sub.code || "—"}</TableCell>
-                <TableCell className="font-semibold text-ink-primary dark:text-white">{sub.name}</TableCell>
-                <TableCell align="center" className="font-mono">{sub._count?.offerings || 0}</TableCell>
-                <TableCell align="right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setForm({ name: sub.name, code: sub.code || "" });
-                        setIsCodeManual(true);
-                        setModal({ mode: "edit", item: sub });
-                      }}
-                    >
-                      Modifier
-                    </Button>
-                    <Button
-                      variant="tertiary"
-                      size="sm"
-                      icon="delete"
-                      className="text-error"
-                      onClick={() => setDeleteTarget(sub)}
-                    />
-                  </div>
-                </TableCell>
+        {loading ? (
+          <p className="p-8 text-caption text-ink-muted text-center">Chargement du catalogue...</p>
+        ) : (
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell className="w-32">Code (5 Car.)</TableHeaderCell>
+                <TableHeaderCell>Intitulé de la Discipline</TableHeaderCell>
+                <TableHeaderCell className="w-36 text-center">Cours Actifs</TableHeaderCell>
+                <TableHeaderCell align="right">Actions</TableHeaderCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {filteredSubjects.map((sub) => (
+                <TableRow key={sub.id}>
+                  <TableCell className="font-mono font-bold text-brand-900 dark:text-brand-500">{sub.code || "—"}</TableCell>
+                  <TableCell className="font-semibold text-ink-primary dark:text-white">{sub.name}</TableCell>
+                  <TableCell align="center" className="font-mono">{sub._count?.offerings || 0}</TableCell>
+                  <TableCell align="right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setForm({ name: sub.name, code: sub.code || "" });
+                          setIsCodeManual(true);
+                          setModal({ mode: "edit", item: sub });
+                        }}
+                      >
+                        Modifier
+                      </Button>
+                      <Button
+                        variant="tertiary"
+                        size="sm"
+                        icon="delete"
+                        className="text-error"
+                        onClick={() => setDeleteTarget(sub)}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
+      {/* Modale Création / Édition */}
       <Modal
         isOpen={Boolean(modal)}
         onClose={() => setModal(null)}
@@ -199,7 +287,7 @@ export default function SubjectsCatalogPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setModal(null)}>Annuler</Button>
-            <Button variant="primary" onClick={handleSubmit} disabled={!isCodeValid || !form.name.trim()}>
+            <Button variant="primary" onClick={handleSubmit} isLoading={saving} disabled={!isCodeValid || !form.name.trim()}>
               Enregistrer
             </Button>
           </>
@@ -235,6 +323,60 @@ export default function SubjectsCatalogPage() {
             />
           </div>
         </form>
+      </Modal>
+
+      {/* Modale Importation CSV */}
+      <Modal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        title="Importer des Matières par Fichier CSV"
+        subtitle="Auto-génération des codes à 5 caractères si non renseignés"
+        icon="upload_file"
+        maxWidth="max-w-xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(false)}>Fermer</Button>
+            <Button variant="primary" onClick={handleExecuteImport} isLoading={importing} disabled={importRows.length === 0}>
+              Lancer l'Importation
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-6 border-2 border-dashed border-border rounded text-center bg-[#F5F7FA] space-y-2 dark:bg-[#07111D] dark:border-border-dark">
+            <Icon name="file_upload" className="text-3xl text-brand-900 dark:text-brand-500" />
+            <p className="text-body-md font-semibold text-ink-primary dark:text-white">Sélectionner un fichier CSV</p>
+            <p className="text-caption text-ink-muted">Colonnes attendues : Code; Intitule (ou Intitule seul pour code auto)</p>
+            <input type="file" accept=".csv,text/csv" onChange={handleCsvFileSelect} className="text-caption mx-auto pt-2" />
+          </div>
+
+          {importRows.length > 0 && !importReport && (
+            <Badge variant="brand">{importRows.length} matière(s) détectée(s) prête(s) pour l'import</Badge>
+          )}
+
+          {importReport && (
+            <div className="p-4 rounded bg-surface border border-border space-y-2 text-body-sm dark:bg-surface-dark dark:border-border-dark">
+              <div className="font-semibold text-success flex items-center gap-1.5">
+                <Icon name="check_circle" className="text-[18px]" />
+                <span>{importReport.createdCount} matière(s) importée(s) sur {importReport.totalCount} lignes.</span>
+              </div>
+              {importReport.errors?.length > 0 && (
+                <div className="space-y-1 text-error text-caption">
+                  <p className="font-bold">{importReport.errors.length} anomalie(s) détectée(s) :</p>
+                  <ul className="list-disc pl-4 space-y-0.5 max-h-32 overflow-y-auto font-mono">
+                    {importReport.errors.map((err, i) => (
+                      <li key={i}>Ligne {err.row} : {err.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {importError && (
+            <p className="rounded bg-error-subtle p-3 text-error border border-error/30 text-caption font-medium">{importError}</p>
+          )}
+        </div>
       </Modal>
 
       <ConfirmDialog

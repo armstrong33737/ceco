@@ -105,7 +105,7 @@ router.delete("/categories/:id", verifyJwt, requirePermission("formations.delete
 
     if (templateUsage > 0 || classUsage > 0) {
       return res.status(409).json({
-        error: `Impossible de supprimer cette catégorie : elle est utilisée par ${templateUsage + classUsage} matière(s) dans des maquettes de cours.`,
+        error: `Impossible de supprimer cette catégorie : elle est utilisée par ${templateUsage + classUsage} cours dans des maquettes.`,
       });
     }
 
@@ -117,7 +117,7 @@ router.delete("/categories/:id", verifyJwt, requirePermission("formations.delete
 });
 
 // ============================================================================
-// 2. RÉFÉRENTIEL DES MATIÈRES & CODES À 5 CARACTÈRES
+// 2. RÉFÉRENTIEL DES MATIÈRES & IMPORTATION CSV
 // ============================================================================
 router.get("/subjects", verifyJwt, requirePermission("formations.read", "grades.read", "students.read"), async (req, res, next) => {
   try {
@@ -142,7 +142,7 @@ router.post("/subjects", verifyJwt, requirePermission("formations.create", "cent
     let finalCode = code ? code.trim().toUpperCase() : null;
     if (finalCode) {
       if (!validateSubjectCode(finalCode)) {
-        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères alphanumériques majuscules (ex: THM01, INF02)." });
+        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères majuscules (ex: THM01, INF02)." });
       }
     } else {
       const count = await prisma.subject.count({ where: { centerId: req.centerId } });
@@ -158,7 +158,67 @@ router.post("/subjects", verifyJwt, requirePermission("formations.create", "cent
     });
     res.status(201).json(created);
   } catch (err) {
-    if (err.code === "P2002") return res.status(409).json({ error: "Ce code matière de 5 caractères existe déjà dans l'établissement." });
+    if (err.code === "P2002") return res.status(409).json({ error: "Ce code matière de 5 caractères existe déjà." });
+    next(err);
+  }
+});
+
+// Importation en masse de matières par CSV
+router.post("/subjects/import", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
+  try {
+    const { subjects: items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Liste de matières vide." });
+    }
+
+    let createdCount = 0;
+    const errors = [];
+    const existingCount = await prisma.subject.count({ where: { centerId: req.centerId } });
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const rowNum = i + 2;
+      if (!item.name || !item.name.trim()) {
+        errors.push({ row: rowNum, reason: "Intitulé de matière manquant" });
+        continue;
+      }
+
+      let code = item.code ? item.code.trim().toUpperCase() : null;
+      if (!code || !validateSubjectCode(code)) {
+        code = generateSubjectCode(item.name, existingCount + createdCount + 1);
+      }
+
+      const exists = await prisma.subject.findFirst({
+        where: { centerId: req.centerId, OR: [{ code }, { name: item.name.trim() }] },
+      });
+
+      if (exists) {
+        errors.push({ row: rowNum, reason: `Matière ou code (${code}) déjà existant` });
+        continue;
+      }
+
+      try {
+        await prisma.subject.create({
+          data: {
+            centerId: req.centerId,
+            name: item.name.trim(),
+            code,
+          },
+        });
+        createdCount++;
+      } catch (err) {
+        errors.push({ row: rowNum, reason: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      createdCount,
+      totalCount: items.length,
+      errors,
+      message: `${createdCount} matière(s) importée(s) avec succès sur ${items.length} lignes.`,
+    });
+  } catch (err) {
     next(err);
   }
 });
@@ -171,7 +231,7 @@ router.put("/subjects/:id", verifyJwt, requirePermission("formations.update", "c
     if (code !== undefined) {
       finalCode = code ? code.trim().toUpperCase() : null;
       if (finalCode && !validateSubjectCode(finalCode)) {
-        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères alphanumériques majuscules (ex: THM01, INF02)." });
+        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères majuscules (ex: THM01)." });
       }
     }
 
@@ -184,7 +244,7 @@ router.put("/subjects/:id", verifyJwt, requirePermission("formations.update", "c
     });
     res.json(updated);
   } catch (err) {
-    if (err.code === "P2002") return res.status(409).json({ error: "Ce code matière de 5 caractères est déjà attribué." });
+    if (err.code === "P2002") return res.status(409).json({ error: "Ce code matière est déjà attribué." });
     next(err);
   }
 });
@@ -311,7 +371,7 @@ router.delete("/filieres/subjects/:id", verifyJwt, requirePermission("formations
 });
 
 // ============================================================================
-// 4. ANNUAIRE DES FORMATEURS & COMPTE UTILISATEUR EN 1 CLIC
+// 4. ANNUAIRE DES FORMATEURS & IMPORTATION CSV
 // ============================================================================
 router.get("/formateurs", verifyJwt, requirePermission("formations.read", "grades.read", "center.read"), async (req, res, next) => {
   try {
@@ -353,6 +413,54 @@ router.post("/formateurs", verifyJwt, requirePermission("formations.create", "ce
       include: { user: true },
     });
     res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Importation en masse d'enseignants par CSV
+router.post("/formateurs/import", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
+  try {
+    const { formateurs: items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Liste d'enseignants vide." });
+    }
+
+    let createdCount = 0;
+    const errors = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const rowNum = i + 2;
+      if (!item.lastName || !item.firstName) {
+        errors.push({ row: rowNum, reason: "Nom ou prénom manquant" });
+        continue;
+      }
+
+      try {
+        await prisma.formateur.create({
+          data: {
+            centerId: req.centerId,
+            firstName: item.firstName.trim(),
+            lastName: item.lastName.trim(),
+            email: item.email ? item.email.trim() : null,
+            phone: item.phone ? item.phone.trim() : null,
+            specialite: item.specialite ? item.specialite.trim() : null,
+          },
+        });
+        createdCount++;
+      } catch (err) {
+        errors.push({ row: rowNum, reason: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      createdCount,
+      totalCount: items.length,
+      errors,
+      message: `${createdCount} enseignant(s) importé(s) avec succès sur ${items.length} lignes.`,
+    });
   } catch (err) {
     next(err);
   }
@@ -400,7 +508,7 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
         data: {
           centerId: req.centerId,
           name: "Formateur",
-          isSystem: false,
+          isSystem: true,
           permissions: {
             create: [
               { action: "formations.read" },
@@ -437,12 +545,12 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
 
     res.status(201).json({
       success: true,
-      message: `Compte d'accès créé : ${userEmail} (mot de passe initial : ${userPassword})`,
+      message: `Compte d'accès créé : ${userEmail} (mot de passe : ${userPassword})`,
       formateur: result,
     });
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(409).json({ error: "Cette adresse email est déjà attribuée à un compte utilisateur." });
+      return res.status(409).json({ error: "Cette adresse email est déjà attribuée à un compte." });
     }
     next(err);
   }
@@ -451,7 +559,7 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
 router.delete("/formateurs/:id", verifyJwt, requirePermission("formations.delete", "center.update"), async (req, res, next) => {
   try {
     const count = await prisma.subjectOffering.count({ where: { formateurId: req.params.id } });
-    if (count > 0) return res.status(409).json({ error: `Ce formateur dispense actuellement ${count} cours actif(s).` });
+    if (count > 0) return res.status(409).json({ error: `Ce formateur dispense actuellement ${count} cours.` });
     await prisma.formateur.delete({ where: { id: req.params.id } });
     res.status(204).send();
   } catch (err) {
@@ -460,7 +568,7 @@ router.delete("/formateurs/:id", verifyJwt, requirePermission("formations.delete
 });
 
 // ============================================================================
-// 5. MAQUETTE PÉDAGOGIQUE PAR CLASSE & INSTANCIATION AVANCÉE
+// 5. MAQUETTES DE COURS & ENDPOINT CONTEXTUEL FORMATEUR
 // ============================================================================
 async function ensureYearGradePeriods(centerId, academicYear) {
   let periods = await prisma.gradePeriod.findMany({
@@ -489,6 +597,59 @@ async function ensureYearGradePeriods(centerId, academicYear) {
   }
   return periods;
 }
+
+// Endpoint d'accès direct pour les formateurs connectés
+router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
+  try {
+    const connectedFormateur = await getConnectedFormateur(req);
+    if (!connectedFormateur) {
+      return res.json([]);
+    }
+
+    const offerings = await prisma.subjectOffering.findMany({
+      where: {
+        formateurId: connectedFormateur.id,
+        classe: {
+          centerId: req.centerId,
+          academicYear: { isCurrent: true },
+        },
+      },
+      include: {
+        subject: true,
+        category: true,
+        gradePeriod: true,
+        classe: { include: { filiere: true } },
+        _count: { select: { grades: true } },
+      },
+      orderBy: [
+        { gradePeriod: { order: "asc" } },
+        { classe: { label: "asc" } },
+        { subject: { name: "asc" } },
+      ],
+    });
+
+    res.json(
+      offerings.map((o) => ({
+        id: o.id,
+        subjectId: o.subjectId,
+        subjectName: o.subject.name,
+        subjectCode: o.subject.code,
+        categoryName: o.category?.name || "Général",
+        coefficient: o.coefficient,
+        volumeHoraire: o.volumeHoraire,
+        classeId: o.classeId,
+        classeLabel: o.classe.label,
+        filiereName: o.classe.filiere.name,
+        semesterOrder: o.gradePeriod.order,
+        semesterLabel: o.gradePeriod.label,
+        academicYearId: o.classe.academicYearId,
+        hasGrades: (o._count?.grades || 0) > 0,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/classes/:classeId/offerings", verifyJwt, requirePermission("formations.read", "grades.read"), async (req, res, next) => {
   try {
@@ -553,7 +714,7 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
     }
 
     if (targetClasses.length === 0) {
-      return res.status(400).json({ error: "Aucune classe éligible trouvée pour cette opération." });
+      return res.status(400).json({ error: "Aucune classe éligible trouvée." });
     }
 
     let createdCount = 0;
@@ -657,7 +818,7 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
     res.json({
       success: true,
       createdCount,
-      message: `${createdCount} cours instancié(s) avec succès (${mode === "PREVIOUS_SESSION" ? "Reconduction avec formateurs" : "Depuis maquette filière"}).`,
+      message: `${createdCount} cours instancié(s) avec succès.`,
     });
   } catch (err) {
     next(err);
@@ -756,7 +917,7 @@ router.post("/grading-policies", verifyJwt, requirePermission("formations.update
     const norm = parseFloat(normalWeight);
 
     if (Math.abs(cc + norm - 1.0) > 0.001) {
-      return res.status(400).json({ error: "La somme des pourcentages doit être strictement égale à 100% (ex: 30% CC + 70% Examen)." });
+      return res.status(400).json({ error: "La somme des pourcentages doit être strictement égale à 100%." });
     }
 
     const created = await prisma.gradingPolicy.create({
@@ -775,7 +936,7 @@ router.post("/grading-policies", verifyJwt, requirePermission("formations.update
 });
 
 // ============================================================================
-// 7. ANALYTIQUE & KPIS PÉDAGOGIQUES
+// 7. ANALYTIQUE & KPIS PÉDAGOGIQUES DU DASHBOARD (100% DYNAMIQUES)
 // ============================================================================
 router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.read", "formations.read", "students.read"), async (req, res, next) => {
   try {
@@ -784,7 +945,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
 
     const activeYear = await prisma.academicYear.findFirst({
       where: { centerId: req.centerId, isCurrent: true },
-      include: { gradePeriods: { where: { type: "SEMESTRE" }, orderBy: { order: "asc" } } },
+      include: { gradePeriods: { orderBy: { order: "asc" } } },
     });
 
     if (!activeYear) {
@@ -799,6 +960,9 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
           completedOfferings: 0,
           completionRate: 0,
           globalPassRate: null,
+          dataQualityScore: 100,
+          sessionProgressPercent: 0,
+          roomOccupationRate: 0,
         },
         criticalSubjects: [],
         pendingOfferings: [],
@@ -807,6 +971,15 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       });
     }
 
+    // 1. Calcul dynamique de l'avancement temporel de l'année scolaire
+    const startMs = new Date(activeYear.startDate).getTime();
+    const endMs = new Date(activeYear.endDate).getTime();
+    const nowMs = Date.now();
+    const totalSessionMs = Math.max(1, endMs - startMs);
+    const elapsedSessionMs = Math.max(0, Math.min(totalSessionMs, nowMs - startMs));
+    const sessionProgressPercent = Math.round((elapsedSessionMs / totalSessionMs) * 100);
+
+    // 2. Offres de cours
     const offerings = await prisma.subjectOffering.findMany({
       where: {
         classe: { academicYearId: activeYear.id, centerId: req.centerId },
@@ -845,6 +1018,62 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       },
       include: { subject: true },
     });
+
+    // 3. Calcul dynamique de la complétude des dossiers (Data Quality Score)
+    const allInscriptions = await prisma.inscription.findMany({
+      where: {
+        centerId: req.centerId,
+        academicYearId: activeYear.id,
+        student: { deletedAt: null },
+      },
+      include: { student: true },
+    });
+
+    const uniqueStudentsMap = new Map();
+    allInscriptions.forEach((i) => uniqueStudentsMap.set(i.studentId, i.student));
+    const uniqueStudents = Array.from(uniqueStudentsMap.values());
+
+    let completeDossiersCount = 0;
+    uniqueStudents.forEach((st) => {
+      const hasPhoto = Boolean(st.photoPath);
+      const hasGuardian = Boolean(st.guardianPhone || st.guardianName);
+      const hasBirth = Boolean(st.birthDate);
+      const hasDiploma = Boolean(st.entryDiploma);
+
+      if (hasPhoto && hasGuardian && hasBirth && hasDiploma) {
+        completeDossiersCount++;
+      }
+    });
+
+    const dataQualityScore = uniqueStudents.length > 0
+      ? Number(((completeDossiersCount / uniqueStudents.length) * 100).toFixed(1))
+      : 100;
+
+    // 4. Calcul dynamique du taux d'occupation des salles
+    const salles = await prisma.salle.findMany({
+      where: { centerId: req.centerId },
+      include: {
+        classes: {
+          where: { academicYearId: activeYear.id },
+          include: {
+            inscriptions: { where: { student: { deletedAt: null } } },
+          },
+        },
+      },
+    });
+
+    let totalRoomCapacity = 0;
+    let totalSeatedStudents = 0;
+    salles.forEach((s) => {
+      const cap = s.capacity || 0;
+      totalRoomCapacity += cap;
+      const seated = s.classes.reduce((sum, c) => sum + c.inscriptions.length, 0);
+      totalSeatedStudents += seated;
+    });
+
+    const roomOccupationRate = totalRoomCapacity > 0
+      ? Math.min(100, Math.round((totalSeatedStudents / totalRoomCapacity) * 100))
+      : 0;
 
     const totalStudents = classes.reduce((sum, c) => sum + (c.inscriptions?.length || 0), 0);
     const totalOfferings = offerings.length;
@@ -939,6 +1168,8 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       activeYear: {
         id: activeYear.id,
         label: activeYear.label,
+        startDate: activeYear.startDate,
+        endDate: activeYear.endDate,
       },
       isTeacher,
       stats: {
@@ -948,6 +1179,9 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
         completedOfferings,
         completionRate,
         globalPassRate,
+        dataQualityScore,
+        sessionProgressPercent,
+        roomOccupationRate,
       },
       criticalSubjects: criticalSubjects.slice(0, 5),
       pendingOfferings: pendingOfferings.slice(0, 5).map((o) => ({
@@ -965,58 +1199,6 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
   }
 });
 
-// Endpoint contextuel direct pour les formateurs connectés
-router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
-  try {
-    const connectedFormateur = await getConnectedFormateur(req);
-    if (!connectedFormateur) {
-      return res.json([]);
-    }
-
-    const offerings = await prisma.subjectOffering.findMany({
-      where: {
-        formateurId: connectedFormateur.id,
-        classe: {
-          centerId: req.centerId,
-          academicYear: { isCurrent: true },
-        },
-      },
-      include: {
-        subject: true,
-        category: true,
-        gradePeriod: true,
-        classe: { include: { filiere: true } },
-        _count: { select: { grades: true } },
-      },
-      orderBy: [
-        { gradePeriod: { order: "asc" } },
-        { classe: { label: "asc" } },
-        { subject: { name: "asc" } },
-      ],
-    });
-
-    res.json(
-      offerings.map((o) => ({
-        id: o.id,
-        subjectId: o.subjectId,
-        subjectName: o.subject.name,
-        subjectCode: o.subject.code,
-        categoryName: o.category?.name || "Général",
-        coefficient: o.coefficient,
-        volumeHoraire: o.volumeHoraire,
-        classeId: o.classeId,
-        classeLabel: o.classe.label,
-        filiereName: o.classe.filiere.name,
-        semesterOrder: o.gradePeriod.order,
-        semesterLabel: o.gradePeriod.label,
-        academicYearId: o.classe.academicYearId,
-        hasGrades: (o._count?.grades || 0) > 0,
-      }))
-    );
-  } catch (err) {
-    next(err);
-  }
-});
 // ============================================================================
 // 8. MOTEUR DE DÉLIBÉRATION (SEMESTRE & ANNUEL PAR AGRÉGATION S1+S2)
 // ============================================================================
@@ -1460,7 +1642,6 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
           };
         });
 
-        // Correction de la variable : utilisation de computedStudents au lieu de computedList
         const ranked = [...computedStudents]
           .filter((s) => s.hasScore)
           .sort((a, b) => b.moyenne - a.moyenne);

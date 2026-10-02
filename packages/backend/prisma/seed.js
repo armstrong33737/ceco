@@ -4,12 +4,16 @@ const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
-// Rôles système V3
+// Rôles système d'usine protégés (isSystem: true) avec socles de permissions garantis
 const SYSTEM_ROLES = [
-  { name: "Admin", isSystem: true, permissions: ["*"] },
+  { 
+    name: "Admin", 
+    isSystem: true, 
+    permissions: ["*"] 
+  },
   {
     name: "Directeur des Études",
-    isSystem: false,
+    isSystem: true,
     permissions: [
       "formations.read", "formations.create", "formations.update", "formations.delete",
       "grades.read", "grades.create", "grades.update", "grades.validate",
@@ -18,7 +22,7 @@ const SYSTEM_ROLES = [
   },
   {
     name: "Secrétaire",
-    isSystem: false,
+    isSystem: true,
     permissions: [
       "students.read", "students.create", "students.update",
       "formations.read", "grades.read", "bulletins.generate",
@@ -26,7 +30,7 @@ const SYSTEM_ROLES = [
   },
   {
     name: "Formateur",
-    isSystem: false,
+    isSystem: true,
     permissions: [
       "formations.read", "grades.read", "grades.create", "grades.update",
     ],
@@ -34,9 +38,11 @@ const SYSTEM_ROLES = [
 ];
 
 const ADMIN_EMAIL = "admin@local.ceco";
+const SECRETAIRE_EMAIL = "secretaire@local.ceco";
+const PROF_EMAIL = "prof@local.ceco";
 
 async function main() {
-  // 1. Centre local
+  // 1. Initialisation du Centre local
   let center = await prisma.center.findFirst();
   if (!center) {
     center = await prisma.center.create({
@@ -55,7 +61,7 @@ async function main() {
     console.log(`Centre créé : ${center.name} (${center.id})`);
   }
 
-  // 2. Abonnement 60 jours
+  // 2. Initialisation de l'Abonnement (60 jours d'évaluation)
   const existingSubscription = await prisma.subscription.findUnique({ where: { centerId: center.id } });
   if (!existingSubscription) {
     const expiresAt = new Date();
@@ -72,7 +78,7 @@ async function main() {
     });
   }
 
-  // 3. Politique de pondération initiale par défaut (30% CC_TP / 70% NORMALE)
+  // 3. Politique de pondération par défaut (30% CC_TP / 70% NORMALE)
   const existingPolicy = await prisma.gradingPolicy.findFirst({ where: { centerId: center.id } });
   if (!existingPolicy) {
     await prisma.gradingPolicy.create({
@@ -82,18 +88,24 @@ async function main() {
         normalWeight: 0.70,
       },
     });
-    console.log("Politique de pondération par défaut initialisée : 30% CC_TP / 70% NORMALE.");
+    console.log("Pondération par défaut initialisée : 30% CC / 70% Examen.");
   }
 
-  // 4. Rôles système et permissions
+  // 4. Initialisation & Protection des Rôles Système (Garantie du socle fonctionnel)
   for (const roleDef of SYSTEM_ROLES) {
     let role = await prisma.role.findFirst({ where: { centerId: center.id, name: roleDef.name } });
     if (!role) {
       role = await prisma.role.create({
         data: { centerId: center.id, name: roleDef.name, isSystem: roleDef.isSystem },
       });
+    } else if (!role.isSystem && roleDef.isSystem) {
+      await prisma.role.update({
+        where: { id: role.id },
+        data: { isSystem: true },
+      });
     }
 
+    // Réalignement du socle minimal garanti sans supprimer les permissions additionnelles accordées par l'admin
     const existing = await prisma.permission.findMany({ where: { roleId: role.id } });
     const existingActions = existing.map((p) => p.action);
     const missing = roleDef.permissions.filter((a) => !existingActions.includes(a));
@@ -102,11 +114,10 @@ async function main() {
     }
   }
 
-  // 5. Compte admin
+  // 5. Comptes de test de référence
   const adminRole = await prisma.role.findFirst({ where: { centerId: center.id, name: "Admin" } });
-  const adminUser = await prisma.user.findFirst({ where: { centerId: center.id, email: ADMIN_EMAIL } });
-
-  if (!adminUser) {
+  let adminUser = await prisma.user.findFirst({ where: { centerId: center.id, email: ADMIN_EMAIL } });
+  if (!adminUser && adminRole) {
     const hashedPassword = await bcrypt.hash("admin123", 10);
     await prisma.user.create({
       data: {
@@ -122,7 +133,58 @@ async function main() {
     console.log(`Compte admin créé : ${ADMIN_EMAIL} / admin123`);
   }
 
-  console.log("Seed V3 vérifié avec succès.");
+  const secretaireRole = await prisma.role.findFirst({ where: { centerId: center.id, name: "Secrétaire" } });
+  let secretaireUser = await prisma.user.findFirst({ where: { centerId: center.id, email: SECRETAIRE_EMAIL } });
+  if (!secretaireUser && secretaireRole) {
+    const hashedSecPassword = await bcrypt.hash("sec1234", 10);
+    await prisma.user.create({
+      data: {
+        centerId: center.id,
+        roleId: secretaireRole.id,
+        email: SECRETAIRE_EMAIL,
+        password: hashedSecPassword,
+        firstName: "Jeanne",
+        lastName: "Secrétariat",
+        isActive: true,
+      },
+    });
+    console.log(`Compte secrétaire créé : ${SECRETAIRE_EMAIL} / sec1234`);
+  }
+
+  const formateurRole = await prisma.role.findFirst({ where: { centerId: center.id, name: "Formateur" } });
+  let profUser = await prisma.user.findFirst({ where: { centerId: center.id, email: PROF_EMAIL } });
+  if (!profUser && formateurRole) {
+    const hashedProfPassword = await bcrypt.hash("prof1234", 10);
+    profUser = await prisma.user.create({
+      data: {
+        centerId: center.id,
+        roleId: formateurRole.id,
+        email: PROF_EMAIL,
+        password: hashedProfPassword,
+        firstName: "Paul",
+        lastName: "Enseignant",
+        isActive: true,
+      },
+    });
+
+    let formateurProfile = await prisma.formateur.findFirst({ where: { centerId: center.id, userId: profUser.id } });
+    if (!formateurProfile) {
+      await prisma.formateur.create({
+        data: {
+          centerId: center.id,
+          userId: profUser.id,
+          firstName: "Paul",
+          lastName: "Enseignant",
+          email: PROF_EMAIL,
+          phone: "+237 670 000 111",
+          specialite: "Génie Thermique & Climatisation",
+        },
+      });
+    }
+    console.log(`Compte formateur créé : ${PROF_EMAIL} / prof1234`);
+  }
+
+  console.log("Seed CECO vérifié avec succès.");
 }
 
 main()

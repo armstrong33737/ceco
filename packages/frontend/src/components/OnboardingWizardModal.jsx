@@ -79,7 +79,7 @@ const WIZARD_STEPS = [
     description:
       "Exécutez la délibération semestrielle ou annuelle, attribuez les rangs et décisions souveraines du jury, puis imprimez les livrets complets de bulletins et diplômes de fin de formation.",
     keyPoints: [
-      "Bulletins semestriels bilingues avec sous-totaux par groupes et double grille récapitulative.",
+      "Bulletins semestriels bilingues avec sous-totaux par groupes et double grille synoptique.",
       "Relevés de notes annuels synthétisant les semestres S1 et S2 avec mentions.",
       "Diplômes de fin de formation au format Paysage ornemental certifié.",
     ],

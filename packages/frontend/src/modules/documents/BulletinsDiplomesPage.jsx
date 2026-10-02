@@ -20,11 +20,14 @@ import DocumentViewerModal from "./components/DocumentViewerModal";
 import Icon from "../../components/Icon";
 
 const DOCUMENT_TYPES = [
-  { key: "BULLETIN_SEMESTRE", label: "Bulletin Semestriel Bilingue (S1 / S2)", icon: "receipt_long", scope: "SEMESTRE" },
-  { key: "BULLETIN_CC", label: "Bulletin de Contrôle Continu (CC & TP)", icon: "fact_check", scope: "SEMESTRE" },
-  { key: "RELEVE_ANNUEL", label: "Relevé de Notes Annuel (Transcript)", icon: "history_edu", scope: "ANNUEL" },
-  { key: "DIPLOME_FIN_FORMATION", label: "Diplôme de Fin de Formation (Paysage)", icon: "workspace_premium", scope: "ANNUEL" },
-  { key: "ATTESTATION_INSCRIPTION", label: "Certificat de Scolarité", icon: "verified", scope: "ANY" },
+  { key: "BULLETIN_SEMESTRE", label: "Bulletin Semestriel Bilingue (S1 / S2)", icon: "receipt_long", scope: "SEMESTRE", isBatch: true },
+  { key: "BULLETIN_CC", label: "Bulletin de Contrôle Continu (CC & TP)", icon: "fact_check", scope: "SEMESTRE", isBatch: true },
+  { key: "RELEVE_ANNUEL", label: "Relevé de Notes Annuel (Transcript)", icon: "history_edu", scope: "ANNUEL", isBatch: true },
+  { key: "DIPLOME_FIN_FORMATION", label: "Diplôme de Fin de Formation (Paysage)", icon: "workspace_premium", scope: "ANNUEL", isBatch: true },
+  { key: "ATTESTATION_INSCRIPTION", label: "Certificat de Scolarité & d'Inscription", icon: "verified", scope: "ANY", isBatch: true },
+  { key: "PV_CC", label: "PV de Contrôle Continu de Classe (A4 Paysage)", icon: "assignment", scope: "SEMESTRE", isClassPv: true },
+  { key: "PV_SEMESTRE", label: "PV de Délibération Semestrielle (A4 Paysage)", icon: "table_chart", scope: "SEMESTRE", isClassPv: true },
+  { key: "PV_ANNUEL", label: "PV de Délibération Annuelle (A4 Paysage)", icon: "gavel", scope: "ANNUEL", isClassPv: true },
 ];
 
 export default function BulletinsDiplomesPage() {
@@ -89,7 +92,7 @@ export default function BulletinsDiplomesPage() {
   function loadClassResults() {
     if (!selectedClassId || !currentPeriod) return;
     setLoading(true);
-    const scope = docType === "RELEVE_ANNUEL" || docType === "DIPLOME_FIN_FORMATION" ? "ANNUEL" : "SEMESTRE";
+    const scope = docType === "RELEVE_ANNUEL" || docType === "DIPLOME_FIN_FORMATION" || docType === "PV_ANNUEL" ? "ANNUEL" : "SEMESTRE";
     apiFetch(`/deliberations?classeId=${selectedClassId}&gradePeriodId=${currentPeriod.id}&scope=${scope}`)
       .then((data) => setDelibData(data))
       .catch((e) => showToast(e.message, "error"))
@@ -132,30 +135,52 @@ export default function BulletinsDiplomesPage() {
     }
   }
 
+  // Impression de PV de Classe ou Livret complet d'apprenants
   async function handleGenerateBatchPdf() {
     if (!selectedClassId) return;
     setGenerating(true);
     try {
-      const res = await apiFetch("/documents/generate-batch", {
-        method: "POST",
-        body: JSON.stringify({
-          classeId: selectedClassId,
-          type: docType,
-          gradePeriodId: currentPeriod?.id,
-        }),
-      });
+      const isClassPv = DOCUMENT_TYPES.find((d) => d.key === docType)?.isClassPv;
 
-      const token = getToken();
-      const docLabel = DOCUMENT_TYPES.find((d) => d.key === docType)?.label || "Document";
+      let previewUrl = "";
+      let downloadUrl = "";
+      let titleLabel = "";
+
+      if (isClassPv) {
+        // Tirage PV de Classe direct
+        const endpoint = docType === "PV_CC" ? `/grades/classes/${selectedClassId}/cc-sheet` : `/grades/classes/${selectedClassId}/semester-sheet`;
+        const res = await apiFetch(endpoint, {
+          method: "POST",
+          body: JSON.stringify({ gradePeriodId: currentPeriod?.id, forceRegenerate: true }),
+        });
+        const token = getToken();
+        previewUrl = `${API_BASE}${res.previewUrl}?token=${token}`;
+        downloadUrl = `${API_BASE}${res.downloadUrl}?token=${token}`;
+        titleLabel = `Procès-Verbal Officiel — ${delibData?.classe?.label || "Classe"}`;
+      } else {
+        // Livret d'actes compilé
+        const res = await apiFetch("/documents/generate-batch", {
+          method: "POST",
+          body: JSON.stringify({
+            classeId: selectedClassId,
+            type: docType,
+            gradePeriodId: currentPeriod?.id,
+          }),
+        });
+        const token = getToken();
+        previewUrl = `${API_BASE}${res.batchDocument.previewUrl}?token=${token}`;
+        downloadUrl = `${API_BASE}${res.batchDocument.downloadUrl}?token=${token}`;
+        titleLabel = `Livret de Classe (${res.count} documents) — ${delibData?.classe?.label || "Classe"}`;
+      }
 
       setPdfModal({
-        title: `Livret de Classe (${res.count} documents) — ${delibData?.classe?.label || "Classe"} [${docLabel}]`,
-        previewUrl: `${API_BASE}${res.batchDocument.previewUrl}?token=${token}`,
-        downloadUrl: `${API_BASE}${res.batchDocument.downloadUrl}?token=${token}`,
+        title: titleLabel,
+        previewUrl,
+        downloadUrl,
       });
-      showToast(`Livret complet de ${res.count} documents compilé avec succès.`, "success");
+      showToast("Document de classe compilé avec succès.", "success");
     } catch (err) {
-      showToast(err.message || "Échec de génération du livret groupé.", "error");
+      showToast(err.message || "Échec de génération groupée.", "error");
     } finally {
       setGenerating(false);
     }
@@ -173,21 +198,23 @@ export default function BulletinsDiplomesPage() {
     return list;
   }, [delibData, docType]);
 
+  const selectedDocMeta = DOCUMENT_TYPES.find((d) => d.key === docType);
+
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
         contextBadge={<Badge variant="brand">Diplomation &amp; Actes Officiels</Badge>}
-        title="Bulletins Périodiques, Relevés &amp; Diplômes (V4)"
+        title="Bulletins, Relevés, Diplômes &amp; Procès-Verbaux (V4)"
         subtitle="Extraction des résultats délibérés, certification par QR Code autonome hors-ligne et tirage de livrets A4"
         actions={
           <Button
             variant="primary"
             icon="print"
             onClick={handleGenerateBatchPdf}
-            disabled={generating || !selectedClassId || displayStudents.length === 0}
+            disabled={generating || !selectedClassId}
             isLoading={generating}
           >
-            Imprimer Livret de Classe (A4)
+            {selectedDocMeta?.isClassPv ? "Imprimer le PV de Classe (A4)" : "Imprimer Livret de Classe (A4)"}
           </Button>
         }
       />
@@ -195,28 +222,28 @@ export default function BulletinsDiplomesPage() {
       {/* Sélection du Type d'Acte & Filtres Séquentiels */}
       <StructuredPanel
         title="Paramètres d'Émission de l'Acte"
-        subtitle="Choisissez l'acte académique à imprimer et le groupe d'apprenants"
+        subtitle="Choisissez le document ou procès-verbal à imprimer et la classe concernée"
         icon="receipt_long"
       >
         <div className="space-y-4">
           <div>
             <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-2 dark:text-ink-secondary-dark">
-              Type d'Acte Académique à Émettre
+              Type d'Acte Académique ou Procès-Verbal à Émettre
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               {DOCUMENT_TYPES.map((dt) => (
                 <button
                   key={dt.key}
                   type="button"
                   onClick={() => setDocType(dt.key)}
-                  className={`p-3 rounded text-center border transition-colors flex flex-col items-center gap-1.5 ${
+                  className={`p-2.5 rounded text-center border transition-colors flex flex-col items-center justify-between gap-1.5 ${
                     docType === dt.key
                       ? "bg-brand-900 text-white border-brand-900 shadow-xs font-semibold dark:bg-brand-500 dark:border-brand-500"
                       : "bg-surface text-ink-secondary border-border hover:bg-[#F5F7FA] dark:bg-surface-dark dark:border-border-dark dark:text-ink-secondary-dark dark:hover:bg-[#13263A]"
                   }`}
                 >
                   <Icon name={dt.icon} className="text-[20px]" />
-                  <span className="text-caption truncate w-full">{dt.label}</span>
+                  <span className="text-[11px] leading-tight truncate w-full">{dt.label}</span>
                 </button>
               ))}
             </div>
@@ -267,7 +294,7 @@ export default function BulletinsDiplomesPage() {
               <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-1.5 select-none dark:text-ink-secondary-dark">
                 3. Période Évaluée
               </label>
-              {docType === "RELEVE_ANNUEL" || docType === "DIPLOME_FIN_FORMATION" ? (
+              {docType === "RELEVE_ANNUEL" || docType === "DIPLOME_FIN_FORMATION" || docType === "PV_ANNUEL" ? (
                 <div className="h-[40px] flex items-center px-3 rounded bg-[#F5F7FA] border border-border text-body-sm font-mono font-bold text-brand-900 dark:bg-[#07111D] dark:border-border-dark dark:text-brand-500">
                   Année Complète (Cumul S1 + S2)
                 </div>
@@ -317,9 +344,10 @@ export default function BulletinsDiplomesPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 text-caption font-mono text-ink-secondary dark:text-ink-secondary-dark">
-            <Icon name="qr_code_2" className="text-[18px] text-success" />
-            <span>Certification QR Code Autonome Hors-Ligne</span>
+          <div className="flex items-center gap-2">
+            <Button variant="primary" size="sm" icon="print" onClick={handleGenerateBatchPdf} isLoading={generating}>
+              {selectedDocMeta?.isClassPv ? "Générer PV de Classe" : "Générer Livret de Classe"}
+            </Button>
           </div>
         </div>
 

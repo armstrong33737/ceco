@@ -17,6 +17,7 @@ const {
   generateBlankGradeSheetPdf,
   generateCertifiedGradeSheetPdf,
   generateClassSemesterSummaryPdf,
+  generateClassContinuousAssessmentSummaryPdf,
   generateContinuousAssessmentBulletinPdf,
   generateBatchContinuousAssessmentBulletinsPdf,
   generateSemesterBulletinPdf,
@@ -107,7 +108,22 @@ function getDiplomaMention(avg) {
   return "Passable";
 }
 
-// Génération du payload textuel scellé pour le QR Code autonome (lisible hors-ligne par smartphone)
+function getGeneralObservation(avg, hasEliminatory) {
+  if (hasEliminatory) {
+    return "Échec dû à une note éliminatoire (< 08/20) en matière de spécialité. Rattrapage obligatoire.";
+  }
+  if (avg === null || avg === undefined || isNaN(avg)) {
+    return "Résultats académiques en cours de délibération.";
+  }
+  const a = parseFloat(avg);
+  if (a >= 16.0) return "Excellent travail. Félicitations du conseil et encouragements à maintenir ce niveau d'excellence.";
+  if (a >= 14.0) return "Très bon travail. Résultats solides et réguliers. Tableau d'honneur.";
+  if (a >= 12.0) return "Bon travail dans l'ensemble. Résultats satisfaisants, poursuivez dans cette voie.";
+  if (a >= 10.0) return "Travail passable. Des efforts supplémentaires sont attendus pour consolider les acquis.";
+  if (a >= 8.0) return "Résultats insuffisants. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
+  return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
+}
+
 function generateOfflineQrPayload(snapshot, docType) {
   const c = snapshot.center || {};
   const s = snapshot.student || {};
@@ -144,8 +160,8 @@ function generateOfflineQrPayload(snapshot, docType) {
 
 const DEFAULT_FAMILY_CONFIGS = {
   CARTE: {
-    themeColor: "#0B1C30",
-    accentColor: "#5E72E4",
+    themeColor: "#071A2E",
+    accentColor: "#18527A",
     cardTitle: "CARTE D'APPRENANT OFFICIELLE",
     showLogo: true,
     showSeal: true,
@@ -159,7 +175,7 @@ const DEFAULT_FAMILY_CONFIGS = {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
     subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
-    primaryColor: "#0B1C30",
+    primaryColor: "#071A2E",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -175,8 +191,8 @@ const DEFAULT_FAMILY_CONFIGS = {
   EXTERNE: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
-    primaryColor: "#0B1C30",
+    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
+    primaryColor: "#071A2E",
     showLogo: true,
     showSeal: true,
     showWatermark: true,
@@ -249,7 +265,7 @@ router.get("/documents", verifyJwt, requirePermission("students.read", "grades.r
   }
 });
 
-// 2. Gestion des Gabarits par type ou Famille (CARTE, INTERNE, EXTERNE)
+// 2. Gestion des Gabarits
 router.get("/documents/templates/:type", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const { type } = req.params;
@@ -264,7 +280,7 @@ router.get("/documents/templates/:type", verifyJwt, requirePermission("center.re
     if (type.startsWith("CARTE")) {
       return res.json(DEFAULT_FAMILY_CONFIGS.CARTE);
     }
-    if (["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL"].includes(type)) {
+    if (["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type)) {
       return res.json(DEFAULT_FAMILY_CONFIGS.INTERNE);
     }
     return res.json(DEFAULT_FAMILY_CONFIGS.EXTERNE);
@@ -290,7 +306,7 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// Helper pour préparer les données de calcul académique avec intégration transparente du Rattrapage
+// Helper pour préparer les données de calcul académique avec intégration du taux de réussite réel
 async function buildStudentAcademicSnapshot(centerId, studentId, classeId, gradePeriodId) {
   const [center, student, classe, period, offerings, results, grades, delibs, allStudentsInscs] = await Promise.all([
     prisma.center.findUnique({ where: { id: centerId } }),
@@ -350,23 +366,30 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
 
   const currentInsc = student.inscriptions[0] || {};
 
-  // Calcul du profil de classe global (statistiques de tous les apprenants)
+  // Calcul dynamique du profil de tous les élèves de la classe
   const classAverages = [];
   allStudentsInscs.forEach((inscItem) => {
     const stResults = results.filter((r) => r.studentId === inscItem.studentId && offerings.some((o) => o.subjectId === r.subjectId));
     let pts = 0;
     let coeffs = 0;
+    let stHasElim = false;
+
     offerings.forEach((off) => {
       const res = stResults.find((r) => r.subjectId === off.subjectId);
       if (res && res.finalGrade !== null) {
         pts += res.finalGrade * off.coefficient;
         coeffs += off.coefficient;
+        if (off.category?.isEliminatory && res.finalGrade < 8.0) {
+          stHasElim = true;
+        }
       }
     });
+
     if (coeffs > 0) {
       classAverages.push({
         studentId: inscItem.studentId,
         avg: Number((pts / coeffs).toFixed(2)),
+        hasElim: stHasElim,
       });
     }
   });
@@ -377,6 +400,13 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   const classMean = classAverages.length > 0
     ? Number((classAverages.reduce((s, c) => s + c.avg, 0) / classAverages.length).toFixed(2))
     : null;
+
+  // Calcul dynamique du taux de réussite réel
+  const passedStudentsCount = classAverages.filter((c) => c.avg >= 10.0 && !c.hasElim).length;
+  const failedStudentsCount = allStudentsInscs.length - passedStudentsCount;
+  const realSuccessRate = allStudentsInscs.length > 0
+    ? Number(((passedStudentsCount / allStudentsInscs.length) * 100).toFixed(1))
+    : 0.0;
 
   const studentResults = results.filter((r) => r.studentId === student.id);
   const studentGrades = grades.filter((g) => g.studentId === student.id);
@@ -412,7 +442,6 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     const normGrade = subGrades.find((g) => g.evaluationType === "NORMALE");
     const rattGrade = subGrades.find((g) => g.evaluationType === "RATTRAPAGE");
 
-    // Intégration transparente du rattrapage pour les relevés officiels
     let effectiveExamValue = null;
     let isExamAbsent = false;
     let isExamJustified = false;
@@ -426,7 +455,6 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       }
     }
 
-    // Si le rattrapage a été passé et est supérieur, il remplace la note d'examen
     if (rattGrade && !rattGrade.isAbsent) {
       if (effectiveExamValue === null || rattGrade.value > effectiveExamValue) {
         effectiveExamValue = rattGrade.value;
@@ -448,7 +476,6 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       }
     }
 
-    // Rang de l'apprenant dans cette matière spécifique
     const allScoresForSubject = results
       .filter((r) => r.subjectId === off.subjectId && r.finalGrade !== null)
       .map((r) => r.finalGrade)
@@ -483,7 +510,6 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   const studentOverallAverage = grandTotalCoeff > 0 ? Number((grandTotalPoints / grandTotalCoeff).toFixed(2)) : null;
   const studentRank = studentOverallAverage !== null ? classAverages.findIndex((c) => c.studentId === student.id) + 1 : null;
 
-  // Résolution souveraine de la décision du jury
   let juryDecision = currentInsc.status || "en_cours";
   const activeDelib = delibs[0];
   const stDelib = activeDelib?.studentResults?.find((d) => d.studentId === student.id);
@@ -491,7 +517,6 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     juryDecision = stDelib.decision;
   }
 
-  // Figeage de toutes les signatures scannées en Base64
   const allSignatures = getAllCenterSignaturesBase64(centerId);
 
   return {
@@ -551,14 +576,18 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       classAverage: classMean,
       highestAverage: highestClassAvg,
       lowestAverage: lowestClassAvg,
+      passedCount: passedStudentsCount,
+      failedCount: failedStudentsCount,
+      classSuccessRate: realSuccessRate,
       hasEliminatory,
       decision: juryDecision,
       mention: getDiplomaMention(studentOverallAverage),
+      generalObservation: getGeneralObservation(studentOverallAverage, hasEliminatory),
     },
   };
 }
 
-// 3. Génération d'un document individuel avec Figeage Immuable Strict
+// 3. Génération d'un document individuel
 router.post("/documents/generate", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, gradePeriodId, forceRegenerate = false } = req.body || {};
@@ -566,7 +595,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
 
     await ensureStorageTree(req.centerId);
 
-    // 1. Recherche du document existant
     const existingDoc = await prisma.document.findFirst({
       where: {
         centerId: req.centerId,
@@ -578,9 +606,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       orderBy: { generatedAt: "desc" },
     });
 
-    // 2. Si le document existe déjà et que forceRegenerate est faux :
     if (!forceRegenerate && existingDoc) {
-      // A. Le fichier est déjà sur disque -> Servir immédiatement sans aucun recalcul
       if (fs.existsSync(existingDoc.filePath)) {
         return res.json({
           success: true,
@@ -596,7 +622,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
         });
       }
 
-      // B. Le fichier a disparu du disque -> Reconstitution STRICTE depuis le snapshot figé
       fs.mkdirSync(path.dirname(existingDoc.filePath), { recursive: true });
       const snap = existingDoc.renderSnapshot;
       const offlinePayload = snap?.offlineQrPayload || generateOfflineQrPayload(snap, existingDoc.type);
@@ -634,7 +659,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       });
     }
 
-    // 3. Génération initiale OU Forçage explicite par l'utilisateur
     let targetClasseId = classeId;
     if (!targetClasseId) {
       const st = await prisma.student.findUnique({
@@ -650,7 +674,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     });
     const templateConfig = template?.config || (
       type.startsWith("CARTE") ? DEFAULT_FAMILY_CONFIGS.CARTE :
-      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
+      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
       DEFAULT_FAMILY_CONFIGS.EXTERNE
     );
 
@@ -757,7 +781,7 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
     });
     const templateConfig = template?.config || (
       type.startsWith("CARTE") ? DEFAULT_FAMILY_CONFIGS.CARTE :
-      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
+      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
       DEFAULT_FAMILY_CONFIGS.EXTERNE
     );
 
@@ -837,7 +861,7 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
   }
 });
 
-// 5. Prévisualisation directe & Reconstitution Fidèle depuis Snapshot
+// 5. Prévisualisation directe & Reconstitution depuis Snapshot
 router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
   try {
     const doc = await prisma.document.findFirst({
@@ -860,6 +884,8 @@ router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
         await generateCertifiedGradeSheetPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
       } else if (doc.type === "PV_SEMESTRE" || doc.type === "PV_ANNUEL") {
         await generateClassSemesterSummaryPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
+      } else if (doc.type === "PV_CC") {
+        await generateClassContinuousAssessmentSummaryPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
       } else if (doc.type === "BULLETIN_CC") {
         await generateContinuousAssessmentBulletinPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
       } else if (doc.type === "BULLETIN_SEMESTRE") {
@@ -898,7 +924,7 @@ router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 7. Page publique d'authentification en ligne en repli
+// 7. Page publique d'authentification en ligne via QR Code
 router.get("/verify/:token", async (req, res, next) => {
   try {
     const token = req.params.token;
@@ -914,8 +940,8 @@ router.get("/verify/:token", async (req, res, next) => {
         <!DOCTYPE html>
         <html lang="fr"><head><meta charset="utf-8"><title>CECO — Non Authentifié</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>body{font-family:sans-serif;background:#FEEBEF;color:#F5365C;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:16px;}
-        .card{background:white;padding:28px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;text-align:center;border:1.5px solid #F5365C;}</style>
+        <style>body{font-family:sans-serif;background:#FDECEC;color:#C73B3B;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:16px;}
+        .card{background:white;padding:28px;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.1);max-width:400px;text-align:center;border:1.5px solid #C73B3B;}</style>
         </head><body><div class="card"><h2>⚠️ Document Non Authentifié</h2><p>Ce document n'existe pas dans le registre cryptographique CECO ou a fait l'objet d'une altération.</p></div></body></html>
       `);
     }
@@ -926,32 +952,32 @@ router.get("/verify/:token", async (req, res, next) => {
     if (doc.type === "BULLETIN_SEMESTRE" || doc.type === "BULLETIN_CC") {
       detailsHtml = `
         <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#5E72E4;">${snap.student?.matricule || "—"}</span></div>
+        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
         <div class="row"><span class="label">Classe :</span><span class="val">${snap.classe?.label || "—"}</span></div>
         <div class="row"><span class="label">Période :</span><span class="val">${snap.period?.label || "Semestre"}</span></div>
-        <div class="row"><span class="label">Moyenne Générale :</span><span class="val" style="color:#5E72E4;font-size:15px;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
-        <div class="row"><span class="label">Rang :</span><span class="val">${snap.totals?.rank ? `${snap.totals.rank}e sur ${snap.totals.totalStudents}` : "—"}</span></div>
+        <div class="row"><span class="label">Moyenne Générale :</span><span class="val" style="color:#071A2E;font-size:15px;font-weight:bold;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
+        <div class="row"><span class="label">Rang de Classe :</span><span class="val">${snap.totals?.rank ? `${snap.totals.rank}e sur ${snap.totals.totalStudents}` : "—"}</span></div>
       `;
     } else if (doc.type === "RELEVE_ANNUEL") {
       detailsHtml = `
         <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#5E72E4;">${snap.student?.matricule || "—"}</span></div>
+        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
         <div class="row"><span class="label">Filière :</span><span class="val">${snap.classe?.filiereName || "—"}</span></div>
-        <div class="row"><span class="label">Moyenne Annuelle :</span><span class="val" style="color:#5E72E4;font-size:15px;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
-        <div class="row"><span class="label">Décision du Jury :</span><span class="val" style="color:#2DCE89;text-transform:uppercase;">${snap.totals?.decision || "—"}</span></div>
+        <div class="row"><span class="label">Moyenne Annuelle :</span><span class="val" style="color:#071A2E;font-size:15px;font-weight:bold;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
+        <div class="row"><span class="label">Décision du Jury :</span><span class="val" style="color:#16805A;text-transform:uppercase;font-weight:bold;">${snap.totals?.decision || "—"}</span></div>
       `;
     } else if (doc.type === "DIPLOME_FIN_FORMATION") {
       detailsHtml = `
         <div class="row"><span class="label">Récipiendaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#5E72E4;">${snap.student?.matricule || "—"}</span></div>
+        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
         <div class="row"><span class="label">Filière :</span><span class="val">${snap.classe?.filiereName || "—"}</span></div>
         <div class="row"><span class="label">Cycle :</span><span class="val">${snap.classe?.programTypeCode || "DQP"}</span></div>
-        <div class="row"><span class="label">Mention :</span><span class="val" style="color:#2DCE89;font-weight:bold;">${snap.totals?.mention || "Passable"}</span></div>
+        <div class="row"><span class="label">Mention :</span><span class="val" style="color:#16805A;font-weight:bold;">${snap.totals?.mention || "Passable"}</span></div>
       `;
     } else {
       detailsHtml = `
         <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#5E72E4;">${snap.student?.matricule || "—"}</span></div>
+        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
         <div class="row"><span class="label">Classe / Filière :</span><span class="val">${snap.inscription?.filiereName || snap.classe?.label || "—"}</span></div>
       `;
     }
@@ -961,21 +987,21 @@ router.get("/verify/:token", async (req, res, next) => {
       <html lang="fr"><head><meta charset="utf-8"><title>CECO — Authentification Officielle</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F8F9FF;color:#0B1C30;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;}
-        .card{background:white;padding:28px;border-radius:12px;box-shadow:0 8px 30px rgba(94,114,228,0.15);max-width:480px;width:100%;border:1px solid #E2E5F1;}
-        .badge{display:inline-block;background:#E6FAF1;color:#2DCE89;padding:6px 12px;border-radius:6px;font-weight:bold;font-size:12px;margin-bottom:12px;border:1px solid rgba(45,206,137,0.25);}
-        .row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #EEF1FD;font-size:13px;}
-        .label{color:#43474F;} .val{font-weight:bold;text-align:right;}
-        .header{border-bottom:2px solid #5E72E4;padding-bottom:14px;margin-bottom:16px;text-align:center;}
-        .footer{font-size:10px;color:#94A3B8;text-align:center;margin-top:20px;font-family:monospace;word-break:break-all;line-height:1.4;}
-        .ceco-foot{margin-top:16px;text-align:center;font-size:11px;font-weight:bold;color:#5E72E4;}
+        body{font-family:-apple-system,BlinkMacSystemFont,"IBM Plex Sans",sans-serif;background:#F5F7FA;color:#0B1C30;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box;}
+        .card{background:white;padding:28px;border-radius:4px;box-shadow:0 8px 30px rgba(7,26,46,0.12);max-width:480px;width:100%;border:1px solid #D9E0E8;}
+        .badge{display:inline-block;background:#E8F6F0;color:#16805A;padding:6px 12px;border-radius:2px;font-weight:bold;font-size:12px;margin-bottom:12px;border:1px solid rgba(22,128,90,0.25);}
+        .row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #D9E0E8;font-size:13px;}
+        .label{color:#526173;} .val{font-weight:bold;text-align:right;}
+        .header{border-bottom:2px solid #071A2E;padding-bottom:14px;margin-bottom:16px;text-align:center;}
+        .footer{font-size:10px;color:#738195;text-align:center;margin-top:20px;font-family:monospace;word-break:break-all;line-height:1.4;}
+        .ceco-foot{margin-top:16px;text-align:center;font-size:11px;font-weight:bold;color:#071A2E;}
       </style>
       </head><body>
       <div class="card">
         <div class="header">
           <div class="badge">✓ Document Officiel Authentique</div>
-          <h2 style="margin:0;font-size:17px;color:#0B1C30;">${doc.center.name}</h2>
-          <p style="margin:4px 0 0;font-size:11px;color:#43474F;">Agrément : ${doc.center.registrationNumber || "MINEFOP"} • ${doc.center.city || "Cameroun"}</p>
+          <h2 style="margin:0;font-size:17px;color:#071A2E;">${doc.center.name}</h2>
+          <p style="margin:4px 0 0;font-size:11px;color:#526173;">Agrément : ${doc.center.registrationNumber || "MINEFOP"} • ${doc.center.city || "Cameroun"}</p>
         </div>
         <div class="row"><span class="label">Type de document :</span><span class="val">${doc.type}</span></div>
         ${detailsHtml}

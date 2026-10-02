@@ -337,7 +337,7 @@ router.delete("/promotions/:id", verifyJwt, requirePermission("center.delete", "
   }
 });
 
-// 4. SESSIONS ACADÉMIQUES : VALIDATION & CASCADE DE VERROUILLAGE
+// 4. SESSIONS ACADÉMIQUES
 router.get("/academic-years", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const years = await prisma.academicYear.findMany({
@@ -361,13 +361,11 @@ router.get("/academic-years", verifyJwt, requirePermission("center.read", "cente
   }
 });
 
-// Création d'une session avec validation stricte du format YYYY-YYYY et durée >= 8 mois
 router.post("/academic-years", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
   try {
     const { label, startDate, endDate, isCurrent } = req.body || {};
     const valid = validateAcademicYearPayload(label, startDate, endDate);
 
-    // Règle d'unicité : 1 seule session préparatoire (UPCOMING) en avance
     if (!isCurrent) {
       const existingUpcoming = await prisma.academicYear.findFirst({
         where: { centerId: req.centerId, status: "UPCOMING" },
@@ -399,7 +397,6 @@ router.post("/academic-years", verifyJwt, requirePermission("center.create", "ce
 
     const gradePeriods = await ensureYearGradePeriods(req.centerId, createdYear);
 
-    // Auto-création des classes Niveau 1 et Promotions
     const filieres = await prisma.filiere.findMany({
       where: { centerId: req.centerId },
       include: { niveaux: { where: { order: 1 } } },
@@ -444,7 +441,7 @@ router.put("/academic-years/:id", verifyJwt, requirePermission("center.update"),
     if (!existing) return res.status(404).json({ error: "Session introuvable." });
 
     if (existing.status === "CLOSED") {
-      return res.status(403).json({ error: `Impossible de modifier la session "${existing.label}" car elle est officiellement clôturée et archivée.` });
+      return res.status(403).json({ error: `Impossible de modifier la session "${existing.label}" car elle est officiellement clôturée.` });
     }
 
     const valid = validateAcademicYearPayload(label || existing.label, startDate || existing.startDate, endDate || existing.endDate);
@@ -464,7 +461,6 @@ router.put("/academic-years/:id", verifyJwt, requirePermission("center.update"),
   }
 });
 
-// Activation d'une session (Interdiction de réactiver une session passée CLOSED)
 router.put("/academic-years/:id/set-current", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const target = await prisma.academicYear.findFirst({
@@ -475,7 +471,7 @@ router.put("/academic-years/:id/set-current", verifyJwt, requirePermission("cent
 
     if (target.status === "CLOSED") {
       return res.status(403).json({
-        error: `Impossible de réactiver la session passée "${target.label}". Les sessions clôturées sont des archives scellées à vie.`,
+        error: `Impossible de réactiver la session passée "${target.label}". Les sessions clôturées sont des archives scellées.`,
       });
     }
 
@@ -501,7 +497,6 @@ router.put("/academic-years/:id/set-current", verifyJwt, requirePermission("cent
   }
 });
 
-// Clôture formelle d'une session avec VERROUILLAGE EN CASCADE de toutes les notes et délibérations
 router.put("/academic-years/:id/close", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const year = await prisma.academicYear.findFirst({
@@ -515,17 +510,14 @@ router.put("/academic-years/:id/close", verifyJwt, requirePermission("center.upd
     const periodIds = year.gradePeriods.map((p) => p.id);
 
     await prisma.$transaction([
-      // 1. Clôture de l'année
       prisma.academicYear.update({
         where: { id: year.id },
         data: { isCurrent: false, status: "CLOSED" },
       }),
-      // 2. Cascade de verrouillage de toutes les notes de matière de cette session
       prisma.subjectResult.updateMany({
         where: { centerId: req.centerId, gradePeriodId: { in: periodIds } },
         data: { isLocked: true },
       }),
-      // 3. Audit log
       prisma.auditLog.create({
         data: {
           centerId: req.centerId,
@@ -704,7 +696,6 @@ router.post("/academic-years/:newYearId/transition", verifyJwt, requirePermissio
         }
       }
 
-      // Clôture et verrouillage en cascade de la session précédente
       await tx.academicYear.updateMany({
         where: { id: previousYearId, centerId: req.centerId },
         data: { isCurrent: false, status: "CLOSED" },
@@ -853,7 +844,7 @@ router.delete("/classes/:id", verifyJwt, requirePermission("center.delete", "cen
   }
 });
 
-// 6. SALLES
+// 6. SALLES & IMPORTATION CSV
 router.get("/salles", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const salles = await prisma.salle.findMany({
@@ -875,6 +866,61 @@ router.post("/salles", verifyJwt, requirePermission("center.create", "center.upd
       data: { centerId: req.centerId, name: name.trim(), capacity: capacity ? parseInt(capacity) : null },
     });
     res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Importation en masse de salles & ateliers par CSV
+router.post("/salles/import", verifyJwt, requirePermission("center.create", "center.update"), async (req, res, next) => {
+  try {
+    const { salles: items } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Liste de salles vide." });
+    }
+
+    let createdCount = 0;
+    const errors = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const rowNum = i + 2;
+      if (!item.name || !item.name.trim()) {
+        errors.push({ row: rowNum, reason: "Nom de salle manquant" });
+        continue;
+      }
+
+      const cleanName = item.name.trim();
+      const existing = await prisma.salle.findFirst({
+        where: { centerId: req.centerId, name: { equals: cleanName, mode: "insensitive" } },
+      });
+
+      if (existing) {
+        errors.push({ row: rowNum, reason: `Une salle portant le nom "${cleanName}" existe déjà` });
+        continue;
+      }
+
+      try {
+        await prisma.salle.create({
+          data: {
+            centerId: req.centerId,
+            name: cleanName,
+            capacity: item.capacity ? parseInt(item.capacity, 10) : null,
+          },
+        });
+        createdCount++;
+      } catch (err) {
+        errors.push({ row: rowNum, reason: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      createdCount,
+      totalCount: items.length,
+      errors,
+      message: `${createdCount} salle(s) et atelier(s) importé(s) avec succès sur ${items.length} lignes.`,
+    });
   } catch (err) {
     next(err);
   }

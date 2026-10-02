@@ -12,7 +12,7 @@ export default function Sidebar() {
   const canManageAcademicStructure = hasPermission(["formations.create", "formations.update", "center.update"]);
   const canSeeGradesEntry = hasPermission(["grades.read", "grades.create"]);
   const canDeliberate = hasPermission("grades.validate");
-  const canGenerateBulletins = hasPermission(["bulletins.generate", "grades.read"]);
+  const canGenerateBulletins = hasPermission(["bulletins.generate"]);
   const canManageCurriculum = hasPermission(["formations.create", "formations.update", "center.update"]);
   const canManageAdminSettings = hasPermission(["center.update", "users.read", "roles.read", "backups.read"]);
 

@@ -149,18 +149,40 @@ export default function DeliberationsPage() {
     }
   }
 
-  async function handlePrintPvLandscape(forceRegenerate = false) {
+  // Impression des PVs de Délibération (Semestrielle ou Annuelle)
+  async function handlePrintPvDeliberation(forceRegenerate = false) {
     try {
       const res = await apiFetch(`/grades/classes/${selectedClassId}/semester-sheet`, {
         method: "POST",
         body: JSON.stringify({ gradePeriodId: selectedPeriodId, forceRegenerate }),
       });
       const token = getToken();
+      const titleLabel = scope === "ANNUEL" ? "PV de Délibération Annuelle (A4 Paysage)" : "PV de Délibération Semestrielle (A4 Paysage)";
       setPdfModal({
-        title: `PV de Délibération (A4 Paysage) — ${delibData?.classe?.label}`,
+        title: `${titleLabel} — ${delibData?.classe?.label}`,
         previewUrl: `${API_BASE}${res.previewUrl}?token=${token}`,
         downloadUrl: `${API_BASE}${res.downloadUrl}?token=${token}`,
-        periodId: selectedPeriodId,
+        pvType: "deliberation",
+        reused: res.reused,
+      });
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+
+  // Impression du PV du Contrôle Continu (PV_CC)
+  async function handlePrintPvContinuousAssessment(forceRegenerate = false) {
+    try {
+      const res = await apiFetch(`/grades/classes/${selectedClassId}/cc-sheet`, {
+        method: "POST",
+        body: JSON.stringify({ gradePeriodId: selectedPeriodId, forceRegenerate }),
+      });
+      const token = getToken();
+      setPdfModal({
+        title: `PV du Contrôle Continu CC (A4 Paysage) — ${delibData?.classe?.label}`,
+        previewUrl: `${API_BASE}${res.previewUrl}?token=${token}`,
+        downloadUrl: `${API_BASE}${res.downloadUrl}?token=${token}`,
+        pvType: "cc",
         reused: res.reused,
       });
     } catch (err) {
@@ -348,7 +370,7 @@ export default function DeliberationsPage() {
                       {delibData.classe?.label} — Délibération {scope === "ANNUEL" ? "Annuelle (Cumul S1 + S2)" : delibData.period?.label}
                     </h3>
                     <Badge variant={delibData.isDeliberated ? "success" : "warning"}>
-                      {delibData.isDeliberated ? "Scellé en Base" : "Brouillon en Cours"}
+                      {delibData.isDeliberated ? "Scellé" : "Brouillon"}
                     </Badge>
                   </div>
                   <p className="text-caption text-ink-muted mt-0.5">
@@ -356,10 +378,16 @@ export default function DeliberationsPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" icon="print" onClick={() => handlePrintPvLandscape(false)}>
-                    PV Paysage
+                {/* BOUTONS D'IMPRESSION DÉDIÉS AUX DIFFÉRENTS PVS DE CLASSE */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button variant="secondary" size="sm" icon="print" onClick={() => handlePrintPvContinuousAssessment(false)}>
+                    PV Contrôle Continu (CC)
                   </Button>
+
+                  <Button variant="secondary" size="sm" icon="print" onClick={() => handlePrintPvDeliberation(false)}>
+                    {scope === "ANNUEL" ? "PV Délibération Annuelle" : "PV Délibération Semestre"}
+                  </Button>
+
                   <Button variant="primary" size="sm" icon="lock" onClick={handleSaveManualDeliberation} isLoading={saving}>
                     Valider &amp; Sceller
                   </Button>
@@ -541,14 +569,17 @@ export default function DeliberationsPage() {
         )}
       </Modal>
 
-      {/* Visionneuse PDF */}
+      {/* Visionneuse PDF Unifiée */}
       <DocumentViewerModal
         isOpen={Boolean(pdfModal)}
         title={pdfModal?.title}
         previewUrl={pdfModal?.previewUrl}
         downloadUrl={pdfModal?.downloadUrl}
         isReused={pdfModal?.reused}
-        onForceRegenerate={() => handlePrintPvLandscape(true)}
+        onForceRegenerate={() => {
+          if (pdfModal?.pvType === "cc") handlePrintPvContinuousAssessment(true);
+          else handlePrintPvDeliberation(true);
+        }}
         onClose={() => setPdfModal(null)}
       />
     </motion.div>

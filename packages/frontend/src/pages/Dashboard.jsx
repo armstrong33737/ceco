@@ -64,6 +64,9 @@ export default function Dashboard() {
     completedOfferings: 0,
     completionRate: 0,
     globalPassRate: null,
+    dataQualityScore: 100,
+    sessionProgressPercent: 0,
+    roomOccupationRate: 0,
   };
 
   const criticalSubjects = kpis?.criticalSubjects || [];
@@ -92,7 +95,7 @@ export default function Dashboard() {
           </h1>
           <p className="text-body text-ink-secondary mt-0.5 dark:text-ink-secondary-dark">
             {isTeacher
-              ? "Cockpit Enseignant — Suivi de vos cours assignés et saisie de vos bordereaux d'évaluation."
+              ? "Cockpit Enseignant — Suivi de vos cours assignés et saisie directe de vos bordereaux d'évaluation."
               : "Tour de contrôle académique, supervision des saisies de notes et pilotage de l'établissement."}
           </p>
         </div>
@@ -120,9 +123,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 2. GRILLE DE CARTES MÉTRIQUES DATA MODULE (SORA 650) */}
+      {/* 2. GRILLE DE 5 CARTES MÉTRIQUES DATA MODULE (SORA 650) DYNAMIQUES */}
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${isTeacher ? "lg:grid-cols-4" : "lg:grid-cols-5"} gap-4`}>
-        {/* Avancement Notes */}
+        {/* Avancement Saisies */}
         <DataModule
           label={isTeacher ? "Mes Cours Évalués" : "Avancement Saisies"}
           value={`${stats.completionRate}%`}
@@ -153,7 +156,7 @@ export default function Dashboard() {
           />
         )}
 
-        {/* Effectif Global / Assigné */}
+        {/* Effectif Inscrits */}
         <DataModule
           label={isTeacher ? "Apprenants Assignés" : "Effectif Inscrits"}
           value={stats.totalStudents}
@@ -163,27 +166,27 @@ export default function Dashboard() {
           action={!isTeacher ? <Link to="/apprenants" className="text-caption font-semibold text-brand-900 hover:underline dark:text-brand-500">Registre →</Link> : null}
         />
 
-        {/* Complétude / Copies Restantes */}
+        {/* Complétude Dossiers Réelle (Data Quality Score) */}
         {!isTeacher ? (
           <DataModule
             label="Complétude Dossiers"
-            value="98.4%"
-            subtext="Matricules & tuteurs enregistrés"
+            value={`${stats.dataQualityScore}%`}
+            subtext="Photos, tuteurs & diplômes conformes"
             icon="verified"
-            badge={<Badge variant="success" withDot>Conforme</Badge>}
+            badge={<Badge variant={stats.dataQualityScore >= 90 ? "success" : "warning"} withDot>{stats.dataQualityScore >= 90 ? "Conforme" : "Incomplet"}</Badge>}
             action={<Link to="/apprenants" className="text-caption font-semibold text-brand-900 hover:underline dark:text-brand-500">Vérifier →</Link>}
           />
         ) : (
           <DataModule
             label="Bordereaux Complétés"
             value={`${stats.completedOfferings} / ${stats.totalOfferings}`}
-            subtext="Bordereaux prêts"
+            subtext="Bordereaux scellés"
             icon="assignment_turned_in"
             badge={<Badge variant={stats.completedOfferings === stats.totalOfferings ? "success" : "warning"} withDot>{stats.completedOfferings === stats.totalOfferings ? "Complet" : "Incomplet"}</Badge>}
           />
         )}
 
-        {/* Licence Locale (Admin seulement) */}
+        {/* Licence & Sauvegardes */}
         {!isTeacher && (
           <DataModule
             label="Validité Système"
@@ -196,19 +199,19 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* 3. COCKPIT ENSEIGNANT DÉDIÉ : LISTE DE SES COURS ASSIGNÉS & ACCÈS DIRECT */}
+      {/* 3. VUE ENSEIGNANT OU VUE DIRECTION */}
       {isTeacher ? (
+        /* VUE ENSEIGNANT : ACCÈS DIRECT AUX COURS ASSIGNÉS */
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Colonne Gauche : Liste de ses cours assignés avec bouton Saisir direct (7 cols) */}
           <div className="lg:col-span-7 space-y-6">
             <StructuredPanel
               title="Mes Cours Assignés &amp; Accès Rapide aux Bordereaux"
-              subtitle="Cliquez sur un cours pour ouvrir directement la grille de saisie des notes"
+              subtitle="Cliquez sur un cours pour ouvrir directement la grille de saisie"
               icon="auto_stories"
               headerAction={<Badge variant="brand">{myOfferings.length} cours actif(s)</Badge>}
             >
               {myOfferings.length === 0 ? (
-                <p className="text-caption text-ink-muted text-center py-6">Aucun cours ne vous est actuellement assigné.</p>
+                <p className="text-caption text-ink-muted text-center py-6">Aucun cours ne vous est actuellement assigné pour cette session.</p>
               ) : (
                 <div className="divide-y divide-border -mx-6 -my-4 dark:divide-border-dark">
                   {myOfferings.map((o) => (
@@ -241,7 +244,6 @@ export default function Dashboard() {
             </StructuredPanel>
           </div>
 
-          {/* Colonne Droite : Rappel des Consignes & Modalités d'Évaluation (5 cols) */}
           <div className="lg:col-span-5 space-y-6">
             <StructuredPanel
               title="Consignes d'Évaluation &amp; Pondérations"
@@ -272,7 +274,7 @@ export default function Dashboard() {
           </div>
         </div>
       ) : (
-        /* VUE DIRECTION / ADMINISTRATEUR : ALERTES CRITIQUES, BORDEREAUX & CHARGES */
+        /* VUE DIRECTION / ADMINISTRATEUR : CENTRE D'ACTIONS, BORDEREAUX & STATS */
         <>
           <StructuredPanel
             title="Centre d'Actions &amp; Alertes Décisionnelles"
@@ -329,6 +331,7 @@ export default function Dashboard() {
           </StructuredPanel>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Colonne Gauche : Bordereaux en attente */}
             <div className="lg:col-span-7 space-y-6">
               <StructuredPanel
                 title="Bordereaux en Attente de Saisie"
@@ -353,9 +356,31 @@ export default function Dashboard() {
                   </div>
                 )}
               </StructuredPanel>
+
+              {criticalSubjects.length > 0 && (
+                <StructuredPanel
+                  title="Matières Critiques (Alertes Pédagogiques)"
+                  subtitle="Disciplines nécessitant un soutien ou un rattrapage prioritaire"
+                  icon="warning"
+                >
+                  <div className="divide-y divide-border -mx-6 -my-4 dark:divide-border-dark">
+                    {criticalSubjects.slice(0, 5).map((cs, idx) => (
+                      <div key={idx} className="px-6 py-3 flex items-center justify-between hover:bg-[#F5F7FA] dark:hover:bg-[#13263A]/40 transition-colors">
+                        <div>
+                          <span className="font-semibold text-ink-primary dark:text-white block">{cs.subjectName}</span>
+                          <span className="text-caption text-ink-muted">{cs.classeLabel} • {cs.semesterLabel} • {cs.formateurName}</span>
+                        </div>
+                        <Badge variant="error">{cs.failureRate}% d'échec (Moy : {cs.average}/20)</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </StructuredPanel>
+              )}
             </div>
 
+            {/* Colonne Droite : Chronologie de la session, Charge & Occupation */}
             <div className="lg:col-span-5 space-y-6">
+              {/* Échéancier réel de la session */}
               <StructuredPanel
                 title="Chronologie de la Session Active"
                 subtitle={`Session : ${kpis?.activeYear?.label || "2026-2027"}`}
@@ -364,28 +389,65 @@ export default function Dashboard() {
                 <div className="space-y-3">
                   <div>
                     <div className="flex justify-between text-caption font-semibold mb-1">
-                      <span className="text-ink-secondary dark:text-ink-secondary-dark">Progression Temporelle</span>
-                      <span className="font-mono text-brand-900 dark:text-brand-500">62% écoulée</span>
+                      <span className="text-ink-secondary dark:text-ink-secondary-dark">Progression Temporelle Réelle</span>
+                      <span className="font-mono text-brand-900 dark:text-brand-500">{stats.sessionProgressPercent}% écoulée</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-[#E2E8F0] overflow-hidden dark:bg-[#24384B]">
-                      <div className="h-full bg-brand-900 rounded-full w-[62%] dark:bg-brand-500" />
+                      <div
+                        className="h-full bg-brand-900 rounded-full transition-all duration-300 dark:bg-brand-500"
+                        style={{ width: `${stats.sessionProgressPercent}%` }}
+                      />
                     </div>
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-border text-body-sm dark:border-border-dark">
                     <div className="flex items-center justify-between text-caption">
-                      <span className="text-ink-secondary dark:text-ink-secondary-dark">• Fin des Saisies CC1</span>
-                      <span className="font-mono font-semibold text-warning">Dans 6 jours</span>
+                      <span className="text-ink-secondary dark:text-ink-secondary-dark">Taux d'occupation des espaces :</span>
+                      <span className="font-mono font-bold text-brand-900 dark:text-brand-500">{stats.roomOccupationRate}%</span>
                     </div>
                     <div className="flex items-center justify-between text-caption">
-                      <span className="text-ink-secondary dark:text-ink-secondary-dark">• Examens de Session Normale</span>
-                      <span className="font-mono font-semibold text-ink-primary dark:text-white">12 Octobre 2026</span>
-                    </div>
-                    <div className="flex items-center justify-between text-caption">
-                      <span className="text-ink-secondary dark:text-ink-secondary-dark">• Jurys de Délibération S1</span>
-                      <span className="font-mono font-semibold text-brand-900 dark:text-brand-500">20 Octobre 2026</span>
+                      <span className="text-ink-secondary dark:text-ink-secondary-dark">Période officielle :</span>
+                      <span className="font-mono text-ink-primary dark:text-white">
+                        {kpis?.activeYear?.startDate ? new Date(kpis.activeYear.startDate).toLocaleDateString("fr-FR") : "—"} au {kpis?.activeYear?.endDate ? new Date(kpis.activeYear.endDate).toLocaleDateString("fr-FR") : "—"}
+                      </span>
                     </div>
                   </div>
+                </div>
+              </StructuredPanel>
+
+              {/* Charge du Corps Professoral */}
+              <StructuredPanel
+                title="Charge du Corps Professoral"
+                subtitle="Suivi des volumes horaires dispensés"
+                icon="badge"
+                headerAction={<Link to="/pedagogie/formateurs" className="text-caption font-semibold text-brand-900 hover:underline dark:text-brand-500">Annuaire →</Link>}
+              >
+                <div className="space-y-2.5">
+                  {teacherLoads.slice(0, 4).map((t) => (
+                    <div key={t.id} className="p-3 rounded bg-surface border border-border flex items-center justify-between text-body-sm dark:bg-surface-dark dark:border-border-dark">
+                      <div>
+                        <span className="font-semibold text-ink-primary dark:text-white block">{t.name}</span>
+                        <span className="text-caption text-ink-muted">{t.specialite} • {t.totalCourses} cours</span>
+                      </div>
+                      <span className="font-mono font-semibold text-brand-900 dark:text-brand-500">{t.totalHours} h</span>
+                    </div>
+                  ))}
+                </div>
+              </StructuredPanel>
+
+              {/* Effectifs par Promotion */}
+              <StructuredPanel
+                title="Effectifs par Promotion (Cohortes)"
+                subtitle="Répartition des apprenants en cours de cursus"
+                icon="school"
+              >
+                <div className="divide-y divide-border -mx-6 -my-4 dark:divide-border-dark">
+                  {cohortDistribution.slice(0, 4).map((c) => (
+                    <div key={c.id} className="px-6 py-2.5 flex items-center justify-between text-body-sm">
+                      <span className="text-ink-primary font-medium dark:text-white truncate max-w-[200px]">{c.label}</span>
+                      <Badge variant="brand">{c.studentCount} élèves</Badge>
+                    </div>
+                  ))}
                 </div>
               </StructuredPanel>
             </div>

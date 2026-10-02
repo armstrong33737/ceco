@@ -8,10 +8,12 @@ const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
 const { assertActiveAcademicYear, assertEditableAcademicYear } = require("../middleware/academicYearGuard");
+const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 const {
   generateBlankGradeSheetPdf,
   generateCertifiedGradeSheetPdf,
   generateClassSemesterSummaryPdf,
+  generateClassContinuousAssessmentSummaryPdf,
 } = require("../services/documentPdfService");
 
 const router = express.Router();
@@ -29,15 +31,16 @@ function getCenterLogoBase64(centerId, logoExt) {
 
 function getCenterSealBase64(centerId) {
   const brandingDir = centerStoragePath(centerId, "settings/branding");
-  if (!fs.existsSync(brandingDir)) return null;
-  const files = fs.readdirSync(brandingDir);
-  const sealFile = files.find((f) => f.startsWith("seal."));
-  if (sealFile) {
-    const ext = path.extname(sealFile).replace(".", "").toLowerCase();
-    const mime = ext === "svg" ? "image/svg+xml" : ext === "png" ? "image/png" : "image/jpeg";
-    return `data:${mime};base64,${fs.readFileSync(path.join(brandingDir, sealFile)).toString("base64")}`;
+  if (fs.existsSync(brandingDir)) {
+    const files = fs.readdirSync(brandingDir);
+    const sealFile = files.find((f) => f.startsWith("seal."));
+    if (sealFile) {
+      const ext = path.extname(sealFile).replace(".", "").toLowerCase();
+      const mime = ext === "svg" ? "image/svg+xml" : ext === "png" ? "image/png" : "image/jpeg";
+      return `data:${mime};base64,${fs.readFileSync(path.join(brandingDir, sealFile)).toString("base64")}`;
+    }
   }
-  return null;
+  return getDefaultSealBase64();
 }
 
 function getRoleSignatureBase64(centerId, roleKey) {
@@ -57,7 +60,7 @@ async function getConnectedFormateur(req) {
   });
 }
 
-// 1. Grille de Saisie Matricielle avec Scope Formateur
+// 1. Grille de Saisie Matricielle avec Scoping & Sanitisation
 router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.create"), async (req, res, next) => {
   try {
     const { offeringId, classeId, gradePeriodId, subjectId } = req.query || {};
@@ -116,7 +119,7 @@ router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.c
     // Sécurité Enseignant : Un formateur ne peut consulter que ses propres cours
     const connectedFormateur = await getConnectedFormateur(req);
     if (connectedFormateur && offering.formateurId && offering.formateurId !== connectedFormateur.id) {
-      return res.status(403).json({ error: "Accès refusé : vous n'êtes pas l'enseignant désigné pour ce cours." });
+      return res.status(403).json({ error: "Accès refusé : vous n'êtes pas l'enseignant assigné à ce cours." });
     }
 
     const [grades, results, policy] = await Promise.all([
@@ -153,6 +156,7 @@ router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.c
           isCurrentSession: offering.gradePeriod.academicYear?.isCurrent || false,
         },
       },
+      // Sanitisation : transmission exclusive des champs nécessaires à l'évaluation
       students: offering.classe.inscriptions.map((i) => ({
         id: i.student.id,
         matricule: i.student.matricule,
@@ -439,10 +443,9 @@ router.post("/grades/unlock", verifyJwt, requirePermission("center.update"), asy
     });
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
 
-    // REJET INCONDITIONNEL SUR SESSION FERMÉE
     if (offering.classe.academicYear?.status === "CLOSED" || (!offering.classe.academicYear?.isCurrent && offering.classe.academicYear?.status !== "UPCOMING")) {
       return res.status(403).json({
-        error: `Opération refusée : la session "${offering.classe.academicYear?.label}" est officiellement clôturée et scellée à vie. Aucun déverrouillage de notes n'est autorisé sur les archives historiques.`,
+        error: `Opération refusée : la session "${offering.classe.academicYear?.label}" est officiellement clôturée. Aucun déverrouillage n'est autorisé sur les archives historiques.`,
       });
     }
 
@@ -484,24 +487,28 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
     const { forceRegenerate = false } = req.body || {};
     await ensureStorageTree(req.centerId);
 
-    const offering = await prisma.subjectOffering.findUnique({
-      where: { id: offeringId },
-      include: {
-        subject: true,
-        category: true,
-        gradePeriod: { include: { academicYear: true } },
-        formateur: true,
-        classe: {
-          include: {
-            inscriptions: {
-              where: { student: { deletedAt: null } },
-              include: { student: true },
-              orderBy: { student: { lastName: "asc" } },
+    const [offering, center, template] = await Promise.all([
+      prisma.subjectOffering.findUnique({
+        where: { id: offeringId },
+        include: {
+          subject: true,
+          category: true,
+          gradePeriod: { include: { academicYear: true } },
+          formateur: true,
+          classe: {
+            include: {
+              inscriptions: {
+                where: { student: { deletedAt: null } },
+                include: { student: true },
+                orderBy: { student: { lastName: "asc" } },
+              },
             },
           },
         },
-      },
-    });
+      }),
+      prisma.center.findUnique({ where: { id: req.centerId } }),
+      prisma.documentTemplate.findUnique({ where: { centerId_type: { centerId: req.centerId, type: "BORDEREAU_VIERGE" } } }),
+    ]);
 
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
 
@@ -520,7 +527,6 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
       });
     }
 
-    const center = await prisma.center.findUnique({ where: { id: req.centerId } });
     const yearFolder = (offering.gradePeriod.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
     const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
@@ -546,6 +552,7 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
         formateurName: offering.formateur ? `${offering.formateur.firstName} ${offering.formateur.lastName}` : null,
       },
       students: offering.classe.inscriptions.map((i) => i.student),
+      templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
     await generateBlankGradeSheetPdf(snapshot, fullPath);
@@ -579,14 +586,14 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
   }
 });
 
-// 6. Bordereau Officiel Certifié Scellé par QR Code
+// 6. Bordereau Officiel Certifié Scellé par QR Code (PV_MATIERE)
 router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { offeringId } = req.params;
     const { forceRegenerate = false } = req.body || {};
     await ensureStorageTree(req.centerId);
 
-    const [center, offering, grades, results] = await Promise.all([
+    const [center, offering, grades, results, template] = await Promise.all([
       prisma.center.findUnique({ where: { id: req.centerId } }),
       prisma.subjectOffering.findUnique({
         where: { id: offeringId },
@@ -609,6 +616,7 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
       }),
       prisma.grade.findMany({ where: { subjectOfferingId: offeringId, centerId: req.centerId } }),
       prisma.subjectResult.findMany({ where: { subjectId: (await prisma.subjectOffering.findUnique({ where: { id: offeringId } }))?.subjectId, centerId: req.centerId } }),
+      prisma.documentTemplate.findUnique({ where: { centerId_type: { centerId: req.centerId, type: "PV_MATIERE" } } }),
     ]);
 
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
@@ -674,7 +682,10 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
         city: center.city,
         logoDataUrl: getCenterLogoBase64(req.centerId, center.logo),
         sealDataUrl: getCenterSealBase64(req.centerId),
-        signatures: { directeur: getRoleSignatureBase64(req.centerId, "directeur") },
+        signatures: {
+          directeur: getRoleSignatureBase64(req.centerId, "directeur"),
+          formateur: getRoleSignatureBase64(req.centerId, "formateur") || getRoleSignatureBase64(req.centerId, "directeur"),
+        },
       },
       offering: {
         classeLabel: offering.classe.label,
@@ -687,6 +698,7 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
       rows,
       stats,
       qrToken,
+      templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
     const yearFolder = (offering.gradePeriod.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -720,7 +732,7 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
   }
 });
 
-// 7. PV de délibération de classe (A4 Paysage)
+// 7. PV de Délibération de Classe (A4 Paysage - PV_SEMESTRE & PV_ANNUEL)
 router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { classeId } = req.params;
@@ -735,6 +747,7 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
         where: { id: classeId, centerId: req.centerId },
         include: {
           filiere: true,
+          niveau: true,
           academicYear: true,
           inscriptions: {
             where: { student: { deletedAt: null } },
@@ -752,22 +765,24 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
     const isAnnual = period.type === "ANNUEL";
     const docType = isAnnual ? "PV_ANNUEL" : "PV_SEMESTRE";
 
-    const offerings = await prisma.subjectOffering.findMany({
-      where: {
-        classeId,
-        ...(!isAnnual ? { gradePeriodId } : {}),
-      },
-      include: { subject: true, category: true, gradePeriod: true },
-      orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
-    });
-
-    const results = await prisma.subjectResult.findMany({
-      where: {
-        centerId: req.centerId,
-        subjectId: { in: offerings.map((o) => o.subjectId) },
-        studentId: { in: classe.inscriptions.map((i) => i.studentId) },
-      },
-    });
+    const [template, offerings, results] = await Promise.all([
+      prisma.documentTemplate.findUnique({ where: { centerId_type: { centerId: req.centerId, type: docType } } }),
+      prisma.subjectOffering.findMany({
+        where: {
+          classeId,
+          ...(!isAnnual ? { gradePeriodId } : {}),
+        },
+        include: { subject: true, category: true, gradePeriod: true },
+        orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
+      }),
+      prisma.subjectResult.findMany({
+        where: {
+          centerId: req.centerId,
+          subjectId: { in: (await prisma.subjectOffering.findMany({ where: { classeId }, select: { subjectId: true } })).map((o) => o.subjectId) },
+          studentId: { in: classe.inscriptions.map((i) => i.studentId) },
+        },
+      }),
+    ]);
 
     const existingDoc = await prisma.document.findFirst({
       where: { centerId: req.centerId, type: docType, classeId, qrToken: { contains: period.id } },
@@ -851,6 +866,7 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
       offerings,
       summaries,
       qrToken,
+      templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
     const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -861,6 +877,152 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
     const fullPath = path.join(docFolder, fileName);
 
     await generateClassSemesterSummaryPdf(snapshot, verificationUrl, fullPath);
+
+    const doc = await prisma.document.create({
+      data: {
+        centerId: req.centerId,
+        type: docType,
+        classeId: classe.id,
+        filePath: fullPath,
+        fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
+        renderSnapshot: snapshot,
+        qrToken,
+      },
+    });
+
+    res.json({
+      success: true,
+      previewUrl: `/documents/${doc.id}/preview`,
+      downloadUrl: `/documents/${doc.id}/download`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 8. PV Récapitulatif du Contrôle Continu de Classe (PV_CC - A4 Paysage)
+router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
+  try {
+    const { classeId } = req.params;
+    const { gradePeriodId, forceRegenerate = false } = req.body || {};
+    await ensureStorageTree(req.centerId);
+
+    const [center, classe, period] = await Promise.all([
+      prisma.center.findUnique({ where: { id: req.centerId } }),
+      prisma.classe.findFirst({
+        where: { id: classeId, centerId: req.centerId },
+        include: {
+          filiere: true,
+          academicYear: true,
+          inscriptions: {
+            where: { student: { deletedAt: null } },
+            include: { student: true },
+            orderBy: { student: { lastName: "asc" } },
+          },
+        },
+      }),
+      gradePeriodId ? prisma.gradePeriod.findUnique({ where: { id: gradePeriodId } }) : null,
+    ]);
+
+    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
+
+    const docType = "PV_CC";
+    const template = await prisma.documentTemplate.findUnique({ where: { centerId_type: { centerId: req.centerId, type: docType } } });
+
+    const offerings = await prisma.subjectOffering.findMany({
+      where: {
+        classeId,
+        ...(gradePeriodId ? { gradePeriodId } : {}),
+      },
+      include: { subject: true, category: true, gradePeriod: true },
+      orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
+    });
+
+    const results = await prisma.subjectResult.findMany({
+      where: {
+        centerId: req.centerId,
+        subjectId: { in: offerings.map((o) => o.subjectId) },
+        studentId: { in: classe.inscriptions.map((i) => i.studentId) },
+      },
+    });
+
+    const existingDoc = await prisma.document.findFirst({
+      where: { centerId: req.centerId, type: docType, classeId, qrToken: { contains: gradePeriodId || "cc" } },
+      orderBy: { generatedAt: "desc" },
+    });
+
+    if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
+      return res.json({
+        success: true,
+        reused: true,
+        previewUrl: `/documents/${existingDoc.id}/preview`,
+        downloadUrl: `/documents/${existingDoc.id}/download`,
+      });
+    }
+
+    const cuid = crypto.randomBytes(8).toString("hex");
+    const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key").update(`${cuid}:${classeId}`).digest("hex").slice(0, 16);
+    const qrToken = `${cuid}?t=${hmacSig}&cls=${classeId}&doc=PV_CC`;
+    const verificationUrl = `${req.protocol}://${req.get("host")}/verify/${qrToken}`;
+
+    const summaries = classe.inscriptions.map((insc) => {
+      const st = insc.student;
+      const stResults = results.filter((r) => r.studentId === st.id);
+
+      let totalCcPoints = 0;
+      let evaluatedCoeff = 0;
+
+      const subjectDetails = offerings.map((off) => {
+        const res = stResults.find((r) => r.subjectId === off.subjectId);
+        const ccVal = res && res.ccAverage !== null && res.ccAverage !== undefined ? res.ccAverage : null;
+        if (ccVal !== null) {
+          totalCcPoints += ccVal * off.coefficient;
+          evaluatedCoeff += off.coefficient;
+        }
+        return {
+          subjectId: off.subjectId,
+          ccAverage: ccVal,
+        };
+      });
+
+      const ccAverage = evaluatedCoeff > 0 ? Number((totalCcPoints / evaluatedCoeff).toFixed(2)) : null;
+
+      return {
+        student: { matricule: st.matricule, firstName: st.firstName, lastName: st.lastName },
+        subjects: subjectDetails,
+        ccAverage,
+      };
+    });
+
+    const sorted = [...summaries].filter((s) => s.ccAverage !== null).sort((a, b) => b.ccAverage - a.ccAverage);
+    summaries.forEach((s) => {
+      s.rank = s.ccAverage !== null ? sorted.findIndex((st) => st.student.matricule === s.student.matricule) + 1 : null;
+    });
+
+    const snapshot = {
+      center: {
+        name: center.name,
+        registrationNumber: center.registrationNumber,
+        city: center.city,
+        logoDataUrl: getCenterLogoBase64(req.centerId, center.logo),
+        sealDataUrl: getCenterSealBase64(req.centerId),
+      },
+      classe: { label: classe.label, filiereName: classe.filiere.name },
+      periodLabel: period?.label || "Contrôle Continu",
+      offerings,
+      summaries,
+      qrToken,
+      templateConfig: template?.config || { primaryColor: "#071A2E" },
+    };
+
+    const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
+    if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
+
+    const fileName = `PV_CC_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${Date.now()}.pdf`;
+    const fullPath = path.join(docFolder, fileName);
+
+    await generateClassContinuousAssessmentSummaryPdf(snapshot, verificationUrl, fullPath);
 
     const doc = await prisma.document.create({
       data: {

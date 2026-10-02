@@ -24,37 +24,48 @@ function safeDrawImage(doc, imgBuf, x, y, options = {}) {
   }
 }
 
+// Moteur d'observation / visa automatique gradué selon les performances réelles
+function getGeneralObservation(overallAvg, hasEliminatory) {
+  if (hasEliminatory) {
+    return "Échec dû à une note éliminatoire (< 08/20) en matière de spécialité. Rattrapage obligatoire.";
+  }
+  if (overallAvg === null || overallAvg === undefined || isNaN(overallAvg)) {
+    return "Résultats académiques en cours de délibération.";
+  }
+  const avg = parseFloat(overallAvg);
+  if (avg >= 16.0) return "Excellent travail. Félicitations du conseil et encouragements à maintenir ce niveau d'excellence.";
+  if (avg >= 14.0) return "Très bon travail. Résultats solides et réguliers. Tableau d'honneur.";
+  if (avg >= 12.0) return "Bon travail dans l'ensemble. Résultats satisfaisants, poursuivez dans cette voie.";
+  if (avg >= 10.0) return "Travail passable. Des efforts supplémentaires sont attendus pour consolider les acquis.";
+  if (avg >= 8.0) return "Résultats insuffisants. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
+  return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
+}
+
 // 1. Dessin de l'Avatar / Photo d'Identité avec Silhouette Vectorielle de Secours
 function drawStudentAvatar(doc, photoBuf, x, y, width = 60, height = 60) {
   doc.save();
-  // Fond doux pour l'avatar
   doc.rect(x, y, width, height).fillAndStroke("#F1F5F9", "#CBD5E1");
 
   if (photoBuf) {
-    // clipper la zone pour forcer un rendu carré 4x4 centré
     try {
       doc.save();
       doc.rect(x + 1, y + 1, width - 2, height - 2).clip();
-      // dessiner l'image centrée et redimensionnée pour tenir la zone
       safeDrawImage(doc, photoBuf, x + 1, y + 1, { fit: [width - 2, height - 2], align: "center", valign: "center" });
-      doc.restore(); // restore clip
-      doc.restore(); // restore outer save
+      doc.restore();
+      doc.restore();
       return;
     } catch (err) {
       try { doc.restore(); } catch (e) {}
     }
   }
 
-  // Silhouette vectorielle stylisée (Bonhomme tête + buste) si pas de photo
   const cx = x + width / 2;
   const headRadius = width * 0.20;
   const headCy = y + height * 0.35;
 
   doc.fillColor("#94A3B8");
-  // Tête
   doc.circle(cx, headCy, headRadius).fill();
 
-  // Buste (arc de cercle doux clippé)
   doc.save();
   doc.rect(x + 2, y + 2, width - 4, height - 4).clip();
   doc.circle(cx, y + height * 1.05, width * 0.44).fill();
@@ -65,12 +76,12 @@ function drawStudentAvatar(doc, photoBuf, x, y, width = 60, height = 60) {
 
 // 2. En-tête Bilingue Dynamique avec Centrage Automatique des Logos et Bandeau Arrêté
 function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY = 20, customWidth = 545, startX = 25) {
-  const primaryColor = tmpl?.primaryColor || "#004080";
+  const primaryColor = tmpl?.primaryColor || "#071A2E";
   const headerLeft = tmpl?.headerLeft || "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE";
   const headerRight = tmpl?.headerRight || "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING";
 
   const colSideWidth = 195;
-  const colCenterWidth = customWidth - (colSideWidth * 2); // ~155pt
+  const colCenterWidth = customWidth - (colSideWidth * 2);
   const centerColX = startX + colSideWidth;
   const rightColX = startX + customWidth - colSideWidth;
 
@@ -93,7 +104,6 @@ function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY 
   const showSeal = tmpl?.showSeal !== false && Boolean(sealBuf);
 
   if (showLogo && showSeal) {
-    // 2 logos actifs : côte à côte
     const imgSize = 40;
     const gap = 8;
     const totalImgW = (imgSize * 2) + gap;
@@ -102,14 +112,13 @@ function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY 
     safeDrawImage(doc, sealBuf, imgStartX, startY - 2, { fit: [imgSize, imgSize], align: "center" });
     safeDrawImage(doc, logoBuf, imgStartX + imgSize + gap, startY - 2, { fit: [imgSize, imgSize], align: "center" });
   } else if (showLogo || showSeal) {
-    // 1 seul logo actif : centrage parfait
     const activeBuf = showSeal ? sealBuf : logoBuf;
     const imgSize = 46;
     const imgStartX = centerColX + (colCenterWidth - imgSize) / 2;
     safeDrawImage(doc, activeBuf, imgStartX, startY - 3, { fit: [imgSize, imgSize], align: "center" });
   }
 
-  // Téléphones / Contacts sous les logos
+  // Téléphones sous les logos
   if (center.phone) {
     doc.fillColor("#475569").fontSize(6.5).font("Helvetica-Bold").text(`Tél : ${center.phone}`, centerColX, startY + 44, {
       width: colCenterWidth,
@@ -117,13 +126,13 @@ function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY 
     });
   }
 
-  // Nom de l'établissement en grand
+  // Nom de l'établissement
   doc.fillColor(primaryColor).fontSize(10.5).font("Helvetica-Bold").text(
     (center.name || "CENTRE DE FORMATION PROFESSIONNELLE").toUpperCase(),
     startX, startY + 56, { width: customWidth, align: "center" }
   );
 
-  // Bandeau Arrêté Ministériel d'Agrément
+  // Arrêté d'agrément
   if (center.registrationNumber) {
     doc.rect(startX, startY + 70, customWidth, 13).fillAndStroke("#F8FAFC", "#CBD5E1");
     doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text(
@@ -141,8 +150,8 @@ function drawWatermark(doc, tmpl, logoBuf, sealBuf, x, y, size = 260) {
   if (!wmBuf) return;
 
   doc.save();
-  doc.opacity(Number(tmpl?.watermarkOpacity) || 0.06);
-  safeDrawImage(doc, wmBuf, x, y, { width: size, fit: [size, size]});
+  doc.opacity(Number(tmpl?.watermarkOpacity) || 0.08);
+  safeDrawImage(doc, wmBuf, x, y, { width: size, fit: [size, size] });
   doc.restore();
   doc.opacity(1.0);
 }
@@ -167,11 +176,11 @@ function drawCropMarks(doc, x, y, w, h) {
   doc.restore();
 }
 
-function drawDiplomaOrnamentalBorders(doc, width = 842, height = 595) {
+function drawDiplomaOrnamentalBorders(doc, width = 842, height = 595, primaryColor = "#071A2E") {
   doc.save();
-  doc.rect(18, 18, width - 36, height - 36).lineWidth(2).strokeColor("#004080").stroke();
+  doc.rect(18, 18, width - 36, height - 36).lineWidth(2).strokeColor(primaryColor).stroke();
   doc.rect(22, 22, width - 44, height - 44).lineWidth(0.8).strokeColor("#D4AF37").stroke();
-  doc.rect(25, 25, width - 50, height - 50).lineWidth(0.4).strokeColor("#004080").stroke();
+  doc.rect(25, 25, width - 50, height - 50).lineWidth(0.4).strokeColor(primaryColor).stroke();
 
   const cornerSize = 22;
   const corners = [
@@ -188,14 +197,21 @@ function drawDiplomaOrnamentalBorders(doc, width = 842, height = 595) {
   doc.restore();
 }
 
-// 3. Double Grille Synoptique Récapitulative (Moyennes à Gauche, Profil & Décision à Droite)
-function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, height = 62) {
+// 3. Double Grille Synoptique Récapitulative (Taux réel calculé & Observation dynamique)
+function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, height = 58) {
   const colLeftW = width * 0.44;
   const colRightW = width * 0.54;
   const gap = width * 0.02;
   const colRightX = startX + colLeftW + gap;
 
-  // Colonne Gauche - Moyennes
+  // Calcul du taux de réussite réel de la classe
+  const successRateText = totals.classSuccessRate !== undefined && totals.classSuccessRate !== null
+    ? `${totals.classSuccessRate}%`
+    : totals.totalStudents > 0 && totals.passedCount !== undefined
+    ? `${((totals.passedCount / totals.totalStudents) * 100).toFixed(1)}%`
+    : "—";
+
+  // Colonne Gauche - Moyennes & Statistiques
   doc.rect(startX, startY, colLeftW, height).fillAndStroke("#FFFFFF", "#CBD5E1");
 
   const rowH = height / 5;
@@ -204,42 +220,47 @@ function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, he
     { label: "PLUS FORTE MOYENNE", val: totals.highestAverage !== null ? `${totals.highestAverage} / 20` : "—" },
     { label: "PLUS FAIBLE MOYENNE", val: totals.lowestAverage !== null ? `${totals.lowestAverage} / 20` : "—" },
     { label: "MOYENNE DE CLASSE", val: totals.classAverage !== null ? `${totals.classAverage} / 20` : "—" },
-    { label: "TAUX DE RÉUSSITE", val: totals.classAverage !== null ? `${(totals.totalStudents > 0 ? ((totals.totalStudents - (totals.failedCount || 0)) / totals.totalStudents) * 100 : 100).toFixed(1)}%` : "100%" },
+    { label: "TAUX DE RÉUSSITE CLASSE", val: successRateText },
   ];
 
   leftRows.forEach((r, idx) => {
     const ry = startY + idx * rowH;
     if (idx > 0) doc.moveTo(startX, ry).lineTo(startX + colLeftW, ry).lineWidth(0.5).strokeColor("#E2E8F0").stroke();
 
-    doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text(r.label, startX + 6, ry + 3.5);
+    doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text(r.label, startX + 6, ry + 3);
 
     if (r.highlight) {
       doc.rect(startX + colLeftW - 55, ry + 1, 53, rowH - 2).fill("#FFF275");
-      doc.fillColor("#004080").fontSize(7.5).font("Helvetica-Bold").text(r.val, startX + colLeftW - 55, ry + 3, { width: 53, align: "center" });
+      doc.fillColor("#071A2E").fontSize(7.5).font("Helvetica-Bold").text(r.val, startX + colLeftW - 55, ry + 2.5, { width: 53, align: "center" });
     } else {
-      doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text(r.val, startX + colLeftW - 55, ry + 3.5, { width: 53, align: "center" });
+      doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text(r.val, startX + colLeftW - 55, ry + 3, { width: 53, align: "center" });
     }
   });
 
-  // Colonne Droite - Profil & Décision
+  // Colonne Droite - Profil, Décision & Observation
   doc.rect(colRightX, startY, colRightW, height).fillAndStroke("#FFFFFF", "#CBD5E1");
 
   // Rang & Mention (Ligne 1)
   doc.rect(colRightX, startY, colRightW / 2, rowH).fill("#F8FAFC");
-  doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text("RANG :", colRightX + 4, startY + 3.5);
+  doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text("RANG :", colRightX + 4, startY + 3);
   doc.rect(colRightX + 35, startY + 1, 35, rowH - 2).fill("#FFF275");
-  doc.fillColor("#004080").fontSize(7).font("Helvetica-Bold").text(totals.rank ? `${totals.rank}e / ${totals.totalStudents}` : "—", colRightX + 35, startY + 3, { width: 35, align: "center" });
+  doc.fillColor("#071A2E").fontSize(7).font("Helvetica-Bold").text(totals.rank ? `${totals.rank}e / ${totals.totalStudents}` : "—", colRightX + 35, startY + 2.5, { width: 35, align: "center" });
 
   doc.rect(colRightX + colRightW / 2, startY, colRightW / 2, rowH).fill("#F8FAFC");
-  doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text("MENTION :", colRightX + colRightW / 2 + 4, startY + 3.5);
-  doc.fillColor("#004080").fontSize(6.5).font("Helvetica-Bold").text((totals.mention || "PASSABLE").toUpperCase(), colRightX + colRightW / 2 + 42, startY + 3.5);
+  doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text("MENTION :", colRightX + colRightW / 2 + 4, startY + 3);
+  doc.fillColor("#071A2E").fontSize(6.5).font("Helvetica-Bold").text((totals.mention || "PASSABLE").toUpperCase(), colRightX + colRightW / 2 + 42, startY + 3);
 
   // Décision Souveraine du Jury (Ligne 2)
-  const decColor = totals.decision === "admis" || totals.decision === "valide" || totals.decision === "diplome" || (totals.overallAverage >= 10.0 && !totals.hasEliminatory) ? "#2DCE89" : "#F5365C";
-  const decLabel = totals.decision === "diplome" ? "DIPLÔMÉ(E)" : (totals.overallAverage >= 10.0 && !totals.hasEliminatory ? "ADMIS(E) / VALIDÉ(E)" : "AJOURNÉ(E) / ÉCHOUÉ(E)");
+  const isPassed = totals.decision === "admis" || totals.decision === "valide" || totals.decision === "diplome" || (totals.overallAverage >= 10.0 && !totals.hasEliminatory);
+  const decColor = isPassed ? "#16805A" : "#C73B3B";
+  const decLabel = totals.decision === "diplome"
+    ? "DIPLÔMÉ(E)"
+    : isPassed
+    ? "ADMIS(E) / VALIDÉ(E)"
+    : "AJOURNÉ(E) / ÉCHOUÉ(E)";
 
   doc.rect(colRightX, startY + rowH, colRightW, rowH).fill("#F1F5F9");
-  doc.fillColor(decColor).fontSize(7.5).font("Helvetica-Bold").text(`DÉCISION DU JURY : ${decLabel}`, colRightX, startY + rowH + 3, { width: colRightW, align: "center" });
+  doc.fillColor(decColor).fontSize(7.5).font("Helvetica-Bold").text(`DÉCISION DU JURY : ${decLabel}`, colRightX, startY + rowH + 2.5, { width: colRightW, align: "center" });
 
   // Discipline (Ligne 3)
   const discColW = colRightW / 4;
@@ -247,27 +268,30 @@ function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, he
   discItems.forEach((d, didx) => {
     const dx = colRightX + didx * discColW;
     doc.rect(dx, startY + rowH * 2, discColW, rowH).strokeColor("#E2E8F0").stroke();
-    doc.fillColor("#64748B").fontSize(5.5).font("Helvetica").text(d, dx, startY + rowH * 2 + 3.5, { width: discColW, align: "center" });
+    doc.fillColor("#64748B").fontSize(5.5).font("Helvetica").text(d, dx, startY + rowH * 2 + 3, { width: discColW, align: "center" });
   });
 
-  // Observations / Visa (Ligne 4 & 5)
+  // Observations & Visa Dynamique (Lignes 4 & 5)
   doc.rect(colRightX, startY + rowH * 3, colRightW, rowH * 2).strokeColor("#CBD5E1").stroke();
-  doc.fillColor("#475569").fontSize(5.5).font("Helvetica-Bold").text("OBSERVATIONS / VISA DE L'ÉTABLISSEMENT :", colRightX + 4, startY + rowH * 3 + 2.5);
-  doc.fillColor("#0F172A").fontSize(6).font("Helvetica-Oblique").text("Travail régulier et assidu. Poursuivez dans cette voie d'excellence.", colRightX + 4, startY + rowH * 3 + 11);
+  doc.fillColor("#475569").fontSize(5.5).font("Helvetica-Bold").text("OBSERVATIONS / VISA DE L'ÉTABLISSEMENT :", colRightX + 4, startY + rowH * 3 + 2);
+
+  const observationText = totals.generalObservation || getGeneralObservation(totals.overallAverage, totals.hasEliminatory);
+  doc.fillColor("#0F172A").fontSize(6).font("Helvetica-Oblique").text(observationText, colRightX + 4, startY + rowH * 3 + 10, {
+    width: colRightW - 8,
+    lineGap: 1.2,
+  });
 }
 
-// 4. Rendu des Signataires et du QR Code Autonome Hors-Ligne (Ultra-Compact)
+// 4. Rendu des Signataires et du QR Code Autonome Hors-Ligne
 function renderSignatoriesAndQrCompact(doc, snapshot, qrBuf, signatories = [], startY = 708, customWidth = 545, startX = 25) {
   const { center = {}, templateConfig: tmpl = {} } = snapshot;
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
-  // Date et Lieu
   doc.fillColor("#0F172A").fontSize(7).font("Helvetica").text(
     `Fait à ${center.city || "Bafoussam"}, le ${new Date().toLocaleDateString("fr-FR")}`,
     startX + customWidth - 200, startY - 10, { width: 200, align: "right" }
   );
 
-  // QR Code Hors-Ligne à gauche (si présent)
   if (qrBuf) {
     safeDrawImage(doc, qrBuf, startX, startY, { width: 48, height: 48 });
     doc.fillColor("#64748B").fontSize(4.5).font("Courier").text(snapshot.qrToken || "", startX, startY + 50, { width: 90 });
@@ -293,7 +317,6 @@ function renderSignatoriesAndQrCompact(doc, snapshot, qrBuf, signatories = [], s
     }
   });
 
-  // Ligne légale de bas de page
   doc.rect(startX, 775, customWidth, 0.5).stroke("#CBD5E1");
   doc.fillColor("#64748B").fontSize(6).font("Helvetica").text(
     tmpl.footerLegal || "Document officiel certifié conforme • Toute rature annule la validité du présent acte.",
@@ -319,8 +342,8 @@ async function generateStudentCardPdf(snapshot, offlinePayload, outputPath) {
       const sigBuf = bufferFromDataUrl(center.signatures?.directeur);
       const qrBuf = await QRCode.toBuffer(offlinePayload || snapshot.qrToken || "CECO-CARD", { margin: 0, width: 85 });
 
-      const themeColor = tmpl.themeColor || "#004080";
-      const accentColor = tmpl.accentColor || "#5E72E4";
+      const themeColor = tmpl.themeColor || "#071A2E";
+      const accentColor = tmpl.accentColor || "#18527A";
 
       // RECTO
       doc.rect(0, 0, 243, 153).fill("#FFFFFF");
@@ -383,7 +406,7 @@ async function generateStudentCardPdf(snapshot, offlinePayload, outputPath) {
       if (sigBuf) safeDrawImage(doc, sigBuf, 160, 78, { fit: [65, 24], align: "center" });
       doc.fillColor("#0F172A").fontSize(5.5).font("Helvetica-Bold").text(tmpl.signatoryTitle || center.directorTitle || "Le Directeur Général", 150, 106, { width: 85, align: "center" });
 
-      doc.rect(0, 132, 243, 21).fill("#0B1C30");
+      doc.rect(0, 132, 243, 21).fill("#071A2E");
       doc.fillColor("#94A3B8").fontSize(4.5).font("Helvetica").text("Propriété exclusive du centre.", 8, 138, { width: 155 });
       doc.fillColor("#FFFFFF").fontSize(6).font("Helvetica-Bold").text("PROPULSÉ PAR CECO", 175, 140);
 
@@ -439,48 +462,45 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputP
           const photoBuf = bufferFromDataUrl(snap.student.photoDataUrl);
 
           doc.rect(x, y, cardW, cardH).lineWidth(0.5).strokeColor("#CBD5E1").fillAndStroke("#FFFFFF", "#CBD5E1");
-
           drawWatermark(doc, tmpl, logoBuf, sealBuf, x + 75, y + 40, 95);
 
-          doc.rect(x, y, cardW, 28).fill(tmpl.themeColor || "#004080");
+          doc.rect(x, y, cardW, 28).fill(tmpl.themeColor || "#071A2E");
 
           if (tmpl.showLogo !== false && logoBuf) safeDrawImage(doc, logoBuf, x + 8, y + 4, { fit: [20, 20] });
           doc.fillColor("#FFFFFF").fontSize(7).font("Helvetica-Bold").text((snap.center.name || "").toUpperCase(), x + 32, y + 6, { width: 190, truncate: true });
           doc.fillColor("#CBD5E1").fontSize(5.5).font("Helvetica-Bold").text(tmpl.cardTitle || "CARTE D'APPRENANT OFFICIELLE", x + 32, y + 16);
           if (tmpl.showSeal !== false && sealBuf) safeDrawImage(doc, sealBuf, x + 228, y + 4, { fit: [20, 20] });
 
-          // forcer l'avatar en carré 4x4 sur la vignette carte
           drawStudentAvatar(doc, photoBuf, x + 12, y + 46, 56, 56);
 
           const ix = x + 76;
           let iy = y + 46;
-          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("NOM :", ix, iy, {continued: true});
+          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("NOM :", ix, iy, { continued: true });
           doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text((snap.student.lastName || "").toUpperCase(), { width: 155, truncate: true });
 
           iy += 11;
-          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("PRÉNOM :", ix, iy, {continued: true});
+          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("PRÉNOM :", ix, iy, { continued: true });
           doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text(snap.student.firstName || "", { width: 155, truncate: true });
 
           iy += 11;
-          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("MATRICULE :", ix, iy, {continued: true});
-          doc.fillColor(tmpl.accentColor || "#5E72E4").fontSize(6.5).font("Helvetica-Bold").text(snap.student.matricule || "—", { width: 155, truncate: true });
+          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("MATRICULE :", ix, iy, { continued: true });
+          doc.fillColor(tmpl.accentColor || "#18527A").fontSize(6.5).font("Helvetica-Bold").text(snap.student.matricule || "—", { width: 155, truncate: true });
 
           iy += 11;
-          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("FILIÈRE :", ix, iy, {continued: true});
+          doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("FILIÈRE :", ix, iy, { continued: true });
           doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica").text(snap.classe?.filiereName || "—", { width: 155, truncate: true });
 
           iy += 11;
           doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("NIVEAU :", ix, iy);
           doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text(`Niveau ${snap.classe?.niveauOrder || 1} (${snap.classe?.programTypeCode || "DQP"})`, ix + 28, iy);
 
-          
           iy += 11;
           doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("COHORTE :", ix, iy, { continued: true });
           doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica").text(snap.classe?.promotionLabel || snap.classe?.academicYearLabel || "—", { width: 145, truncate: true });
 
           doc.rect(x, y + 146, cardW, 19).fill("#F8FAFC");
           doc.fillColor("#475569").fontSize(5).font("Helvetica").text(`Agrément : ${snap.center.registrationNumber || "MINEFOP"}`, x + 8, y + 152);
-          doc.fillColor(tmpl.accentColor || "#5E72E4").fontSize(5.5).font("Helvetica-Bold").text("CECO ID-PASS", x + 195, y + 152);
+          doc.fillColor(tmpl.accentColor || "#18527A").fontSize(5.5).font("Helvetica-Bold").text("CECO ID-PASS", x + 195, y + 152);
         }
 
         // PLANCHE VERSO
@@ -502,10 +522,9 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputP
           const sealBuf = bufferFromDataUrl(snap.center?.sealDataUrl);
 
           doc.rect(x, y, cardW, cardH).lineWidth(0.5).strokeColor("#CBD5E1").fillAndStroke("#FFFFFF", "#CBD5E1");
-
           drawWatermark(doc, tmpl, logoBuf, sealBuf, x + 75, y + 35, 95);
-          
-          doc.fillColor(tmpl.themeColor || "#004080").fontSize(6.5).font("Helvetica-Bold").text("CONDITIONS D'UTILISATION", x + 8, y + 8);
+
+          doc.fillColor(tmpl.themeColor || "#071A2E").fontSize(6.5).font("Helvetica-Bold").text("CONDITIONS D'UTILISATION", x + 8, y + 8);
           doc.fillColor("#475569").fontSize(5).font("Helvetica").text(
             tmpl.termsOfUse || "Carte officielle d'apprenant. Présentation obligatoire aux examens et évaluations. En cas de perte, rapporter à la direction.",
             x + 8, y + 18, { width: 235, lineGap: 1 }
@@ -513,13 +532,13 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputP
 
           safeDrawImage(doc, qrBuf, x + 8, y + 54, { width: 46, height: 46 });
           doc.fillColor("#64748B").fontSize(5).font("Helvetica-Bold").text("Authentification :", x + 60, y + 56);
-          doc.fillColor(tmpl.accentColor || "#5E72E4").fontSize(5).font("Courier").text(snap.qrToken || "CECO-OFFICIAL", x + 60, y + 66, { width: 185 });
+          doc.fillColor(tmpl.accentColor || "#18527A").fontSize(5).font("Courier").text(snap.qrToken || "CECO-OFFICIAL", x + 60, y + 66, { width: 185 });
 
           const sigBuf = bufferFromDataUrl(snap.center.signatures?.directeur);
           if (sigBuf) safeDrawImage(doc, sigBuf, x + 165, y + 80, { fit: [70, 24], align: "center" });
           doc.fillColor("#0F172A").fontSize(5.5).font("Helvetica-Bold").text(tmpl.signatoryTitle || snap.center.directorTitle || "Le Directeur Général", x + 160, y + 108, { width: 85, align: "center" });
 
-          doc.rect(x, y + 144, cardW, 21).fill("#0B1C30");
+          doc.rect(x, y + 144, cardW, 21).fill("#071A2E");
           doc.fillColor("#94A3B8").fontSize(4.5).font("Helvetica").text(`Agrément : ${snap.center.registrationNumber || "MINEFOP"}`, x + 8, y + 151);
           doc.fillColor("#FFFFFF").fontSize(6).font("Helvetica-Bold").text("PROPULSÉ PAR CECO", x + 185, y + 151);
         }
@@ -535,14 +554,14 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputP
 }
 
 // ============================================================================
-// 3. BULLETIN SEMESTRIEL BILINGUE (A4 PORTRAIT) — MODÈLE HAUTE DENSITÉ
+// 3. BULLETIN SEMESTRIEL BILINGUE (A4 PORTRAIT)
 // ============================================================================
 function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   const { center = {}, student = {}, classe = {}, period = {}, categories = [], totals = {}, templateConfig: tmpl = {} } = snapshot;
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
   const sealBuf = bufferFromDataUrl(center.sealDataUrl);
   const photoBuf = bufferFromDataUrl(student.photoDataUrl);
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
   const startX = 25;
   const fullWidth = 545;
@@ -550,7 +569,7 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   drawWatermark(doc, tmpl, logoBuf, sealBuf, 130, 240, 280);
   drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, 18, fullWidth, startX);
 
-  // Bandeau Titre Officiel (Bleu Nuit avec Liserés Or/Orange)
+  // Bandeau Titre Officiel (Navy avec Liserés Or)
   const titleY = 108;
   doc.rect(startX, titleY, fullWidth, 20).fillAndStroke(primaryColor, "#FFA500");
   doc.rect(startX, titleY, fullWidth, 1.5).fill("#FFA500");
@@ -568,28 +587,24 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
 
   doc.rect(startX, infoY, textW, infoH).fillAndStroke("#F8FAFC", "#CBD5E1");
 
-  // Nom en surbrillance bleu clair
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("NOM & PRÉNOM :", startX + 8, infoY + 6);
   doc.rect(startX + 80, infoY + 3.5, 230, 13).fill("#E6F0FF");
-  doc.fillColor("#004080").fontSize(8).font("Helvetica-Bold").text(
+  doc.fillColor(primaryColor).fontSize(8).font("Helvetica-Bold").text(
     `${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`,
     startX + 84, infoY + 5.5, { width: 222, truncate: true }
   );
 
-  // Sexe & Matricule (Surbrillance)
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("SEXE :", startX + 8, infoY + 20);
   doc.fillColor("#0F172A").fontSize(7.5).font("Helvetica").text(student.gender === "F" ? "Féminin" : "Masculin", startX + 42, infoY + 20);
 
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("MATRICULE :", startX + 130, infoY + 20);
   doc.rect(startX + 185, infoY + 18, 125, 11).fill("#FFF275");
-  doc.fillColor("#004080").fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 188, infoY + 19.5);
+  doc.fillColor(primaryColor).fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 188, infoY + 19.5);
 
-  // Date et Lieu de naissance
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("NÉ(E) LE :", startX + 8, infoY + 33);
   const birthStr = `${student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "Non renseignée"}${student.birthPlace ? ` à ${student.birthPlace}` : ""}`;
   doc.fillColor("#0F172A").fontSize(7).font("Helvetica").text(birthStr, startX + 48, infoY + 33, { width: 260, truncate: true });
 
-  // Filière avec Badge Vert Clair
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("FILIÈRE :", startX + 8, infoY + 45);
   doc.rect(startX + 48, infoY + 43, 262, 11).fill("#D4EDDA");
   doc.fillColor("#155724").fontSize(7).font("Helvetica-Bold").text(
@@ -597,10 +612,9 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
     startX + 52, infoY + 44.5, { width: 254, truncate: true }
   );
 
-  // Photo / Silhouette propre à droite
   drawStudentAvatar(doc, photoBuf, startX + textW - photoW - 10, infoY + 3, photoW, photoW);
 
-  // Tableau des Notes & Catégories (Haute Densité)
+  // Tableau des Notes
   let y = 194;
   doc.rect(startX, y, fullWidth, 14).fill("#E8F5E9");
   doc.fillColor("#1B5E20").fontSize(6.5).font("Helvetica-Bold").text(
@@ -610,7 +624,6 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
 
   y += 14;
 
-  // En-tête du tableau
   doc.rect(startX, y, fullWidth, 15).fill(primaryColor);
   doc.fillColor("#FFFFFF").fontSize(6).font("Helvetica-Bold");
 
@@ -622,7 +635,7 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   const colAppW = 60;
   const colRangW = 26;
   const colValW = 28;
-  const colProfW = fullWidth - (colModW + colCcW + colExamW + colCoefW + colTotW + colAppW + colRangW + colValW); // ~119pt
+  const colProfW = fullWidth - (colModW + colCcW + colExamW + colCoefW + colTotW + colAppW + colRangW + colValW);
 
   doc.text("MODULES / DISCIPLINES", startX + 4, y + 4.5, { width: colModW });
   doc.text("CC /20", startX + colModW, y + 4.5, { width: colCcW, align: "center" });
@@ -637,7 +650,6 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   y += 15;
 
   categories.forEach((cat) => {
-    // Bandeau sous-groupe / catégorie
     doc.rect(startX, y, fullWidth, 12).fill("#E2E8F0");
     doc.fillColor("#0F172A").fontSize(6).font("Helvetica-Bold").text(
       `${cat.name.toUpperCase()} (Total Coef : ${cat.totalCoeff} • Moyenne Groupe : ${cat.groupAverage !== null ? `${cat.groupAverage}/20` : "—"})`,
@@ -649,46 +661,33 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
       doc.rect(startX, y, fullWidth, 13).strokeColor("#CBD5E1").stroke();
       doc.fillColor("#0F172A").fontSize(6).font("Helvetica");
 
-      // Nom de matière
       doc.text(`${sub.code ? `[${sub.code}] ` : ""}${sub.name}`, startX + 4, y + 3.5, { width: colModW - 4, truncate: true });
-
-      // Note CC
       doc.text(sub.ccAverage, startX + colModW, y + 3.5, { width: colCcW, align: "center" });
-
-      // Note Examen (avec rattrapage intégré si supérieur)
       doc.text(sub.examGrade, startX + colModW + colCcW, y + 3.5, { width: colExamW, align: "center" });
-
-      // Coefficient
       doc.text(String(sub.coefficient), startX + colModW + colCcW + colExamW, y + 3.5, { width: colCoefW, align: "center" });
-
-      // Points (Note * Coef)
       doc.font("Helvetica-Bold").text(sub.points, startX + colModW + colCcW + colExamW + colCoefW, y + 3.5, { width: colTotW, align: "center" });
 
-      // Pastille couleur pour appréciation
       const finalNum = parseFloat(sub.finalGrade);
       let appBg = "#F1F5F9";
       let appFg = "#475569";
-      if (finalNum < 10) { appBg = "#FEEBEF"; appFg = "#F5365C"; }
-      else if (finalNum < 12) { appBg = "#FFF3CD"; appFg = "#856404"; }
-      else if (finalNum < 14) { appBg = "#E8F4FD"; appFg = "#0C5460"; }
-      else { appBg = "#D4EDDA"; appFg = "#155724"; }
+      if (finalNum < 10) { appBg = "#FEEBEF"; appFg = "#C73B3B"; }
+      else if (finalNum < 12) { appBg = "#FFF6DE"; appFg = "#B7791F"; }
+      else if (finalNum < 14) { appBg = "#EAF3F9"; appFg = "#216D9E"; }
+      else { appBg = "#E8F6F0"; appFg = "#16805A"; }
 
       const appBoxX = startX + colModW + colCcW + colExamW + colCoefW + colTotW + 3;
       doc.rect(appBoxX, y + 1.5, colAppW - 6, 10).fill(appBg);
       doc.fillColor(appFg).fontSize(5.5).font("Helvetica-Bold").text(sub.appreciation, appBoxX, y + 3, { width: colAppW - 6, align: "center" });
 
-      // Rang & Validation
       doc.fillColor("#0F172A").fontSize(6).font("Helvetica").text(String(sub.rank || "—"), startX + colModW + colCcW + colExamW + colCoefW + colTotW + colAppW, y + 3.5, { width: colRangW, align: "center" });
-      doc.font("Helvetica-Bold").fillColor(sub.isValid ? "#155724" : "#721C24").text(sub.isValid ? "Oui" : "Non", startX + colModW + colCcW + colExamW + colCoefW + colTotW + colAppW + colRangW, y + 3.5, { width: colValW, align: "center" });
-
-      // Enseignant
+      doc.font("Helvetica-Bold").fillColor(sub.isValid ? "#16805A" : "#C73B3B").text(sub.isValid ? "Oui" : "Non", startX + colModW + colCcW + colExamW + colCoefW + colTotW + colAppW + colRangW, y + 3.5, { width: colValW, align: "center" });
       doc.fillColor("#475569").fontSize(5.5).font("Helvetica").text(sub.formateurName || "—", startX + fullWidth - colProfW + 4, y + 3.5, { width: colProfW - 4, truncate: true });
 
       y += 13;
     });
   });
 
-  // Ligne de Total Général
+  // Total Général
   doc.rect(startX, y, fullWidth, 14).fill("#F0F0F0");
   doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold");
   doc.text("TOTAL GÉNÉRAL", startX + 4, y + 3.5, { width: colModW + colCcW + colExamW });
@@ -697,10 +696,9 @@ function renderSingleSemesterBulletinPage(doc, snapshot, qrBuf) {
   doc.rect(startX + colModW + colCcW + colExamW + colCoefW, y + 1, colTotW, 12).fill(primaryColor);
   doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text(String(totals.totalPoints), startX + colModW + colCcW + colExamW + colCoefW, y + 3, { width: colTotW, align: "center" });
 
-  // Double Grille Synoptique Récapitulative
+  // Double Grille Synoptique avec Taux Réel et Observation Dynamique
   drawRecapMatrix(doc, totals, startX, y + 15, fullWidth, 58);
 
-  // Bas de page, Signatures & QR Code Hors-Ligne
   const signatories = tmpl.signatories || [
     { title: "Le Promoteur", roleKey: "promoteur" },
     { title: "Le Directeur Général", roleKey: "directeur" },
@@ -757,7 +755,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
   const sealBuf = bufferFromDataUrl(center.sealDataUrl);
   const photoBuf = bufferFromDataUrl(student.photoDataUrl);
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
   const startX = 25;
   const fullWidth = 545;
@@ -782,7 +780,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
   doc.rect(startX, infoY, textW, infoH).fillAndStroke("#F8FAFC", "#CBD5E1");
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("NOM & PRÉNOM :", startX + 8, infoY + 6);
   doc.rect(startX + 80, infoY + 3.5, 230, 13).fill("#E6F0FF");
-  doc.fillColor("#004080").fontSize(8).font("Helvetica-Bold").text(
+  doc.fillColor(primaryColor).fontSize(8).font("Helvetica-Bold").text(
     `${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`,
     startX + 84, infoY + 5.5, { width: 222, truncate: true }
   );
@@ -792,7 +790,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
 
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("MATRICULE :", startX + 130, infoY + 20);
   doc.rect(startX + 185, infoY + 18, 125, 11).fill("#FFF275");
-  doc.fillColor("#004080").fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 188, infoY + 19.5);
+  doc.fillColor(primaryColor).fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 188, infoY + 19.5);
 
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("FILIÈRE :", startX + 8, infoY + 45);
   doc.rect(startX + 48, infoY + 43, 262, 11).fill("#D4EDDA");
@@ -801,7 +799,7 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
     startX + 52, infoY + 44.5, { width: 254, truncate: true }
   );
 
-  drawStudentAvatar(doc, photoBuf, startX + textW - photoW - 10, infoY+3, photoW, photoW);
+  drawStudentAvatar(doc, photoBuf, startX + textW - photoW - 10, infoY + 3, photoW, photoW);
 
   let y = 194;
   doc.rect(startX, y, fullWidth, 15).fill(primaryColor);
@@ -848,17 +846,16 @@ function renderSingleContinuousAssessmentBulletinPage(doc, snapshot, qrBuf) {
     });
   });
 
-  // Ligne de Total Général
+  // Total Général
   doc.rect(startX, y, fullWidth, 14).fill("#F0F0F0");
   doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold");
-  doc.text("TOTAL GÉNÉRAL", startX + 4, y + 3.5, { width: colModW2 + colCcW2  });
+  doc.text("TOTAL GÉNÉRAL", startX + 4, y + 3.5, { width: colModW2 + colCcW2 });
   doc.text(String(totals.totalCoefficients), startX + colModW2 + colCcW2, y + 3.5, { width: colCoefW2, align: "center" });
 
   doc.rect(startX + colModW2 + colCcW2 + colCoefW2, y + 1, colTotW2, 12).fill(primaryColor);
   doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text(String(totals.totalPoints), startX + colModW2 + colCcW2 + colCoefW2, y + 3, { width: colTotW2, align: "center" });
 
-
-  drawRecapMatrix(doc, totals, startX, y+15, fullWidth, 58);
+  drawRecapMatrix(doc, totals, startX, y + 15, fullWidth, 58);
 
   const signatories = tmpl.signatories || [
     { title: "Le Promoteur", roleKey: "promoteur" },
@@ -916,7 +913,7 @@ function renderSingleAnnualTranscriptPage(doc, snapshot, qrBuf) {
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
   const sealBuf = bufferFromDataUrl(center.sealDataUrl);
   const photoBuf = bufferFromDataUrl(student.photoDataUrl);
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
   const startX = 25;
   const fullWidth = 545;
@@ -941,14 +938,14 @@ function renderSingleAnnualTranscriptPage(doc, snapshot, qrBuf) {
   doc.rect(startX, infoY, textW, infoH).fillAndStroke("#F8FAFC", "#CBD5E1");
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("NOM & PRÉNOM :", startX + 8, infoY + 6);
   doc.rect(startX + 80, infoY + 3.5, 230, 13).fill("#E6F0FF");
-  doc.fillColor("#004080").fontSize(8).font("Helvetica-Bold").text(
+  doc.fillColor(primaryColor).fontSize(8).font("Helvetica-Bold").text(
     `${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`,
     startX + 84, infoY + 5.5, { width: 222, truncate: true }
   );
 
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("MATRICULE :", startX + 8, infoY + 20);
   doc.rect(startX + 60, infoY + 18, 120, 11).fill("#FFF275");
-  doc.fillColor("#004080").fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 63, infoY + 19.5);
+  doc.fillColor(primaryColor).fontSize(7.5).font("Courier-Bold").text(student.matricule || "—", startX + 63, infoY + 19.5);
 
   doc.fillColor("#475569").fontSize(7).font("Helvetica-Bold").text("FILIÈRE :", startX + 8, infoY + 45);
   doc.rect(startX + 48, infoY + 43, 262, 11).fill("#D4EDDA");
@@ -995,7 +992,7 @@ function renderSingleAnnualTranscriptPage(doc, snapshot, qrBuf) {
       doc.font("Helvetica-Bold").text(sub.finalGrade, startX + colModW3 + colCoefW3, y + 3.5, { width: colNoteW3, align: "center" });
       doc.font("Helvetica-Bold").text(sub.points, startX + colModW3 + colCoefW3 + colNoteW3, y + 3.5, { width: colPtsW3, align: "center" });
       doc.font("Helvetica").text(sub.appreciation, startX + colModW3 + colCoefW3 + colNoteW3 + colPtsW3, y + 3.5, { width: colAppW3, align: "center" });
-      doc.font("Helvetica-Bold").fillColor(sub.isValid ? "#155724" : "#721C24").text(sub.isValid ? "Oui" : "Non", startX + fullWidth - colValW3, y + 3.5, { width: colValW3, align: "center" });
+      doc.font("Helvetica-Bold").fillColor(sub.isValid ? "#16805A" : "#C73B3B").text(sub.isValid ? "Oui" : "Non", startX + fullWidth - colValW3, y + 3.5, { width: colValW3, align: "center" });
       y += 13;
     });
   });
@@ -1057,12 +1054,11 @@ function renderSingleGraduationDiplomaPage(doc, snapshot, qrBuf) {
   const { center = {}, student = {}, classe = {}, totals = {}, templateConfig: tmpl = {} } = snapshot;
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
   const sealBuf = bufferFromDataUrl(center.sealDataUrl);
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
-  drawDiplomaOrnamentalBorders(doc, 842, 595);
+  drawDiplomaOrnamentalBorders(doc, 842, 595, primaryColor);
   drawWatermark(doc, tmpl, logoBuf, sealBuf, 270, 140, 300);
 
-  // En-tête officiel bilingue Paysage
   doc.fillColor("#0F172A").fontSize(7.5).font("Helvetica-Bold").text(
     "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE",
     45, 42, { width: 230, align: "center", lineGap: 1.5 }
@@ -1188,7 +1184,7 @@ function renderSingleAttestationPage(doc, snapshot, qrBuf) {
   const { center = {}, student = {}, classe = {}, templateConfig: tmpl = {} } = snapshot;
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
   const sealBuf = bufferFromDataUrl(center.sealDataUrl);
-  const primaryColor = tmpl.primaryColor || "#004080";
+  const primaryColor = tmpl.primaryColor || "#071A2E";
 
   const startX = 25;
   const fullWidth = 545;
@@ -1208,7 +1204,7 @@ function renderSingleAttestationPage(doc, snapshot, qrBuf) {
 
   doc.rect(startX, 210, fullWidth, 95).fillAndStroke("#F8FAFC", "#CBD5E1");
   doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("L'Apprenant(e) :", startX + 15, 223);
-  doc.fillColor("#004080").fontSize(11).font("Helvetica-Bold").text(`${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`, startX + 125, 221);
+  doc.fillColor(primaryColor).fontSize(11).font("Helvetica-Bold").text(`${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`, startX + 125, 221);
 
   doc.fillColor("#475569").fontSize(8.5).font("Helvetica-Bold").text("Matricule Officiel :", startX + 15, 240);
   doc.fillColor(primaryColor).fontSize(9.5).font("Courier-Bold").text(student.matricule || "—", startX + 125, 240);
@@ -1291,7 +1287,7 @@ async function generateFicheInscriptionPdf(snapshot, outputPath) {
       const logoBuf = bufferFromDataUrl(center.logoDataUrl);
       const sealBuf = bufferFromDataUrl(center.sealDataUrl);
       const photoBuf = bufferFromDataUrl(student.photoDataUrl);
-      const primaryColor = tmpl.primaryColor || "#004080";
+      const primaryColor = tmpl.primaryColor || "#071A2E";
 
       const startX = 25;
       const fullWidth = 545;
@@ -1351,7 +1347,7 @@ async function generateFicheInscriptionPdf(snapshot, outputPath) {
       doc.fillColor("#FFFFFF").fontSize(7.5).font("Helvetica-Bold").text("AFFECTATION PÉDAGOGIQUE & CYCLE CHOISI", startX + 10, 284.5);
 
       doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Filière de formation :", startX + 10, 303);
-      doc.fillColor("#0F172A").fontSize(8).font("Helvetica-Bold").text(`${classe.filiereName || "—"} (${classe.programTypeCode || "DQP"})`, startX + 130, 303);
+      doc.fillColor("#0F172A").fontSize(8.5).font("Helvetica-Bold").text(`${classe.filiereName || "—"} (${classe.programTypeCode || "DQP"})`, startX + 130, 303);
 
       doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("Classe & Promotion :", startX + 10, 319);
       doc.fillColor("#0F172A").fontSize(8).font("Helvetica").text(`${classe.label || "—"} • ${classe.promotionLabel || ""}`, startX + 130, 319);
@@ -1392,19 +1388,20 @@ async function generateBlankGradeSheetPdf(snapshot, outputPath) {
       const writeStream = fs.createWriteStream(outputPath);
       doc.pipe(writeStream);
 
-      const { center = {}, offering = {}, students = [] } = snapshot;
+      const { center = {}, offering = {}, students = [], templateConfig: tmpl = {} } = snapshot;
       const logoBuf = bufferFromDataUrl(center.logoDataUrl);
       const sealBuf = bufferFromDataUrl(center.sealDataUrl);
+      const primaryColor = tmpl?.primaryColor || "#071A2E";
 
       const startX = 25;
       const fullWidth = 545;
 
       drawWatermark(doc, { showWatermark: true, watermarkOpacity: 0.05 }, logoBuf, sealBuf, 130, 260, 280);
 
-      doc.fillColor("#004080").fontSize(11).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), startX, 22, { width: fullWidth, align: "center" });
+      doc.fillColor(primaryColor).fontSize(11).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), startX, 22, { width: fullWidth, align: "center" });
       doc.fillColor("#64748B").fontSize(7).font("Helvetica").text(`Agrément : ${center.registrationNumber || "MINEFOP"} • ${center.city || "Cameroun"}`, startX, 36, { width: fullWidth, align: "center" });
 
-      doc.moveTo(startX, 50).lineTo(startX + fullWidth, 50).lineWidth(1).strokeColor("#004080").stroke();
+      doc.moveTo(startX, 50).lineTo(startX + fullWidth, 50).lineWidth(1).strokeColor(primaryColor).stroke();
 
       doc.fillColor("#0F172A").fontSize(10).font("Helvetica-Bold").text("BORDEREAU DE REPORT DE NOTES MANUSCRIT", startX, 60, { width: fullWidth, align: "center" });
       doc.fillColor("#64748B").fontSize(7.5).font("Helvetica").text("Document de travail de l'enseignant pour la correction et la saisie", startX, 73, { width: fullWidth, align: "center" });
@@ -1420,7 +1417,7 @@ async function generateBlankGradeSheetPdf(snapshot, outputPath) {
       doc.text(`Effectif : ${students.length} apprenant(s)`, startX + 390, 110);
 
       let y = 135;
-      doc.rect(startX, y, fullWidth, 18).fill("#004080");
+      doc.rect(startX, y, fullWidth, 18).fill(primaryColor);
       doc.fillColor("#FFFFFF").fontSize(7).font("Helvetica-Bold");
       doc.text("N°", startX + 5, y + 5, { width: 25, align: "center" });
       doc.text("Matricule", startX + 35, y + 5, { width: 75 });
@@ -1471,9 +1468,10 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
       const writeStream = fs.createWriteStream(outputPath);
       doc.pipe(writeStream);
 
-      const { center = {}, offering = {}, rows = [], stats = {} } = snapshot;
+      const { center = {}, offering = {}, rows = [], stats = {}, templateConfig: tmpl = {} } = snapshot;
       const logoBuf = bufferFromDataUrl(center.logoDataUrl);
       const sealBuf = bufferFromDataUrl(center.sealDataUrl);
+      const primaryColor = tmpl?.primaryColor || "#071A2E";
 
       const startX = 25;
       const fullWidth = 545;
@@ -1485,10 +1483,10 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
 
       if (sealBuf) safeDrawImage(doc, sealBuf, startX + (fullWidth - 40) / 2, 20, { fit: [40, 40], align: "center" });
 
-      doc.fillColor("#004080").fontSize(10.5).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), startX, 68, { width: fullWidth, align: "center" });
+      doc.fillColor(primaryColor).fontSize(10.5).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), startX, 68, { width: fullWidth, align: "center" });
       doc.fillColor("#64748B").fontSize(7).font("Helvetica").text(`Agrément : ${center.registrationNumber || "MINEFOP"} • ${center.city || "Cameroun"}`, startX, 81, { width: fullWidth, align: "center" });
 
-      doc.moveTo(startX, 94).lineTo(startX + fullWidth, 94).lineWidth(1.2).strokeColor("#004080").stroke();
+      doc.moveTo(startX, 94).lineTo(startX + fullWidth, 94).lineWidth(1.2).strokeColor(primaryColor).stroke();
 
       doc.fillColor("#0F172A").fontSize(10.5).font("Helvetica-Bold").text("PROCÈS-VERBAL OFFICIEL DE NOTES DE COURS", startX, 102, { width: fullWidth, align: "center", underline: true });
 
@@ -1503,7 +1501,7 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
       doc.text(`Taux de réussite : ${stats.successRate || "0"}%`, startX + 380, 136);
 
       let y = 160;
-      doc.rect(startX, y, fullWidth, 16).fill("#004080");
+      doc.rect(startX, y, fullWidth, 16).fill(primaryColor);
       doc.fillColor("#FFFFFF").fontSize(6.5).font("Helvetica-Bold");
       doc.text("N°", startX + 4, y + 4.5, { width: 20, align: "center" });
       doc.text("Matricule", startX + 28, y + 4.5, { width: 68 });
@@ -1532,7 +1530,7 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
         doc.text(row.normale || "—", startX + 325, y + 3.5, { width: 45, align: "center" });
         doc.text(row.rattrapage || "—", startX + 375, y + 3.5, { width: 45, align: "center" });
         doc.font("Helvetica-Bold").text(row.finalGrade || "—", startX + 425, y + 3.5, { width: 55, align: "center" });
-        doc.font("Helvetica-Bold").fillColor(row.isValid ? "#155724" : "#721C24").text(row.isValid ? "Oui" : "Non", startX + 485, y + 3.5, { width: 55, align: "center" });
+        doc.font("Helvetica-Bold").fillColor(row.isValid ? "#16805A" : "#C73B3B").text(row.isValid ? "Oui" : "Non", startX + 485, y + 3.5, { width: 55, align: "center" });
 
         y += 14;
       });
@@ -1558,7 +1556,7 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
 }
 
 // ============================================================================
-// 11. PV SYNOPTIQUE DE DÉLIBÉRATION DE CLASSE (A4 PAYSAGE)
+// 11. PV SYNOPTIQUE DE DÉLIBÉRATION DE CLASSE (A4 PAYSAGE - SEMESTRIEL & ANNUEL)
 // ============================================================================
 async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputPath) {
   return new Promise(async (resolve, reject) => {
@@ -1567,19 +1565,20 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
       const writeStream = fs.createWriteStream(outputPath);
       doc.pipe(writeStream);
 
-      const { center = {}, classe = {}, offerings = [], summaries = [] } = snapshot;
+      const { center = {}, classe = {}, offerings = [], summaries = [], periodLabel = "Semestre", templateConfig: tmpl = {} } = snapshot;
       const logoBuf = bufferFromDataUrl(center.logoDataUrl);
       const sealBuf = bufferFromDataUrl(center.sealDataUrl);
+      const primaryColor = tmpl?.primaryColor || "#071A2E";
 
       drawWatermark(doc, { showWatermark: true, watermarkOpacity: 0.05 }, logoBuf, sealBuf, 250, 130, 300);
 
       if (logoBuf) safeDrawImage(doc, logoBuf, 25, 18, { fit: [38, 38] });
       if (sealBuf) safeDrawImage(doc, sealBuf, 775, 18, { fit: [38, 38] });
 
-      doc.fillColor("#004080").fontSize(11).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), 75, 20, { width: 690, align: "center" });
-      doc.fillColor("#64748B").fontSize(7).font("Helvetica").text(`GRILLE DE DÉLIBÉRATION OFFICIELLE • Classe : ${classe.label} • Filière : ${classe.filiereName}`, 75, 33, { width: 690, align: "center" });
+      doc.fillColor(primaryColor).fontSize(11).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), 75, 20, { width: 690, align: "center" });
+      doc.fillColor("#64748B").fontSize(7).font("Helvetica").text(`GRILLE DE DÉLIBÉRATION OFFICIELLE (${periodLabel.toUpperCase()}) • Classe : ${classe.label} • Filière : ${classe.filiereName}`, 75, 33, { width: 690, align: "center" });
 
-      doc.moveTo(25, 50).lineTo(815, 50).lineWidth(1).strokeColor("#004080").stroke();
+      doc.moveTo(25, 50).lineTo(815, 50).lineWidth(1).strokeColor(primaryColor).stroke();
 
       let y = 58;
       const colMatriculeW = 65;
@@ -1588,7 +1587,7 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
       const availWidth = 790 - (colMatriculeW + colNameW + colSummaryW);
       const colSubW = offerings.length > 0 ? availWidth / offerings.length : 40;
 
-      doc.rect(25, y, 790, 20).fill("#004080");
+      doc.rect(25, y, 790, 20).fill(primaryColor);
       doc.fillColor("#FFFFFF").fontSize(6.5).font("Helvetica-Bold");
       doc.text("Matricule", 30, y + 5.5, { width: colMatriculeW });
       doc.text("Nom & Prénom de l'Apprenant", 30 + colMatriculeW, y + 5.5, { width: colNameW });
@@ -1624,7 +1623,89 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
 
         doc.font("Helvetica-Bold").text(row.semesterAverage !== null ? String(row.semesterAverage) : "—", sx, y + 3.5, { width: 45, align: "center" });
         doc.font("Helvetica").text(row.rank ? `${row.rank}e` : "—", sx + 45, y + 3.5, { width: 30, align: "center" });
-        doc.font("Helvetica-Bold").fillColor(row.decision === "ADMIS" || row.decision === "VALIDÉ" || row.decision === "DIPLÔMÉ" ? "#2DCE89" : "#F5365C").text(row.decision, sx + 75, y + 3.5, { width: 45, align: "center" });
+
+        const isPassed = row.decision === "ADMIS" || row.decision === "VALIDÉ" || row.decision === "DIPLÔMÉ";
+        doc.font("Helvetica-Bold").fillColor(isPassed ? "#16805A" : "#C73B3B").text(row.decision, sx + 75, y + 3.5, { width: 45, align: "center" });
+
+        y += 15;
+      });
+
+      doc.end();
+      writeStream.on("finish", () => resolve(outputPath));
+      writeStream.on("error", reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// ============================================================================
+// 12. PV SYNOPTIQUE DU CONTRÔLE CONTINU (PV_CC - A4 PAYSAGE)
+// ============================================================================
+async function generateClassContinuousAssessmentSummaryPdf(snapshot, offlinePayload, outputPath) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: "A4", layout: "landscape", margins: { top: 18, bottom: 20, left: 25, right: 25 }, autoFirstPage: true });
+      const writeStream = fs.createWriteStream(outputPath);
+      doc.pipe(writeStream);
+
+      const { center = {}, classe = {}, offerings = [], summaries = [], periodLabel = "Contrôle Continu", templateConfig: tmpl = {} } = snapshot;
+      const logoBuf = bufferFromDataUrl(center.logoDataUrl);
+      const sealBuf = bufferFromDataUrl(center.sealDataUrl);
+      const primaryColor = tmpl?.primaryColor || "#071A2E";
+
+      drawWatermark(doc, { showWatermark: true, watermarkOpacity: 0.05 }, logoBuf, sealBuf, 250, 130, 300);
+
+      if (logoBuf) safeDrawImage(doc, logoBuf, 25, 18, { fit: [38, 38] });
+      if (sealBuf) safeDrawImage(doc, sealBuf, 775, 18, { fit: [38, 38] });
+
+      doc.fillColor(primaryColor).fontSize(11).font("Helvetica-Bold").text((center.name || "CENTRE DE FORMATION").toUpperCase(), 75, 20, { width: 690, align: "center" });
+      doc.fillColor("#64748B").fontSize(7).font("Helvetica").text(`PROCÈS-VERBAL RÉCAPITULATIF DU CONTRÔLE CONTINU (CC & TP) • Classe : ${classe.label} • ${periodLabel}`, 75, 33, { width: 690, align: "center" });
+
+      doc.moveTo(25, 50).lineTo(815, 50).lineWidth(1).strokeColor(primaryColor).stroke();
+
+      let y = 58;
+      const colMatriculeW = 65;
+      const colNameW = 140;
+      const colSummaryW = 100;
+      const availWidth = 790 - (colMatriculeW + colNameW + colSummaryW);
+      const colSubW = offerings.length > 0 ? availWidth / offerings.length : 40;
+
+      doc.rect(25, y, 790, 20).fill(primaryColor);
+      doc.fillColor("#FFFFFF").fontSize(6.5).font("Helvetica-Bold");
+      doc.text("Matricule", 30, y + 5.5, { width: colMatriculeW });
+      doc.text("Nom & Prénom de l'Apprenant", 30 + colMatriculeW, y + 5.5, { width: colNameW });
+
+      offerings.forEach((off, idx) => {
+        const ox = 30 + colMatriculeW + colNameW + idx * colSubW;
+        doc.text(`${off.subject?.code || off.subject?.name?.substring(0, 6)}\n(C${off.coefficient})`, ox, y + 3, { width: colSubW, align: "center" });
+      });
+
+      const sx = 30 + colMatriculeW + colNameW + offerings.length * colSubW;
+      doc.text("Moy. CC", sx, y + 5.5, { width: 50, align: "center" });
+      doc.text("Rang CC", sx + 50, y + 5.5, { width: 50, align: "center" });
+
+      y += 20;
+
+      summaries.forEach((row) => {
+        if (y > 500) {
+          doc.addPage({ size: "A4", layout: "landscape", margins: { top: 18, bottom: 20, left: 25, right: 25 } });
+          y = 25;
+        }
+
+        doc.rect(25, y, 790, 15).strokeColor("#CBD5E1").stroke();
+        doc.fillColor("#0F172A").fontSize(6).font("Helvetica");
+        doc.font("Helvetica-Bold").text(row.student.matricule, 30, y + 3.5, { width: colMatriculeW });
+        doc.font("Helvetica").text(`${row.student.lastName} ${row.student.firstName}`, 30 + colMatriculeW, y + 3.5, { width: colNameW, truncate: true });
+
+        offerings.forEach((off, sidx) => {
+          const ox = 30 + colMatriculeW + colNameW + sidx * colSubW;
+          const subRes = row.subjects.find((s) => s.subjectId === off.subjectId);
+          doc.text(subRes && subRes.ccAverage !== null && subRes.ccAverage !== undefined ? String(subRes.ccAverage) : "—", ox, y + 3.5, { width: colSubW, align: "center" });
+        });
+
+        doc.font("Helvetica-Bold").text(row.ccAverage !== null && row.ccAverage !== undefined ? String(row.ccAverage) : "—", sx, y + 3.5, { width: 50, align: "center" });
+        doc.font("Helvetica").text(row.rank ? `${row.rank}e` : "—", sx + 50, y + 3.5, { width: 50, align: "center" });
 
         y += 15;
       });
@@ -1647,6 +1728,7 @@ module.exports = {
   generateBlankGradeSheetPdf,
   generateCertifiedGradeSheetPdf,
   generateClassSemesterSummaryPdf,
+  generateClassContinuousAssessmentSummaryPdf,
   generateContinuousAssessmentBulletinPdf,
   generateBatchContinuousAssessmentBulletinsPdf,
   generateSemesterBulletinPdf,
