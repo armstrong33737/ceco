@@ -31,7 +31,7 @@ router.get("/license", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 2. Activation par Clé de Licence Hors-Ligne Signée
+// 2. Activation par Clé de Licence Hors-Ligne Signée (Ed25519)
 router.post("/license/activate-offline", verifyJwt, async (req, res, next) => {
   try {
     const { activationKey } = req.body || {};
@@ -52,7 +52,6 @@ router.post("/license/activate-offline", verifyJwt, async (req, res, next) => {
     const { expiresAt, plan, maxUsers } = verification;
 
     await prisma.$transaction([
-      // 1. Enregistrement du jeton cryptographique scellé
       prisma.license.upsert({
         where: { centerId },
         update: {
@@ -67,7 +66,6 @@ router.post("/license/activate-offline", verifyJwt, async (req, res, next) => {
           expiresAt,
         },
       }),
-      // 2. Synchronisation de la table d'abonnement
       prisma.subscription.upsert({
         where: { centerId },
         update: {
@@ -84,7 +82,6 @@ router.post("/license/activate-offline", verifyJwt, async (req, res, next) => {
           maxUsers,
         },
       }),
-      // 3. Traçabilité dans le journal d'audit
       prisma.auditLog.create({
         data: {
           centerId,
@@ -111,62 +108,6 @@ router.post("/license/activate-offline", verifyJwt, async (req, res, next) => {
         ...refreshed,
         currentUserCount,
       },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 3. Simulation de paiement Mobile Money en ligne
-router.post("/license/pay", verifyJwt, async (req, res, next) => {
-  try {
-    const centerId = req.centerId;
-    const { operator, phoneNumber, months } = req.body || {};
-
-    if (!phoneNumber || !months) {
-      return res.status(400).json({ error: "Numéro de téléphone et durée en mois requis." });
-    }
-
-    const currentEval = await evaluateCenterLicense(centerId);
-    const monthCount = Math.max(1, parseInt(months, 10) || 1);
-
-    let baseTime = currentEval.expiresAt ? new Date(currentEval.expiresAt).getTime() : Date.now();
-    if (baseTime < Date.now()) {
-      baseTime = Date.now();
-    }
-
-    const additionMs = monthCount * 30 * 24 * 60 * 60 * 1000;
-    const newExpiresAt = new Date(baseTime + additionMs);
-
-    await prisma.subscription.upsert({
-      where: { centerId },
-      update: {
-        plan: "local_pro",
-        status: "active",
-        expiresAt: newExpiresAt,
-        maxUsers: 50,
-      },
-      create: {
-        centerId,
-        plan: "local_pro",
-        status: "active",
-        expiresAt: newExpiresAt,
-        maxUsers: 50,
-      },
-    });
-
-    const refreshed = await evaluateCenterLicense(centerId);
-    const currentUserCount = await prisma.user.count({ where: { centerId, deletedAt: null } });
-
-    res.json({
-      success: true,
-      message: `Rechargement de ${monthCount} mois effectué avec succès.`,
-      plan: refreshed.plan,
-      status: refreshed.status,
-      expiresAt: refreshed.expiresAt,
-      remainingDays: refreshed.remainingDays,
-      currentUserCount,
-      maxUsers: refreshed.maxUsers,
     });
   } catch (err) {
     next(err);

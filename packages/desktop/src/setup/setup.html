@@ -2,20 +2,23 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<title>CECO — Configuration</title>
+<title>CECO — Configuration & Démarrage Réseau</title>
 <style>
   :root {
-    --primary: #5E72E4;
-    --primary-hover: #4C58C4;
-    --violet: #825EE4;
+    --primary: #071A2E;
+    --primary-hover: #0B2742;
+    --brand-accent: #216D9E;
     --ink: #0B1C30;
-    --ink-variant: #43474F;
-    --surface: #F8F9FF;
-    --outline: #E2E5F1;
-    --success: #2DCE89;
-    --success-light: #E6FAF1;
-    --danger: #F5365C;
-    --danger-light: #FEEBEF;
+    --ink-variant: #526173;
+    --ink-muted: #738195;
+    --surface: #F5F7FA;
+    --outline: #D9E0E8;
+    --success: #16805A;
+    --success-light: #E8F6F0;
+    --danger: #C73B3B;
+    --danger-light: #FDECEC;
+    --warning: #B7791F;
+    --warning-light: #FFF6DE;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -36,70 +39,110 @@
     filter: blur(50px);
     pointer-events: none;
   }
-  .blob-1 { width: 220px; height: 220px; background: rgba(94,114,228,0.18); top: -60px; left: -60px; }
-  .blob-2 { width: 260px; height: 260px; background: rgba(130,94,228,0.15); bottom: -80px; right: -80px; }
+  .blob-1 { width: 220px; height: 220px; background: rgba(7, 26, 46, 0.08); top: -60px; left: -60px; }
+  .blob-2 { width: 260px; height: 260px; background: rgba(33, 109, 158, 0.08); bottom: -80px; right: -80px; }
   .card {
     position: relative;
     z-index: 1;
     background: white;
-    border-radius: 16px;
+    border-radius: 8px;
     padding: 24px 28px;
-    width: 440px;
+    width: 460px;
     max-height: 96vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 10px 30px -10px rgba(94, 114, 228, 0.22);
+    box-shadow: 0 16px 36px -4px rgba(7, 26, 46, 0.18);
     border: 1px solid var(--outline);
   }
   .header-logo {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--outline);
+  }
+  .logo-box {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--outline);
+    border-radius: 4px;
+    padding: 2px;
+    flex-shrink: 0;
   }
   .logo-img {
-    width: 44px;
-    height: 44px;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
-    border-radius: 10px;
   }
-  h1 { font-size: 19px; font-weight: 700; color: var(--ink); line-height: 1.2; }
-  p.subtitle { color: var(--ink-variant); font-size: 13px; line-height: 1.4; margin-top: 2px; }
+  h1 { font-size: 18px; font-weight: 700; color: var(--primary); line-height: 1.2; letter-spacing: -0.02em; }
+  p.subtitle { color: var(--ink-variant); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
   
-  .choice { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  /* Bannière d'incident réseau */
+  .error-banner {
+    display: none;
+    background: var(--warning-light);
+    border: 1px solid rgba(183, 121, 31, 0.35);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: var(--ink);
+    line-height: 1.45;
+  }
+  .error-banner.visible { display: block; }
+  .error-banner-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    color: var(--warning);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  .error-banner-body { color: #5B3B0A; }
+  .error-banner-code { font-family: monospace; font-weight: 700; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 2px; }
+
+  .choice { display: flex; flex-direction: column; gap: 10px; }
   button.mode-btn {
     display: flex;
     align-items: center;
     gap: 14px;
     padding: 14px;
-    border-radius: 12px;
+    border-radius: 6px;
     border: 1.5px solid var(--outline);
     background: white;
     text-align: left;
     cursor: pointer;
     font-size: 13px;
     color: var(--ink);
-    transition: all 0.15s ease-in-out;
+    transition: all 0.1s ease-in-out;
     font-family: inherit;
   }
   button.mode-btn:hover {
     border-color: var(--primary);
-    box-shadow: 0 4px 14px rgba(94,114,228,0.12);
+    background: #F8FAFC;
     transform: translateY(-1px);
   }
   button.mode-btn .icon-box {
-    width: 38px;
-    height: 38px;
-    border-radius: 8px;
-    background: var(--surface);
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    background: rgba(7, 26, 46, 0.06);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     color: var(--primary);
   }
-  button.mode-btn strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 2px; }
-  button.mode-btn span.desc { color: var(--ink-variant); font-size: 12px; line-height: 1.3; }
+  button.mode-btn strong { display: block; color: var(--primary); font-size: 14px; margin-bottom: 2px; }
+  button.mode-btn span.desc { color: var(--ink-variant); font-size: 12px; line-height: 1.35; }
 
   .client-view { display: none; flex-direction: column; gap: 12px; }
   .client-view.visible { display: flex; }
@@ -107,7 +150,7 @@
   .discovery-panel {
     background: var(--surface);
     border: 1px solid var(--outline);
-    border-radius: 10px;
+    border-radius: 6px;
     padding: 12px;
     display: flex;
     flex-direction: column;
@@ -124,8 +167,8 @@
   .scan-btn {
     background: none;
     border: none;
-    color: var(--primary);
-    font-size: 11px;
+    color: var(--brand-accent);
+    font-size: 11.5px;
     font-weight: 700;
     cursor: pointer;
     padding: 2px 4px;
@@ -133,7 +176,7 @@
   .scan-btn:hover { text-decoration: underline; }
   
   .server-list {
-    max-height: 110px;
+    max-height: 120px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -145,23 +188,24 @@
     justify-content: space-between;
     background: white;
     border: 1px solid var(--outline);
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 8px 10px;
     font-size: 12px;
   }
   .server-item:hover { border-color: var(--primary); }
-  .server-name { font-weight: 600; color: var(--ink); }
-  .server-ip { font-size: 11px; color: var(--ink-variant); }
+  .server-name { font-weight: 600; color: var(--primary); }
+  .server-ip { font-size: 11px; color: var(--ink-variant); font-family: monospace; }
   
   .connect-server-btn {
     background: var(--primary);
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 11px;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 11.5px;
     font-weight: 600;
     cursor: pointer;
+    transition: background-color 0.1s;
   }
   .connect-server-btn:hover { background: var(--primary-hover); }
 
@@ -169,7 +213,7 @@
     display: flex;
     align-items: center;
     text-align: center;
-    color: var(--ink-variant);
+    color: var(--ink-muted);
     font-size: 11px;
     margin: 2px 0;
   }
@@ -178,34 +222,47 @@
     flex: 1;
     border-bottom: 1px solid var(--outline);
   }
-  .divider span { padding: 0 8px; }
+  .divider span { padding: 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 
-  label { font-size: 12px; font-weight: 600; color: var(--ink-variant); }
+  label { font-size: 11.5px; font-weight: 600; color: var(--ink-variant); text-transform: uppercase; letter-spacing: 0.04em; }
   input[type="text"] {
     padding: 10px 12px;
-    border-radius: 8px;
+    border-radius: 4px;
     border: 1.5px solid var(--outline);
     font-size: 13px;
     font-family: inherit;
     outline: none;
-    transition: border-color 0.15s;
+    transition: border-color 0.1s;
   }
   input[type="text"]:focus { border-color: var(--primary); }
   
   .primary-btn {
-    background: linear-gradient(135deg, var(--primary), var(--violet));
+    background: var(--primary);
     color: white;
     border: none;
-    border-radius: 8px;
+    border-radius: 4px;
     padding: 11px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     font-family: inherit;
-    box-shadow: 0 4px 12px rgba(94,114,228,0.25);
+    transition: background-color 0.1s;
   }
-  .primary-btn:hover { opacity: 0.95; }
+  .primary-btn:hover { background: var(--primary-hover); }
   
+  .secondary-btn {
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid var(--outline);
+    border-radius: 4px;
+    padding: 9px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .secondary-btn:hover { background: #F8FAFC; border-color: var(--primary); }
+
   .back-link {
     background: none;
     border: none;
@@ -213,17 +270,17 @@
     font-size: 12px;
     cursor: pointer;
     text-align: left;
-    padding: 2px 0;
+    padding: 4px 0;
     font-family: inherit;
     display: flex;
     align-items: center;
     gap: 4px;
   }
-  .back-link:hover { color: var(--ink); }
+  .back-link:hover { color: var(--primary); text-decoration: underline; }
 
-  .status { margin-top: 10px; font-size: 12px; min-height: 16px; border-radius: 6px; }
-  .status.error { color: var(--danger); background: var(--danger-light); padding: 8px 10px; }
-  .status.pending { color: var(--ink-variant); display: flex; align-items: center; gap: 6px; }
+  .status { margin-top: 10px; font-size: 12px; min-height: 16px; border-radius: 4px; }
+  .status.error { color: var(--danger); background: var(--danger-light); padding: 8px 10px; border: 1px solid rgba(199, 59, 59, 0.3); font-weight: 500; }
+  .status.pending { color: var(--ink-variant); display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   
   .spinner {
     width: 14px;
@@ -243,22 +300,38 @@
 
   <div class="card">
     <div class="header-logo">
-      <img src="../../assets/icon.png" alt="Logo CECO" class="logo-img" onerror="this.style.display='none'" />
+      <div class="logo-box">
+        <img src="../assets/icon.png" alt="Logo CECO" class="logo-img" onerror="this.src='../../assets/icon.png'" />
+      </div>
       <div>
-        <h1>Bienvenue sur CECO</h1>
-        <p class="subtitle">Choisissez le mode d'exécution de cette machine.</p>
+        <h1>CECO Suite ERP</h1>
+        <p class="subtitle" id="windowSubtitle">Architecture Locale & Réseau On-Premise</p>
       </div>
     </div>
 
-    <!-- Vue principale de sélection -->
+    <!-- Bannière dynamique d'alerte en cas de serveur injoignable -->
+    <div class="error-banner" id="errorBanner">
+      <div class="error-banner-title">
+        <span>⚠️ Incident de Connexion Réseau</span>
+      </div>
+      <div class="error-banner-body" id="errorBannerBody">
+        Le serveur distant est injoignable.
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button class="secondary-btn" id="btnRetryLast" style="flex: 1; padding: 6px 10px; font-size: 11.5px;">Réessayer la connexion</button>
+        <button class="secondary-btn" id="btnSwitchServerDirect" style="flex: 1; padding: 6px 10px; font-size: 11.5px; background: #FFF;">Passer en Mode Serveur</button>
+      </div>
+    </div>
+
+    <!-- Vue 1 : Choix Principal -->
     <div class="choice" id="choiceView">
       <button class="mode-btn" id="btnServeur">
         <div class="icon-box">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4 1h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V3c0-1.1.9-2 2-2zm0 8h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2zm0 8h16c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2zM6 5h2v2H6V5zm0 8h2v2H6v-2zm0 8h2v2H6v-2z"/></svg>
         </div>
         <div>
-          <strong>Mode Serveur</strong>
-          <span class="desc">Héberge la base de données locale et les services du centre.</span>
+          <strong>Mode Serveur Principal</strong>
+          <span class="desc">Héberge la base PostgreSQL locale et les services pour l'établissement.</span>
         </div>
       </button>
 
@@ -267,13 +340,13 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4C7.31 4 3.07 5.9 0 8.98L12 21 24 8.98A16.88 16.88 0 0 0 12 4zm0 3.5c3.55 0 6.81 1.34 9.3 3.56L12 18.25 2.7 11.06A14.28 14.28 0 0 1 12 7.5z"/></svg>
         </div>
         <div>
-          <strong>Mode Client</strong>
-          <span class="desc">Se connecte à un serveur CECO actif sur le réseau local.</span>
+          <strong>Mode Client Réseau (Poste Secondaire)</strong>
+          <span class="desc">Se connecte à un serveur CECO actif sur le réseau local (Wi-Fi ou câble).</span>
         </div>
       </button>
     </div>
 
-    <!-- Vue de configuration client avec découverte réseau -->
+    <!-- Vue 2 : Configuration Client Réseau -->
     <div class="client-view" id="clientView">
       <div class="discovery-panel">
         <div class="discovery-header">
@@ -281,21 +354,21 @@
           <button class="scan-btn" id="btnRescan">Actualiser</button>
         </div>
         <div class="server-list" id="serverList">
-          <div style="font-size: 11px; color: var(--ink-variant); text-align: center; padding: 12px 0;" id="discoveryStatus">
+          <div style="font-size: 11.5px; color: var(--ink-variant); text-align: center; padding: 12px 0;" id="discoveryStatus">
             Recherche en cours...
           </div>
         </div>
       </div>
 
-      <div class="divider"><span>ou saisie manuelle</span></div>
+      <div class="divider"><span>ou adresse manuelle</span></div>
 
       <div style="display: flex; flex-direction: column; gap: 6px;">
         <label for="serverAddress">Adresse IP et port du serveur</label>
         <input type="text" id="serverAddress" placeholder="Ex: 192.168.1.50:4000" />
       </div>
 
-      <button class="primary-btn" id="btnConnectManual">Se connecter</button>
-      <button class="back-link" id="btnBack">← Revenir au choix de mode</button>
+      <button class="primary-btn" id="btnConnectManual">Se connecter au serveur</button>
+      <button class="back-link" id="btnBack">← Revenir au choix principal</button>
     </div>
 
     <div class="status" id="status"></div>
@@ -307,6 +380,12 @@
     const statusEl = document.getElementById("status");
     const serverListEl = document.getElementById("serverList");
     const serverAddressInput = document.getElementById("serverAddress");
+    const errorBanner = document.getElementById("errorBanner");
+    const errorBannerBody = document.getElementById("errorBannerBody");
+    const btnRetryLast = document.getElementById("btnRetryLast");
+    const btnSwitchServerDirect = document.getElementById("btnSwitchServerDirect");
+
+    let lastFailedAddress = null;
 
     function setStatus(text, kind) {
       statusEl.className = "status" + (kind ? " " + kind : "");
@@ -317,12 +396,52 @@
       }
     }
 
-    document.getElementById("btnServeur").addEventListener("click", async () => {
-      setStatus("Démarrage de PostgreSQL et des services...", "pending");
-      const result = await window.cecoSetup.chooseServer();
-      if (!result.ok) setStatus(result.error, "error");
+    // Chargement de l'état initial (vérifie si l'ouverture fait suite à un échec)
+    window.addEventListener("DOMContentLoaded", async () => {
+      try {
+        const initialState = await window.cecoSetup.getInitialState();
+        if (initialState && initialState.hasError) {
+          errorBanner.classList.add("visible");
+          lastFailedAddress = initialState.serverAddress;
+          serverAddressInput.value = lastFailedAddress || "";
+
+          errorBannerBody.innerHTML =
+            `Impossible de joindre le serveur à l'adresse <span class="error-banner-code">${initialState.serverAddress || 'configurée'}</span>.<br>` +
+            `Vérifiez que le poste serveur est allumé et connecté au même réseau.`;
+        }
+      } catch (e) {
+        console.warn("Erreur chargement état initial :", e);
+      }
     });
 
+    // Action 1 : Mode Serveur Principal
+    document.getElementById("btnServeur").addEventListener("click", async () => {
+      setStatus("Démarrage de PostgreSQL embarqué et des services CECO...", "pending");
+      const result = await window.cecoSetup.chooseServer();
+      if (!result.ok) {
+        setStatus("Échec démarrage serveur : " + result.error, "error");
+      }
+    });
+
+    btnSwitchServerDirect.addEventListener("click", async () => {
+      setStatus("Bascule en Mode Serveur... Initialisation des services locaux...", "pending");
+      const result = await window.cecoSetup.chooseServer();
+      if (!result.ok) {
+        setStatus("Échec démarrage serveur : " + result.error, "error");
+      }
+    });
+
+    // Action 2 : Réessayer la dernière adresse
+    btnRetryLast.addEventListener("click", async () => {
+      if (!lastFailedAddress) return;
+      setStatus(`Nouvelle tentative de connexion vers ${lastFailedAddress}...`, "pending");
+      const result = await window.cecoSetup.retryConnection(lastFailedAddress);
+      if (!result.ok) {
+        setStatus("Le serveur reste injoignable : " + result.error, "error");
+      }
+    });
+
+    // Action 3 : Mode Client Réseau
     document.getElementById("btnClient").addEventListener("click", () => {
       choiceView.style.display = "none";
       clientView.classList.add("visible");
@@ -337,11 +456,11 @@
     });
 
     async function startDiscovery() {
-      serverListEl.innerHTML = '<div style="font-size: 11px; color: var(--ink-variant); text-align: center; padding: 12px 0;"><span class="spinner"></span> Scan du réseau local...</div>';
+      serverListEl.innerHTML = '<div style="font-size: 11.5px; color: var(--ink-variant); text-align: center; padding: 12px 0;"><span class="spinner"></span> Détection des serveurs CECO sur le réseau local...</div>';
       try {
         const servers = await window.cecoSetup.discoverServers();
         if (!servers || servers.length === 0) {
-          serverListEl.innerHTML = '<div style="font-size: 11px; color: var(--ink-variant); text-align: center; padding: 10px 0;">Aucun serveur CECO détecté automatiquement.</div>';
+          serverListEl.innerHTML = '<div style="font-size: 11.5px; color: var(--ink-variant); text-align: center; padding: 10px 0;">Aucun serveur détecté automatiquement.<br>Vérifiez votre connexion Wi-Fi/câble ou saisissez l\'IP manuellement ci-dessous.</div>';
           return;
         }
 
@@ -366,17 +485,19 @@
           });
         });
       } catch (err) {
-        serverListEl.innerHTML = '<div style="font-size: 11px; color: var(--danger); text-align: center; padding: 8px 0;">Échec de la détection réseau.</div>';
+        serverListEl.innerHTML = '<div style="font-size: 11.5px; color: var(--danger); text-align: center; padding: 8px 0;">Échec du balayage réseau local.</div>';
       }
     }
 
     document.getElementById("btnRescan").addEventListener("click", startDiscovery);
 
     async function connectToAddress(address) {
-      if (!address) return setStatus("Veuillez saisir une adresse valide.", "error");
-      setStatus("Connexion au serveur en cours...", "pending");
+      if (!address) return setStatus("Veuillez saisir une adresse IP valide.", "error");
+      setStatus(`Vérification et connexion à ${address}...`, "pending");
       const result = await window.cecoSetup.chooseClient(address);
-      if (!result.ok) setStatus(result.error, "error");
+      if (!result.ok) {
+        setStatus("Échec de connexion : " + result.error, "error");
+      }
     }
 
     document.getElementById("btnConnectManual").addEventListener("click", () => {

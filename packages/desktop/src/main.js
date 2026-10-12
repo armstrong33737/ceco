@@ -1,5 +1,11 @@
+// packages/desktop/src/main.js
 const childProcess = require("child_process");
 const fs = require("fs");
+const path = require("path");
+const url = require("url");
+const http = require("http");
+const os = require("os");
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
 
 function rewriteAsarPath(p) {
   if (typeof p === "string" && p.includes("app.asar") && !p.includes("app.asar.unpacked")) {
@@ -30,11 +36,6 @@ if (fs.promises) {
   };
 }
 
-const { app, BrowserWindow, Tray, Menu, dialog, ipcMain } = require("electron");
-const path = require("path");
-const url = require("url");
-const http = require("http");
-const os = require("os");
 const ServiceManager = require("./serviceManager");
 const { readConfig, writeConfig, clearConfig } = require("./setup/config");
 
@@ -43,7 +44,7 @@ app.setPath("userData", path.join(app.getPath("appData"), "CECO"));
 
 app.disableHardwareAcceleration();
 
-// DÉSACTIVATION GLOBALE DU MENU PAR DÉFAUT (File, Edit, View, Window...)
+// Désactivation globale du menu contextuel Chromium par défaut
 Menu.setApplicationMenu(null);
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -55,6 +56,10 @@ if (!gotSingleInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
+    } else if (setupWindow) {
+      if (setupWindow.isMinimized()) setupWindow.restore();
+      setupWindow.show();
+      setupWindow.focus();
     }
   });
 }
@@ -62,9 +67,27 @@ if (!gotSingleInstanceLock) {
 let mainWindow;
 let setupWindow;
 let tray;
+let setupInitialState = null;
 const serviceManager = new ServiceManager();
 
 const APP_ICON_PATH = path.join(__dirname, "../assets/icon.png");
+
+// Synchronisation automatique de l'asset seal.png si nécessaire
+function ensureDesktopSealAsset() {
+  try {
+    const desktopAssetDir = path.join(__dirname, "../assets");
+    const desktopSealPath = path.join(desktopAssetDir, "seal.png");
+    if (!fs.existsSync(desktopSealPath)) {
+      const backendSealPath = path.join(__dirname, "../../backend/assets/seal.png");
+      if (fs.existsSync(backendSealPath)) {
+        if (!fs.existsSync(desktopAssetDir)) fs.mkdirSync(desktopAssetDir, { recursive: true });
+        fs.copyFileSync(backendSealPath, desktopSealPath);
+      }
+    }
+  } catch (e) {
+    // Non bloquant
+  }
+}
 
 function getLocalSubnets() {
   const interfaces = os.networkInterfaces();
@@ -99,7 +122,7 @@ function probeServer(ip, port = 4000, timeout = 500) {
                 ip,
                 port,
                 address: `${ip}:${port}`,
-                name: json.centerId ? `Serveur CECO (${ip})` : `Serveur local (${ip})`
+                name: json.centerId ? `Serveur CECO (${ip})` : `Serveur local (${ip})`,
               });
             }
           } catch {
@@ -135,15 +158,15 @@ async function discoverServers() {
   return results;
 }
 
-function testConnection(address, timeoutMs = 5000) {
+function testConnection(address, timeoutMs = 4000) {
   return new Promise((resolve, reject) => {
     const req = http.get(`http://${address}/health`, { timeout: timeoutMs }, (res) => {
       res.resume();
       if (res.statusCode === 200) return resolve();
-      reject(new Error(`Le serveur a répondu avec le code ${res.statusCode}.`));
+      reject(new Error(`Le serveur distant a répondu avec le statut HTTP ${res.statusCode}.`));
     });
-    req.on("timeout", () => req.destroy(new Error("Délai de connexion dépassé.")));
-    req.on("error", (err) => reject(new Error(`Impossible de joindre ce serveur : ${err.message}`)));
+    req.on("timeout", () => req.destroy(new Error("Délai de connexion dépassé (timeout 4s).")));
+    req.on("error", (err) => reject(new Error(`Hôte inaccessible : ${err.message}`)));
   });
 }
 
@@ -151,9 +174,9 @@ function createWindow(clientAddress) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 900,
-    minHeight: 600,
-    title: "CECO",
+    minWidth: 960,
+    minHeight: 640,
+    title: "CECO Suite ERP",
     icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
@@ -196,10 +219,10 @@ function createWindow(clientAddress) {
 }
 
 function createTray() {
-  const trayIconPath = path.join(__dirname, "../assets/tray-icon.png");
+  if (tray) return;
 
+  const trayIconPath = path.join(__dirname, "../assets/tray-icon.png");
   if (!fs.existsSync(trayIconPath)) {
-    console.warn("[Tray] Icône introuvable :", trayIconPath);
     return;
   }
 
@@ -209,7 +232,7 @@ function createTray() {
       { label: "Ouvrir CECO", click: () => mainWindow && mainWindow.show() },
       { type: "separator" },
       {
-        label: "Changer de mode (Serveur/Client)",
+        label: "Changer de configuration (Serveur/Client)",
         click: async () => {
           try {
             await serviceManager.stopServer();
@@ -217,14 +240,17 @@ function createTray() {
             console.error("Erreur pendant l'arrêt des services :", err);
           } finally {
             clearConfig();
-            app.relaunch();
-            app.isQuitting = true;
-            app.quit();
+            setupInitialState = null;
+            if (mainWindow) {
+              mainWindow.destroy();
+              mainWindow = null;
+            }
+            createSetupWindow();
           }
         },
       },
       {
-        label: "Arrêter les services et quitter",
+        label: "Quitter l'application",
         click: async () => {
           try {
             await serviceManager.stopServer();
@@ -238,15 +264,21 @@ function createTray() {
       },
     ])
   );
-  tray.setToolTip("CECO — services actifs en arrière-plan");
+  tray.setToolTip("CECO Suite ERP — Services actifs");
 }
 
 function createSetupWindow() {
+  if (setupWindow) {
+    setupWindow.show();
+    setupWindow.focus();
+    return;
+  }
+
   setupWindow = new BrowserWindow({
-    width: 500,
-    height: 620,
+    width: 520,
+    height: 640,
     resizable: false,
-    title: "CECO — Configuration",
+    title: "CECO — Configuration & Démarrage",
     icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       contextIsolation: true,
@@ -254,21 +286,38 @@ function createSetupWindow() {
       preload: path.join(__dirname, "setup/preload.js"),
     },
   });
+
   setupWindow.setMenuBarVisibility(false);
   setupWindow.loadFile(path.join(__dirname, "setup/setup.html"));
+
+  setupWindow.on("closed", () => {
+    setupWindow = null;
+  });
 }
+
+// ------------------------------------------------------------------
+// CANAUX IPC DE GESTION DU CYCLE DE VIE RÉSEAU
+// ------------------------------------------------------------------
+
+ipcMain.handle("setup:get-initial-state", async () => {
+  return setupInitialState || { hasError: false };
+});
 
 ipcMain.handle("setup:choose-server", async () => {
   try {
     await serviceManager.startServer();
     writeConfig({ mode: "server" });
-    if (setupWindow) setupWindow.close();
+    setupInitialState = null;
+    if (setupWindow) {
+      setupWindow.close();
+      setupWindow = null;
+    }
     createWindow();
     createTray();
     return { ok: true };
   } catch (err) {
     console.error("Échec du démarrage en mode Serveur :", err);
-    return { ok: false, error: err?.message || "Erreur inconnue." };
+    return { ok: false, error: err?.message || "Erreur interne de démarrage." };
   }
 });
 
@@ -276,12 +325,33 @@ ipcMain.handle("setup:choose-client", async (event, address) => {
   try {
     await testConnection(address);
     writeConfig({ mode: "client", serverAddress: address });
-    if (setupWindow) setupWindow.close();
+    setupInitialState = null;
+    if (setupWindow) {
+      setupWindow.close();
+      setupWindow = null;
+    }
     createWindow(address);
     createTray();
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err?.message || "Erreur inconnue." };
+    return { ok: false, error: err?.message || "Hôte introuvable sur le réseau local." };
+  }
+});
+
+ipcMain.handle("setup:retry-connection", async (event, address) => {
+  try {
+    await testConnection(address);
+    writeConfig({ mode: "client", serverAddress: address });
+    setupInitialState = null;
+    if (setupWindow) {
+      setupWindow.close();
+      setupWindow = null;
+    }
+    createWindow(address);
+    createTray();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message || "Serveur toujours indisponible." };
   }
 });
 
@@ -289,8 +359,20 @@ ipcMain.handle("setup:discover-servers", async () => {
   return await discoverServers();
 });
 
+ipcMain.handle("setup:clear-config", async () => {
+  clearConfig();
+  setupInitialState = null;
+  return { ok: true };
+});
+
+// ------------------------------------------------------------------
+// POINT D'ENTRÉE DE L'APPLICATION
+// ------------------------------------------------------------------
+
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
+
+  ensureDesktopSealAsset();
 
   const config = readConfig();
 
@@ -299,26 +381,50 @@ app.whenReady().then(async () => {
     return;
   }
 
-  try {
-    if (config.mode === "server") {
+  // Si l'ordinateur est configuré en mode Serveur
+  if (config.mode === "server") {
+    try {
       await serviceManager.startServer();
       createWindow();
-    } else {
+      createTray();
+    } catch (err) {
+      console.error("Échec démarrage Serveur local :", err);
+      setupInitialState = {
+        hasError: true,
+        mode: "server",
+        serverAddress: null,
+        errorMessage: `Le démarrage du serveur local a rencontré une erreur : ${err.message}. Vous pouvez basculer en mode Client ou relancer la configuration.`,
+      };
+      createSetupWindow();
+      createTray();
+    }
+    return;
+  }
+
+  // Si l'ordinateur est configuré en mode Client
+  if (config.mode === "client") {
+    try {
       await testConnection(config.serverAddress);
       createWindow(config.serverAddress);
+      createTray();
+    } catch (err) {
+      console.warn(`[Client] Serveur distant injoignable (${config.serverAddress}) : ${err.message}`);
+      setupInitialState = {
+        hasError: true,
+        mode: "client",
+        serverAddress: config.serverAddress,
+        errorMessage: `Impossible de contacter le serveur CECO sur le réseau local à l'adresse "${config.serverAddress}".`,
+      };
+      // NE PLUS QUITTER L'APPLICATION : ouverture de l'écran de repli interactif
+      createSetupWindow();
+      createTray();
     }
-    createTray();
-  } catch (err) {
-    console.error("Échec du démarrage des services CECO :", err);
-    dialog.showErrorBox(
-      "Erreur au démarrage",
-      `CECO n'a pas pu démarrer.\n\n${err?.message || "Erreur inconnue."}\n\nUtilisez "Changer de mode" depuis la barre système pour reconfigurer.`
-    );
-    app.quit();
   }
 });
 
-app.on("window-all-closed", () => {});
+app.on("window-all-closed", () => {
+  // L'application reste active dans le Tray
+});
 
 async function gracefulShutdown() {
   console.log("Arrêt demandé — arrêt propre des services...");

@@ -1,5 +1,5 @@
 // packages/frontend/src/modules/administration/CenterIdentityPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { apiFetch, apiFetchImageUrl } from "../../lib/apiClient";
 import { showToast } from "../../store/toastStore";
@@ -16,7 +16,20 @@ const EMPTY_CENTER = {
   name: "", email: "", phone: "", hasLogo: false, hasSeal: true, isDefaultSeal: true,
   address: "", city: "", postalCode: "", country: "", website: "",
   registrationNumber: "", directorName: "", directorTitle: "", description: "",
+  matriculeFormat: "{CTR}-{FIL}{YY}-{NUM4}",
 };
+
+const AVAILABLE_TOKENS = [
+  { token: "{CTR}", desc: "Sigle du centre (ex: CEFOPIA)" },
+  { token: "{FIL}", desc: "Code filière (ex: GP)" },
+  { token: "{CYCLE}", desc: "Code cycle (ex: DQP)" },
+  { token: "{YY}", desc: "Année 2 chiffres (26)" },
+  { token: "{YYYY}", desc: "Année 4 chiffres (2026)" },
+  { token: "{NUM4}", desc: "Compteur 4 chiffres (0001)" },
+  { token: "{NUM5}", desc: "Compteur 5 chiffres (00001)" },
+  { token: "-", desc: "Séparateur tiret" },
+  { token: "/", desc: "Séparateur slash" },
+];
 
 export default function CenterIdentityPage() {
   const [form, setForm] = useState(EMPTY_CENTER);
@@ -45,11 +58,16 @@ export default function CenterIdentityPage() {
         apiFetch("/center/signature-roles").catch(() => [
           { key: "directeur", title: "Directeur Général", desc: "Signature officielle de la Direction" },
           { key: "promoteur", title: "Promoteur / Fondateur", desc: "Signature officielle du Promoteur" },
+          { key: "delegue", title: "Le Délégué Départemental", desc: "Visa de la tutelle MINEFOP pour examens blancs" },
         ]),
         apiFetch("/center/signatures").catch(() => ({})),
       ]);
 
-      setForm({ ...EMPTY_CENTER, ...centerData });
+      setForm({
+        ...EMPTY_CENTER,
+        ...centerData,
+        matriculeFormat: centerData?.matriculeFormat || "{CTR}-{FIL}{YY}-{NUM4}",
+      });
       setSignatureRoles(rolesData || []);
       setSignatureStatusMap(sigsStatus || {});
 
@@ -123,7 +141,7 @@ export default function CenterIdentityPage() {
         });
         setSignatureBlobUrls((prev) => ({ ...prev, [roleKey]: reader.result }));
         setSignatureStatusMap((prev) => ({ ...prev, [roleKey]: true }));
-        showToast("Signature scannée enregistrée.", "success");
+        showToast("Signature numérisée enregistrée.", "success");
       } catch (err) {
         showToast(err.message, "error");
       }
@@ -150,7 +168,7 @@ export default function CenterIdentityPage() {
     e.preventDefault();
     if (!newRoleTitle.trim()) return;
 
-    let safeKey = (newRoleKey || newRoleTitle).trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const safeKey = (newRoleKey || newRoleTitle).trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
     if (signatureRoles.some((r) => r.key === safeKey)) {
       showToast("Cette fonction existe déjà.", "warning");
       return;
@@ -169,6 +187,27 @@ export default function CenterIdentityPage() {
     }
   }
 
+  function insertToken(token) {
+    setForm((prev) => ({
+      ...prev,
+      matriculeFormat: (prev.matriculeFormat || "") + token,
+    }));
+  }
+
+  // Calcul dynamique en temps réel de l'aperçu du matricule
+  const computedMatriculePreview = useMemo(() => {
+    const pattern = form.matriculeFormat || "{CTR}-{FIL}{YY}-{NUM4}";
+    const centerSigle = form.name ? form.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 7).toUpperCase() : "CEFOPIA";
+    return pattern
+      .replace(/\{CTR\}|\{CENTER\}/g, centerSigle || "CEFOPIA")
+      .replace(/\{FIL\}|\{FILIERE\}/g, "GP")
+      .replace(/\{CYCLE\}/g, "DQP")
+      .replace(/\{YY\}|\{YEAR\}/g, "26")
+      .replace(/\{YYYY\}/g, "2026")
+      .replace(/\{NUM5\}/g, "00001")
+      .replace(/\{NUM4\}|\{NUM\}/g, "0001");
+  }, [form.matriculeFormat, form.name]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
@@ -185,7 +224,7 @@ export default function CenterIdentityPage() {
       setForm({ ...EMPTY_CENTER, ...updated });
       setPendingLogoDataUrl(null);
       setPendingSealDataUrl(null);
-      showToast("Paramètres et armoiries du centre enregistrés avec succès.", "success");
+      showToast("Paramètres du centre et format du matricule enregistrés.", "success");
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -198,7 +237,7 @@ export default function CenterIdentityPage() {
       <PageHeader
         contextBadge={<Badge variant="brand">Administration • Identité Légale</Badge>}
         title="Configuration de l'Établissement"
-        subtitle="Dénomination légale, agrément ministériel (MINEFOP), armoiries, Sceau d'État et signatures"
+        subtitle="Dénomination légale, agrément ministériel (MINEFOP), format officiel du matricule, armoiries et signatures"
         actions={
           <Button variant="primary" icon="save" onClick={handleSubmit} isLoading={saving}>
             Enregistrer les Paramètres
@@ -253,15 +292,73 @@ export default function CenterIdentityPage() {
           </StructuredPanel>
         </div>
 
-        {/* Colonne Droite : Coordonnées, Agrément & Signatures (8 cols) */}
+        {/* Colonne Droite : Coordonnées, Agrément, Format Matricule & Signatures (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
           <StructuredPanel title="Dénomination &amp; Agrément Ministériel" subtitle="Mentions inscrites sur les actes officiels et diplômes" icon="business">
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Input required label="Nom officiel du centre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: Centre d'Excellence Professionnelle" />
+                <Input required label="Nom officiel du centre" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex: CEFOPIA" />
                 <Input label="N° d'Arrêté / Agrément Ministériel" value={form.registrationNumber || ""} onChange={(e) => setForm({ ...form, registrationNumber: e.target.value })} placeholder="Ex: N° 0042/MINEFOP/SG/DFOP" />
               </div>
               <Textarea label="Description / Devise de l'établissement" rows={2} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Devise ou mentions légales d'en-tête" />
+            </div>
+          </StructuredPanel>
+
+          {/* Moteur Paramétrable du Matricule Officiel */}
+          <StructuredPanel
+            title="Format Officiel &amp; Sécurisé du Matricule Apprenant"
+            subtitle="Définissez le patron d'attribution automatique pour les nouvelles inscriptions"
+            icon="fingerprint"
+          >
+            <div className="space-y-4">
+              <div>
+                <Input
+                  label="Modèle de patron du matricule"
+                  value={form.matriculeFormat || ""}
+                  onChange={(e) => setForm({ ...form, matriculeFormat: e.target.value })}
+                  placeholder="{CTR}-{FIL}{YY}-{NUM4}"
+                />
+              </div>
+
+              {/* Jetons interactifs d'insertion */}
+              <div>
+                <span className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-1.5 dark:text-ink-secondary-dark">
+                  Variables d'auto-complétion disponibles (cliquez pour insérer) :
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {AVAILABLE_TOKENS.map((t) => (
+                    <button
+                      key={t.token}
+                      type="button"
+                      onClick={() => insertToken(t.token)}
+                      className="px-2.5 py-1 rounded border border-border bg-[#F5F7FA] hover:bg-brand-900 hover:text-white font-mono text-[11px] font-bold text-ink-primary transition-colors dark:bg-[#07111D] dark:border-border-dark dark:text-white"
+                      title={t.desc}
+                    >
+                      {t.token}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Aperçu en temps réel */}
+              <div className="p-3.5 rounded bg-brand-900/5 border border-brand-900/20 flex items-center justify-between dark:bg-brand-500/10 dark:border-brand-500/30">
+                <div>
+                  <span className="text-caption font-semibold text-ink-secondary block dark:text-ink-secondary-dark">
+                    Aperçu du matricule généré en direct :
+                  </span>
+                  <span className="font-mono font-bold text-h4 text-brand-900 tracking-wider dark:text-brand-500">
+                    {computedMatriculePreview}
+                  </span>
+                </div>
+                <Badge variant="brand">Garantie Anti-Collision</Badge>
+              </div>
+
+              <div className="p-3 rounded bg-info-subtle border border-info/30 text-info text-caption font-medium flex items-start gap-2 dark:bg-info-subtle-dark dark:text-info-dark">
+                <Icon name="verified_user" className="text-[18px] flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Règle de scellement juridique :</strong> Tout matricule déjà attribué reste scellé et immuable. La modification du patron ne s'appliquera qu'aux futurs élèves inscrits sans altérer les anciens dossiers historiques.
+                </span>
+              </div>
             </div>
           </StructuredPanel>
 
@@ -277,10 +374,10 @@ export default function CenterIdentityPage() {
             </div>
           </StructuredPanel>
 
-          {/* Signatures Scannées */}
+          {/* Signatures Numérisées */}
           <StructuredPanel
-            title="Signatures Scannées &amp; Cachets Numérisés"
-            subtitle="Signatures apposées automatiquement en pied de page des bulletins et diplômes"
+            title="Signatures Numérisées &amp; Visas"
+            subtitle="Signatures apposées automatiquement en pied de page des actes et diplômes"
             icon="draw"
             headerAction={
               <Button variant="tertiary" size="sm" icon="add" onClick={() => setShowAddRoleModal(true)}>

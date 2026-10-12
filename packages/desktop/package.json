@@ -49,6 +49,14 @@
         ]
       },
       {
+        "from": "../backend/assets",
+        "to": "backend/assets"
+      },
+      {
+        "from": "assets",
+        "to": "desktop/assets"
+      },
+      {
         "from": "../backend/prisma",
         "to": "backend/prisma",
         "filter": [

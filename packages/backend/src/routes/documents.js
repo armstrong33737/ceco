@@ -6,7 +6,7 @@ const crypto = require("crypto");
 const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
-const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
+const { centerStoragePath, ensureStorageTree, cleanTempStorage } = require("../storage/paths");
 const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 const {
   generateStudentCardPdf,
@@ -14,10 +14,6 @@ const {
   generateAttestationPdf,
   generateBatchAttestationsPdf,
   generateFicheInscriptionPdf,
-  generateBlankGradeSheetPdf,
-  generateCertifiedGradeSheetPdf,
-  generateClassSemesterSummaryPdf,
-  generateClassContinuousAssessmentSummaryPdf,
   generateContinuousAssessmentBulletinPdf,
   generateBatchContinuousAssessmentBulletinsPdf,
   generateSemesterBulletinPdf,
@@ -124,38 +120,23 @@ function getGeneralObservation(avg, hasEliminatory) {
   return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
 }
 
+/**
+ * Génère une charge utile QR Code ultra-compacte (< 130 caractères) pour une lecture caméra instantanée
+ */
 function generateOfflineQrPayload(snapshot, docType) {
-  const c = snapshot.center || {};
-  const s = snapshot.student || {};
-  const cl = snapshot.classe || snapshot.inscription || {};
-  const t = snapshot.totals || {};
-  const p = snapshot.period || {};
+  const c = (snapshot.center?.name || "CECO").replace(/[^a-zA-Z0-9]/g, "").substring(0, 10).toUpperCase();
+  const mat = (snapshot.student?.matricule || "—").substring(0, 16);
+  const nom = `${snapshot.student?.lastName || ""} ${(snapshot.student?.firstName || "")[0] || ""}`.substring(0, 16).trim().toUpperCase();
+  const moy = snapshot.totals?.overallAverage !== null && snapshot.totals?.overallAverage !== undefined
+    ? Number(snapshot.totals.overallAverage).toFixed(2)
+    : "—";
+  const rng = snapshot.totals?.rank ? `${snapshot.totals.rank}e` : "—";
+  const dec = (snapshot.totals?.decision || "EN_COURS").substring(0, 6).toUpperCase();
+  const sig = (snapshot.qrToken ? snapshot.qrToken.split("?")[0] : "CECO").substring(0, 8);
+  const docCode = docType.replace(/[^a-zA-Z]/g, "").substring(0, 6).toUpperCase();
 
-  let resultDetail = "";
-  if (docType === "BULLETIN_SEMESTRE" || docType === "BULLETIN_CC") {
-    resultDetail = `Moyenne: ${t.overallAverage !== null ? t.overallAverage + "/20" : "—"} (Rang: ${t.rank ? t.rank + "e/" + t.totalStudents : "—"})`;
-  } else if (docType === "RELEVE_ANNUEL") {
-    resultDetail = `Moyenne Annuelle: ${t.overallAverage !== null ? t.overallAverage + "/20" : "—"} | Décision: ${t.decision || "—"}`;
-  } else if (docType === "DIPLOME_FIN_FORMATION") {
-    resultDetail = `Mention: ${t.mention || "Passable"} | Décision: DIPLÔMÉ`;
-  } else if (docType === "ATTESTATION_INSCRIPTION" || docType === "CARTE_ETUDIANT") {
-    resultDetail = `Statut: Régulièrement inscrit (${cl.status || "en_cours"})`;
-  }
-
-  return [
-    `=== CERTIFICATION OFFICIELLE CECO ===`,
-    `Centre: ${c.name || "Établissement de Formation"}`,
-    `Agrément: ${c.registrationNumber || "MINEFOP"} - ${c.city || "Cameroun"}`,
-    `Document: ${docType}`,
-    `Titulaire: ${s.lastName || ""} ${s.firstName || ""}`,
-    `Matricule: ${s.matricule || "—"}`,
-    `Filière: ${cl.filiereName || "—"} (${cl.programTypeCode || "DQP"})`,
-    `Session: ${cl.academicYearLabel || "—"}${p.label ? " - " + p.label : ""}`,
-    resultDetail,
-    `Émis le: ${new Date().toLocaleDateString("fr-FR")}`,
-    `Sceau ID: ${snapshot.qrToken || "OFFICIAL-CECO"}`,
-    `=====================================`,
-  ].filter(Boolean).join("\n");
+  const payload = `CECO:V1|CTR:${c}|MAT:${mat}|DOC:${docCode}|NOM:${nom}|MOY:${moy}|RNG:${rng}|DEC:${dec}|SIG:${sig}`;
+  return payload.length > 145 ? payload.substring(0, 144) : payload;
 }
 
 const DEFAULT_FAMILY_CONFIGS = {
@@ -206,7 +187,7 @@ const DEFAULT_FAMILY_CONFIGS = {
   },
 };
 
-// 1. Registre Centralisé des Documents Paginé
+// 1. Registre Centralisé des Documents
 router.get("/documents", verifyJwt, requirePermission("students.read", "grades.read"), async (req, res, next) => {
   try {
     const { type, classeId, search, page = 1, limit = 25 } = req.query || {};
@@ -245,6 +226,7 @@ router.get("/documents", verifyJwt, requirePermission("students.read", "grades.r
         type: d.type,
         studentId: d.studentId,
         classeId: d.classeId,
+        gradePeriodId: d.gradePeriodId,
         fileHash: d.fileHash,
         qrToken: d.qrToken,
         generatedAt: d.generatedAt,
@@ -273,13 +255,9 @@ router.get("/documents/templates/:type", verifyJwt, requirePermission("center.re
       where: { centerId_type: { centerId: req.centerId, type } },
     });
 
-    if (template?.config) {
-      return res.json(template.config);
-    }
+    if (template?.config) return res.json(template.config);
 
-    if (type.startsWith("CARTE")) {
-      return res.json(DEFAULT_FAMILY_CONFIGS.CARTE);
-    }
+    if (type.startsWith("CARTE")) return res.json(DEFAULT_FAMILY_CONFIGS.CARTE);
     if (["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type)) {
       return res.json(DEFAULT_FAMILY_CONFIGS.INTERNE);
     }
@@ -306,32 +284,73 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// Helper pour préparer les données de calcul académique avec intégration du taux de réussite réel
-async function buildStudentAcademicSnapshot(centerId, studentId, classeId, gradePeriodId) {
-  const [center, student, classe, period, offerings, results, grades, delibs, allStudentsInscs] = await Promise.all([
-    prisma.center.findUnique({ where: { id: centerId } }),
-    prisma.student.findFirst({
-      where: { id: studentId, centerId, deletedAt: null },
-      include: {
-        inscriptions: {
-          where: { classeId },
-          include: { promotion: true, academicYear: true },
+// 3. Snapshot Académique Résilient
+async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetClasseId, gradePeriodId) {
+  const student = await prisma.student.findFirst({
+    where: {
+      centerId,
+      OR: [{ id: studentIdentifier }, { matricule: studentIdentifier }],
+    },
+    include: {
+      inscriptions: {
+        include: {
+          classe: {
+            include: {
+              filiere: { include: { programType: true } },
+              niveau: true,
+              academicYear: { include: { gradePeriods: true } },
+            },
+          },
+          promotion: true,
+          academicYear: true,
         },
+        orderBy: { createdAt: "desc" },
       },
-    }),
+    },
+  });
+
+  if (!student) return null;
+
+  let finalClasseId = targetClasseId;
+  let currentInsc = student.inscriptions.find((i) => i.classeId === finalClasseId);
+
+  if (!currentInsc) {
+    currentInsc = student.inscriptions[0];
+    finalClasseId = currentInsc?.classeId;
+  }
+  if (!finalClasseId || !currentInsc) return null;
+
+  const [center, classe] = await Promise.all([
+    prisma.center.findUnique({ where: { id: centerId } }),
     prisma.classe.findFirst({
-      where: { id: classeId, centerId },
+      where: { id: finalClasseId, centerId },
       include: {
         filiere: { include: { programType: true } },
         niveau: true,
-        academicYear: true,
+        academicYear: { include: { gradePeriods: true } },
       },
     }),
-    gradePeriodId ? prisma.gradePeriod.findUnique({ where: { id: gradePeriodId } }) : null,
+  ]);
+
+  if (!center || !classe) return null;
+
+  let period = null;
+  if (gradePeriodId) {
+    period = await prisma.gradePeriod.findFirst({
+      where: { id: gradePeriodId, centerId },
+    });
+  }
+  if (!period && classe.academicYear?.gradePeriods?.length > 0) {
+    period = classe.academicYear.gradePeriods.find((p) => p.type === "SEMESTRE") || classe.academicYear.gradePeriods[0];
+  }
+
+  const isPeriodSpecific = period && period.type === "SEMESTRE";
+
+  const [offerings, results, grades, delibs, allStudentsInscs] = await Promise.all([
     prisma.subjectOffering.findMany({
       where: {
-        classeId,
-        ...(gradePeriodId ? { gradePeriodId } : {}),
+        classeId: finalClasseId,
+        ...(isPeriodSpecific ? { gradePeriodId: period.id } : {}),
       },
       include: { subject: true, category: true, formateur: true, gradePeriod: true },
       orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
@@ -339,37 +358,42 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     prisma.subjectResult.findMany({
       where: {
         centerId,
-        ...(gradePeriodId ? { gradePeriodId } : {}),
+        studentId: student.id,
+        ...(isPeriodSpecific ? { gradePeriodId: period.id } : {}),
       },
     }),
     prisma.grade.findMany({
       where: {
         centerId,
-        ...(gradePeriodId ? { gradePeriodId } : {}),
+        studentId: student.id,
+        ...(isPeriodSpecific ? { gradePeriodId: period.id } : {}),
       },
     }),
     prisma.deliberation.findMany({
       where: {
-        classeId,
+        classeId: finalClasseId,
         centerId,
-        ...(gradePeriodId ? { gradePeriodId } : { scope: "ANNUEL" }),
+        ...(isPeriodSpecific ? { gradePeriodId: period.id } : { scope: "ANNUEL" }),
       },
       include: { studentResults: true },
     }),
     prisma.inscription.findMany({
-      where: { classeId, centerId, student: { deletedAt: null } },
+      where: { classeId: finalClasseId, centerId, student: { deletedAt: null } },
       include: { student: true },
     }),
   ]);
 
-  if (!student || !classe) return null;
-
-  const currentInsc = student.inscriptions[0] || {};
-
-  // Calcul dynamique du profil de tous les élèves de la classe
   const classAverages = [];
+  const allResults = await prisma.subjectResult.findMany({
+    where: {
+      centerId,
+      studentId: { in: allStudentsInscs.map((i) => i.studentId) },
+      ...(isPeriodSpecific ? { gradePeriodId: period?.id } : {}),
+    },
+  });
+
   allStudentsInscs.forEach((inscItem) => {
-    const stResults = results.filter((r) => r.studentId === inscItem.studentId && offerings.some((o) => o.subjectId === r.subjectId));
+    const stResults = allResults.filter((r) => r.studentId === inscItem.studentId && offerings.some((o) => o.subjectId === r.subjectId));
     let pts = 0;
     let coeffs = 0;
     let stHasElim = false;
@@ -401,17 +425,12 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     ? Number((classAverages.reduce((s, c) => s + c.avg, 0) / classAverages.length).toFixed(2))
     : null;
 
-  // Calcul dynamique du taux de réussite réel
   const passedStudentsCount = classAverages.filter((c) => c.avg >= 10.0 && !c.hasElim).length;
   const failedStudentsCount = allStudentsInscs.length - passedStudentsCount;
   const realSuccessRate = allStudentsInscs.length > 0
     ? Number(((passedStudentsCount / allStudentsInscs.length) * 100).toFixed(1))
     : 0.0;
 
-  const studentResults = results.filter((r) => r.studentId === student.id);
-  const studentGrades = grades.filter((g) => g.studentId === student.id);
-
-  // Ventilation par groupes d'enseignement (Catégories)
   const categoriesMap = new Map();
   let grandTotalPoints = 0;
   let grandTotalCoeff = 0;
@@ -436,8 +455,8 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
     }
 
     const group = categoriesMap.get(catName);
-    const subRes = studentResults.find((r) => r.subjectId === off.subjectId && (!gradePeriodId || r.gradePeriodId === off.gradePeriodId));
-    const subGrades = studentGrades.filter((g) => g.subjectOfferingId === off.id);
+    const subRes = results.find((r) => r.subjectId === off.subjectId);
+    const subGrades = grades.filter((g) => g.subjectOfferingId === off.id);
 
     const normGrade = subGrades.find((g) => g.evaluationType === "NORMALE");
     const rattGrade = subGrades.find((g) => g.evaluationType === "RATTRAPAGE");
@@ -476,7 +495,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       }
     }
 
-    const allScoresForSubject = results
+    const allScoresForSubject = allResults
       .filter((r) => r.subjectId === off.subjectId && r.finalGrade !== null)
       .map((r) => r.finalGrade)
       .sort((a, b) => b - a);
@@ -513,11 +532,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   let juryDecision = currentInsc.status || "en_cours";
   const activeDelib = delibs[0];
   const stDelib = activeDelib?.studentResults?.find((d) => d.studentId === student.id);
-  if (stDelib) {
-    juryDecision = stDelib.decision;
-  }
-
-  const allSignatures = getAllCenterSignaturesBase64(centerId);
+  if (stDelib) juryDecision = stDelib.decision;
 
   return {
     center: {
@@ -533,7 +548,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       directorTitle: center.directorTitle || "Le Directeur Général",
       logoDataUrl: getCenterLogoBase64(centerId, center.logo),
       sealDataUrl: getCenterSealBase64(centerId),
-      signatures: allSignatures,
+      signatures: getAllCenterSignaturesBase64(centerId),
     },
     student: {
       id: student.id,
@@ -565,7 +580,7 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
       label: period.label,
       type: period.type,
       order: period.order,
-    } : { label: `Année ${classe.academicYear?.label}`, type: "ANNUEL" },
+    } : { label: `Année ${classe.academicYear?.label || "2026-2027"}`, type: "ANNUEL" },
     categories,
     totals: {
       totalCoefficients: grandTotalCoeff,
@@ -587,67 +602,40 @@ async function buildStudentAcademicSnapshot(centerId, studentId, classeId, grade
   };
 }
 
-// 3. Génération d'un document individuel
+// 4. Génération d'un document individuel (Ségrégation Archive vs Temp)
 router.post("/documents/generate", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, gradePeriodId, forceRegenerate = false } = req.body || {};
     if (!studentId) return res.status(400).json({ error: "Identifiant apprenant requis." });
 
     await ensureStorageTree(req.centerId);
+    cleanTempStorage(req.centerId);
+
+    const snapshot = await buildStudentAcademicSnapshot(req.centerId, studentId, classeId, gradePeriodId);
+    if (!snapshot) {
+      return res.status(404).json({ error: "Données académiques introuvables pour cet apprenant." });
+    }
+
+    const targetClasseId = snapshot.classe.id;
+
+    // Détermination de la destination : Actes pérennes scellés vs fiches de travail
+    const isPermanentLegalDoc = ["BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION", "ATTESTATION_INSCRIPTION"].includes(type);
 
     const existingDoc = await prisma.document.findFirst({
       where: {
         centerId: req.centerId,
-        studentId,
+        studentId: snapshot.student.id,
         type,
-        ...(classeId ? { classeId } : {}),
-        ...(gradePeriodId ? { qrToken: { contains: gradePeriodId } } : {}),
+        classeId: targetClasseId,
+        ...(snapshot.period?.id ? { gradePeriodId: snapshot.period.id } : {}),
       },
       orderBy: { generatedAt: "desc" },
     });
 
-    if (!forceRegenerate && existingDoc) {
-      if (fs.existsSync(existingDoc.filePath)) {
-        return res.json({
-          success: true,
-          reused: true,
-          document: {
-            id: existingDoc.id,
-            qrToken: existingDoc.qrToken,
-            fileHash: existingDoc.fileHash,
-            renderSnapshot: existingDoc.renderSnapshot,
-            downloadUrl: `/documents/${existingDoc.id}/download`,
-            previewUrl: `/documents/${existingDoc.id}/preview`,
-          },
-        });
-      }
-
-      fs.mkdirSync(path.dirname(existingDoc.filePath), { recursive: true });
-      const snap = existingDoc.renderSnapshot;
-      const offlinePayload = snap?.offlineQrPayload || generateOfflineQrPayload(snap, existingDoc.type);
-
-      if (existingDoc.type === "CARTE_ETUDIANT") {
-        await generateStudentCardPdf(snap, offlinePayload, existingDoc.filePath);
-      } else if (existingDoc.type === "FICHE_INSCRIPTION") {
-        await generateFicheInscriptionPdf(snap, existingDoc.filePath);
-      } else if (existingDoc.type === "ATTESTATION_INSCRIPTION") {
-        await generateAttestationPdf(snap, offlinePayload, existingDoc.filePath);
-      } else if (existingDoc.type === "BULLETIN_CC") {
-        await generateContinuousAssessmentBulletinPdf(snap, offlinePayload, existingDoc.filePath);
-      } else if (existingDoc.type === "BULLETIN_SEMESTRE") {
-        await generateSemesterBulletinPdf(snap, offlinePayload, existingDoc.filePath);
-      } else if (existingDoc.type === "RELEVE_ANNUEL") {
-        await generateAnnualTranscriptPdf(snap, offlinePayload, existingDoc.filePath);
-      } else if (existingDoc.type === "DIPLOME_FIN_FORMATION") {
-        await generateGraduationDiplomaPdf(snap, offlinePayload, existingDoc.filePath);
-      } else {
-        await generateAttestationPdf(snap, offlinePayload, existingDoc.filePath);
-      }
-
+    if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
       return res.json({
         success: true,
         reused: true,
-        restored: true,
         document: {
           id: existingDoc.id,
           qrToken: existingDoc.qrToken,
@@ -659,16 +647,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       });
     }
 
-    let targetClasseId = classeId;
-    if (!targetClasseId) {
-      const st = await prisma.student.findUnique({
-        where: { id: studentId },
-        include: { inscriptions: { orderBy: { createdAt: "desc" } } },
-      });
-      targetClasseId = st?.inscriptions[0]?.classeId;
-    }
-    if (!targetClasseId) return res.status(400).json({ error: "Aucune classe active trouvée pour cet apprenant." });
-
     const template = await prisma.documentTemplate.findUnique({
       where: { centerId_type: { centerId: req.centerId, type } },
     });
@@ -678,28 +656,29 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       DEFAULT_FAMILY_CONFIGS.EXTERNE
     );
 
-    const snapshot = await buildStudentAcademicSnapshot(req.centerId, studentId, targetClasseId, gradePeriodId);
-    if (!snapshot) return res.status(404).json({ error: "Données académiques introuvables." });
-
     snapshot.templateConfig = templateConfig;
 
     const cuid = crypto.randomBytes(8).toString("hex");
     const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key")
-      .update(`${cuid}:${snapshot.student.matricule}:${type}:${gradePeriodId || "ANNUEL"}`)
+      .update(`${cuid}:${snapshot.student.matricule}:${type}:${snapshot.period?.id || "ANNUEL"}`)
       .digest("hex").slice(0, 16);
 
-    const isExternalDoc = type.startsWith("CARTE") || ["ATTESTATION_INSCRIPTION", "BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
     const qrToken = `${cuid}?t=${hmacSig}&st=${snapshot.student.matricule}&doc=${type}`;
     snapshot.qrToken = qrToken;
 
+    const isExternalDoc = type.startsWith("CARTE") || ["ATTESTATION_INSCRIPTION", "BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
     const offlinePayload = isExternalDoc ? generateOfflineQrPayload(snapshot, type) : null;
     snapshot.offlineQrPayload = offlinePayload;
 
     const yearFolder = (snapshot.classe.academicYearLabel || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, type.toLowerCase());
+    
+    // Ségrégation physique sur le disque
+    const subFolderCategory = isPermanentLegalDoc ? "archive" : "temp";
+    const docFolder = centerStoragePath(req.centerId, "documents", subFolderCategory, yearFolder);
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
-    const pdfFileName = `${snapshot.student.matricule}_${type}_${Date.now()}.pdf`;
+    const cleanMatricule = (snapshot.student.matricule || "STU").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const pdfFileName = `${cleanMatricule}_${type}_${snapshot.period?.id ? snapshot.period.id.substring(0, 6) : "ANNUEL"}_${Date.now()}.pdf`;
     const fullPdfPath = path.join(docFolder, pdfFileName);
 
     if (type === "CARTE_ETUDIANT") {
@@ -729,6 +708,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
         type,
         studentId: snapshot.student.id,
         classeId: targetClasseId,
+        gradePeriodId: snapshot.period?.id || null,
         filePath: fullPdfPath,
         fileHash,
         renderSnapshot: snapshot,
@@ -752,7 +732,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
   }
 });
 
-// 4. Génération groupée pour toute une classe (Livrets PDF)
+// 5. Génération groupée pour toute une classe
 router.post("/documents/generate-batch", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { classeId, type = "BULLETIN_SEMESTRE", gradePeriodId } = req.body || {};
@@ -809,10 +789,10 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
     }
 
     const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "batches");
+    const docFolder = centerStoragePath(req.centerId, "documents", "archive", yearFolder, "batches");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
-    const batchFileName = `BATCH_${type}_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${Date.now()}.pdf`;
+    const batchFileName = `BATCH_${type}_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${gradePeriodId ? gradePeriodId.substring(0, 6) : "ANNUEL"}_${Date.now()}.pdf`;
     const fullBatchPath = path.join(docFolder, batchFileName);
 
     if (type === "CARTE_ETUDIANT") {
@@ -833,13 +813,14 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
 
     const pdfBuffer = fs.readFileSync(fullBatchPath);
     const fileHash = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
-    const batchQrToken = `BATCH-${classe.id}-${type}-${Date.now()}`;
+    const batchQrToken = `BATCH-${classe.id}-${type}-${gradePeriodId || "ANNUEL"}-${Date.now()}`;
 
     const batchDoc = await prisma.document.create({
       data: {
         centerId: req.centerId,
         type: `LIVRET_${type}`,
         classeId: classe.id,
+        gradePeriodId: gradePeriodId || null,
         filePath: fullBatchPath,
         fileHash,
         renderSnapshot: { count: snapshotsList.length, classeLabel: classe.label, type },
@@ -861,7 +842,7 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
   }
 });
 
-// 5. Prévisualisation directe & Reconstitution depuis Snapshot
+// 6. Prévisualisation directe tolérante
 router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
   try {
     const doc = await prisma.document.findFirst({
@@ -871,32 +852,7 @@ router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
     if (!doc) return res.status(404).json({ error: "Document introuvable." });
 
     if (!fs.existsSync(doc.filePath)) {
-      const offlinePayload = doc.renderSnapshot?.offlineQrPayload || generateOfflineQrPayload(doc.renderSnapshot, doc.type);
-      fs.mkdirSync(path.dirname(doc.filePath), { recursive: true });
-
-      if (doc.type === "CARTE_ETUDIANT") {
-        await generateStudentCardPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "FICHE_INSCRIPTION") {
-        await generateFicheInscriptionPdf(doc.renderSnapshot, doc.filePath);
-      } else if (doc.type === "BORDEREAU_VIERGE") {
-        await generateBlankGradeSheetPdf(doc.renderSnapshot, doc.filePath);
-      } else if (doc.type === "PV_MATIERE") {
-        await generateCertifiedGradeSheetPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "PV_SEMESTRE" || doc.type === "PV_ANNUEL") {
-        await generateClassSemesterSummaryPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "PV_CC") {
-        await generateClassContinuousAssessmentSummaryPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "BULLETIN_CC") {
-        await generateContinuousAssessmentBulletinPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "BULLETIN_SEMESTRE") {
-        await generateSemesterBulletinPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "RELEVE_ANNUEL") {
-        await generateAnnualTranscriptPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else if (doc.type === "DIPLOME_FIN_FORMATION") {
-        await generateGraduationDiplomaPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      } else {
-        await generateAttestationPdf(doc.renderSnapshot, offlinePayload, doc.filePath);
-      }
+      return res.status(404).json({ error: "Fichier PDF introuvable sur le disque. Veuillez forcer la ré-émission de l'acte." });
     }
 
     res.setHeader("Content-Type", "application/pdf");
@@ -907,7 +863,7 @@ router.get("/documents/:id/preview", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 6. Téléchargement physique
+// 7. Téléchargement physique
 router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   try {
     const doc = await prisma.document.findFirst({
@@ -924,7 +880,7 @@ router.get("/documents/:id/download", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 7. Page publique d'authentification en ligne via QR Code
+// 8. Page publique d'authentification par QR Code
 router.get("/verify/:token", async (req, res, next) => {
   try {
     const token = req.params.token;
@@ -947,41 +903,6 @@ router.get("/verify/:token", async (req, res, next) => {
     }
 
     const snap = doc.renderSnapshot || {};
-    let detailsHtml = "";
-
-    if (doc.type === "BULLETIN_SEMESTRE" || doc.type === "BULLETIN_CC") {
-      detailsHtml = `
-        <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
-        <div class="row"><span class="label">Classe :</span><span class="val">${snap.classe?.label || "—"}</span></div>
-        <div class="row"><span class="label">Période :</span><span class="val">${snap.period?.label || "Semestre"}</span></div>
-        <div class="row"><span class="label">Moyenne Générale :</span><span class="val" style="color:#071A2E;font-size:15px;font-weight:bold;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
-        <div class="row"><span class="label">Rang de Classe :</span><span class="val">${snap.totals?.rank ? `${snap.totals.rank}e sur ${snap.totals.totalStudents}` : "—"}</span></div>
-      `;
-    } else if (doc.type === "RELEVE_ANNUEL") {
-      detailsHtml = `
-        <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
-        <div class="row"><span class="label">Filière :</span><span class="val">${snap.classe?.filiereName || "—"}</span></div>
-        <div class="row"><span class="label">Moyenne Annuelle :</span><span class="val" style="color:#071A2E;font-size:15px;font-weight:bold;">${snap.totals?.overallAverage !== null ? `${snap.totals.overallAverage} / 20` : "—"}</span></div>
-        <div class="row"><span class="label">Décision du Jury :</span><span class="val" style="color:#16805A;text-transform:uppercase;font-weight:bold;">${snap.totals?.decision || "—"}</span></div>
-      `;
-    } else if (doc.type === "DIPLOME_FIN_FORMATION") {
-      detailsHtml = `
-        <div class="row"><span class="label">Récipiendaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
-        <div class="row"><span class="label">Filière :</span><span class="val">${snap.classe?.filiereName || "—"}</span></div>
-        <div class="row"><span class="label">Cycle :</span><span class="val">${snap.classe?.programTypeCode || "DQP"}</span></div>
-        <div class="row"><span class="label">Mention :</span><span class="val" style="color:#16805A;font-weight:bold;">${snap.totals?.mention || "Passable"}</span></div>
-      `;
-    } else {
-      detailsHtml = `
-        <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
-        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
-        <div class="row"><span class="label">Classe / Filière :</span><span class="val">${snap.inscription?.filiereName || snap.classe?.label || "—"}</span></div>
-      `;
-    }
-
     res.send(`
       <!DOCTYPE html>
       <html lang="fr"><head><meta charset="utf-8"><title>CECO — Authentification Officielle</title>
@@ -1000,11 +921,13 @@ router.get("/verify/:token", async (req, res, next) => {
       <div class="card">
         <div class="header">
           <div class="badge">✓ Document Officiel Authentique</div>
-          <h2 style="margin:0;font-size:17px;color:#071A2E;">${doc.center.name}</h2>
-          <p style="margin:4px 0 0;font-size:11px;color:#526173;">Agrément : ${doc.center.registrationNumber || "MINEFOP"} • ${doc.center.city || "Cameroun"}</p>
+          <h2 style="margin:0;font-size:17px;color:#071A2E;">${doc.center?.name || "Établissement CECO"}</h2>
+          <p style="margin:4px 0 0;font-size:11px;color:#526173;">Agrément : ${doc.center?.registrationNumber || "MINEFOP"} • ${doc.center?.city || "Cameroun"}</p>
         </div>
         <div class="row"><span class="label">Type de document :</span><span class="val">${doc.type}</span></div>
-        ${detailsHtml}
+        <div class="row"><span class="label">Titulaire :</span><span class="val">${snap.student?.lastName || ""} ${snap.student?.firstName || ""}</span></div>
+        <div class="row"><span class="label">Matricule :</span><span class="val" style="font-family:monospace;color:#071A2E;">${snap.student?.matricule || "—"}</span></div>
+        <div class="row"><span class="label">Classe :</span><span class="val">${snap.classe?.label || "—"}</span></div>
         <div class="row"><span class="label">Date d'émission :</span><span class="val">${new Date(doc.generatedAt).toLocaleDateString("fr-FR")}</span></div>
         <div class="ceco-foot">REGISTRE DE CERTIFICATION SÉCURISÉ CECO</div>
         <div class="footer">Empreinte Cryptographique SHA-256 :<br>${doc.fileHash}</div>

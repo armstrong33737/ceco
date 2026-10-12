@@ -18,7 +18,7 @@ import ClassesPage from "./modules/academie/ClassesPage";
 import SessionsPage from "./modules/academie/SessionsPage";
 import SallesPage from "./modules/academie/SallesPage";
 
-// Pédagogie
+// Pédagogie Classique
 import GradesEntryPage from "./pages/pedagogie/GradesEntry";
 import DeliberationView from "./pages/pedagogie/DeliberationView";
 import BulletinsDiplomesPage from "./modules/documents/BulletinsDiplomesPage";
@@ -28,6 +28,9 @@ import TeachersList from "./pages/pedagogie/TeachersList";
 import SubjectsCatalog from "./pages/pedagogie/SubjectsCatalog";
 import SubjectCategories from "./pages/pedagogie/SubjectCategories";
 import GradingPolicies from "./pages/pedagogie/GradingPolicies";
+
+// Module Examen Blanc Dédié (Import vers le nouveau dossier)
+import ExamensBlancsPage from "./modules/examensBlancs/ExamensBlancsPage";
 
 // Administration
 import CenterIdentityPage from "./modules/administration/CenterIdentityPage";
@@ -83,7 +86,7 @@ export default function App() {
             <Route path="academie/sessions" element={<SessionsPage />} />
             <Route path="academie/salles" element={<SallesPage />} />
 
-            {/* 4. PÉDAGOGIE & ÉVALUATIONS */}
+            {/* 4. PÉDAGOGIE & ÉVALUATIONS RÉGULIÈRES */}
             <Route path="pedagogie/saisie" element={<GradesEntryPage />} />
             <Route path="pedagogie/deliberations" element={<DeliberationView />} />
             <Route path="pedagogie/bulletins" element={<BulletinsDiplomesPage />} />
@@ -94,7 +97,14 @@ export default function App() {
             <Route path="pedagogie/categories" element={<SubjectCategories />} />
             <Route path="pedagogie/ponderations" element={<GradingPolicies />} />
 
-            {/* 5. ADMINISTRATION & SÉCURITÉ */}
+            {/* 5. NOUVELLE GRANDE SECTION DÉDIÉE : EXAMENS BLANCS */}
+            <Route path="examens-blancs" element={<Navigate to="/examens-blancs/bordereau" replace />} />
+            <Route path="examens-blancs/bordereau" element={<ExamensBlancsPage />} />
+            <Route path="examens-blancs/sessions" element={<ExamensBlancsPage />} />
+            <Route path="examens-blancs/maquettes" element={<ExamensBlancsPage />} />
+            <Route path="examens-blancs/epreuves" element={<ExamensBlancsPage />} />
+
+            {/* 6. ADMINISTRATION & SÉCURITÉ */}
             <Route path="administration/centre" element={<CenterIdentityPage />} />
             <Route path="administration/modeles" element={<DocumentStudioPage />} />
             <Route path="administration/utilisateurs" element={<UsersManagementPage />} />
@@ -104,7 +114,8 @@ export default function App() {
             <Route path="administration/audit" element={<AuditLogsPage />} />
             <Route path="administration/apropos" element={<AboutPage />} />
 
-            {/* Redirections de sécurité */}
+            {/* Redirections de compatibilité */}
+            <Route path="pedagogie/examens-blancs" element={<Navigate to="/examens-blancs/bordereau" replace />} />
             <Route path="etudiants" element={<Navigate to="/apprenants" replace />} />
             <Route path="formations" element={<Navigate to="/academie/filieres" replace />} />
             <Route path="pedagogie" element={<Navigate to="/pedagogie/saisie" replace />} />

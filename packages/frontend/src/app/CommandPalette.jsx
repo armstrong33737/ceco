@@ -20,7 +20,6 @@ export default function CommandPalette() {
   const [learners, setLearners] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Raccourci universel Ctrl+K / Cmd+K
   useEffect(() => {
     function handleKeyDown(e) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -32,7 +31,6 @@ export default function CommandPalette() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Recherche apprenants exécutée uniquement si l'utilisateur possède la permission students.read
   useEffect(() => {
     if (!isOpen || !searchQuery.trim() || !canReadStudents) {
       setLearners([]);
@@ -48,23 +46,26 @@ export default function CommandPalette() {
     return () => clearTimeout(timer);
   }, [searchQuery, isOpen, canReadStudents]);
 
-  // Actions autorisées pour l'utilisateur
   const QUICK_ACTIONS = useMemo(() => [
     { label: "Tableau de Bord", path: "/", icon: "dashboard", category: "Navigation" },
-    { label: "Saisie des Notes (Matrice)", path: "/pedagogie/saisie", icon: "edit_note", category: "Évaluation", permission: "grades.read" },
+    { label: "Examen Blanc : Bordereau & Saisie MINEFOP", path: "/examens-blancs/bordereau", icon: "assignment", category: "Examens Blancs", permission: "grades.read" },
+    { label: "Examen Blanc : Sessions d'Examens", path: "/examens-blancs/sessions", icon: "calendar_month", category: "Examens Blancs", permission: "grades.read" },
+    { label: "Examen Blanc : Maquettes par Filière", path: "/examens-blancs/maquettes", icon: "account_tree", category: "Examens Blancs", permission: "formations.update" },
+    { label: "Examen Blanc : Référentiel des Épreuves", path: "/examens-blancs/epreuves", icon: "library_books", category: "Examens Blancs", permission: "formations.create" },
+    { label: "Saisie des Notes Régulières", path: "/pedagogie/saisie", icon: "edit_note", category: "Évaluation", permission: "grades.read" },
     { label: "Registre des Apprenants", path: "/apprenants", icon: "group", category: "Scolarité", permission: "students.read" },
     { label: "Archives des Apprenants", path: "/apprenants/archives", icon: "archive", category: "Scolarité", permission: "students.read" },
-    { label: "Délibérations du Jury", path: "/pedagogie/deliberations", icon: "gavel", category: "Évaluation", permission: "grades.validate" },
+    { label: "Délibérations du Jury Régulier", path: "/pedagogie/deliberations", icon: "gavel", category: "Évaluation", permission: "grades.validate" },
     { label: "Bulletins & Diplômes", path: "/pedagogie/bulletins", icon: "receipt_long", category: "Évaluation", permission: "bulletins.generate" },
     { label: "Cycles & Filières", path: "/academie/filieres", icon: "account_tree", category: "Structure", permission: "formations.create" },
     { label: "Promotions & Cohortes", path: "/academie/promotions", icon: "school", category: "Structure", permission: "formations.create" },
     { label: "Classes Promotionnelles", path: "/academie/classes", icon: "groups", category: "Structure", permission: "formations.create" },
     { label: "Sessions Académiques", path: "/academie/sessions", icon: "calendar_month", category: "Structure", permission: "center.update" },
     { label: "Salles & Ateliers", path: "/academie/salles", icon: "meeting_room", category: "Structure", permission: "formations.create" },
-    { label: "Maquettes de Cours", path: "/pedagogie/maquettes", icon: "auto_stories", category: "Pédagogie", permission: "formations.update" },
+    { label: "Maquettes de Cours Ordinaires", path: "/pedagogie/maquettes", icon: "auto_stories", category: "Pédagogie", permission: "formations.update" },
     { label: "Cursus Filières", path: "/pedagogie/cursus", icon: "account_tree", category: "Pédagogie", permission: "formations.update" },
     { label: "Corps Professoral", path: "/pedagogie/formateurs", icon: "badge", category: "Pédagogie", permission: "formations.create" },
-    { label: "Référentiel des Matières", path: "/pedagogie/matieres", icon: "library_books", category: "Pédagogie", permission: "formations.create" },
+    { label: "Référentiel des Matières Ordinaires", path: "/pedagogie/matieres", icon: "library_books", category: "Pédagogie", permission: "formations.create" },
     { label: "Établissement & Sceau", path: "/administration/centre", icon: "storefront", category: "Administration", permission: "center.update" },
     { label: "Studio Gabarits d'Actes", path: "/administration/modeles", icon: "palette", category: "Administration", permission: "center.update" },
     { label: "Comptes Utilisateurs", path: "/administration/utilisateurs", icon: "group", category: "Administration", permission: "users.read" },
@@ -140,13 +141,12 @@ export default function CommandPalette() {
           transition={{ duration: 0.1 }}
           className="relative z-10 w-full max-w-2xl rounded bg-surface border border-border shadow-modal overflow-hidden flex flex-col dark:bg-surface-dark dark:border-border-dark"
         >
-          {/* Champ de recherche */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border dark:border-border-dark">
             <Icon name="search" className="text-[20px] text-brand-900 dark:text-brand-500" />
             <input
               autoFocus
               type="text"
-              placeholder={isTeacher ? "Rechercher une action, mes cours..." : "Rechercher un apprenant, une matière, une classe..."}
+              placeholder={isTeacher ? "Rechercher une action, mes cours..." : "Rechercher un examen blanc, une classe, un candidat..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 bg-transparent text-body-md text-ink-primary outline-none placeholder:text-ink-muted/50 dark:text-white"
@@ -161,7 +161,6 @@ export default function CommandPalette() {
             </span>
           </div>
 
-          {/* Liste des résultats filtrés */}
           <div className="max-h-[380px] overflow-y-auto p-2 space-y-1">
             {allItems.length === 0 ? (
               <div className="p-8 text-center text-caption text-ink-muted space-y-1">

@@ -29,7 +29,7 @@ function copyFolderRecursiveSync(from, to) {
   }
 }
 
-// 1. Liste des sauvegardes existantes
+// 1. Liste des sauvegardes disponibles
 router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const dir = backupDir(req.centerId);
@@ -51,36 +51,7 @@ router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req,
   }
 });
 
-// 2. Configuration automatique
-router.get("/backups/config", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
-  try {
-    const setting = await prisma.setting.findUnique({
-      where: { centerId_key: { centerId: req.centerId, key: "backup.config" } },
-    });
-    res.json(setting?.value || { frequency: "daily" });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.put("/backups/config", verifyJwt, requirePermission("backups.update"), async (req, res, next) => {
-  try {
-    const { frequency } = req.body || {};
-    if (!["daily", "weekly", "monthly"].includes(frequency)) {
-      return res.status(400).json({ error: "Fréquence invalide." });
-    }
-    const setting = await prisma.setting.upsert({
-      where: { centerId_key: { centerId: req.centerId, key: "backup.config" } },
-      update: { value: { frequency } },
-      create: { centerId: req.centerId, key: "backup.config", value: { frequency } },
-    });
-    res.json(setting.value);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 3. Téléchargement / Export physique de l'archive vers disque ou clé USB
+// 2. Téléchargement physique d'une archive
 router.get("/backups/:filename/download", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const { filename } = req.params;
@@ -99,7 +70,7 @@ router.get("/backups/:filename/download", verifyJwt, requirePermission("backups.
   }
 });
 
-// 4. Génération d'une archive compressée .zip complète
+// 3. Génération manuelle d'une archive hybride .zip complète
 router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -109,7 +80,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     const zipPath = path.join(dir, zipFilename);
 
     const dumpData = {
-      metadata: { version: "4.0.0", timestamp: new Date(), centerId: req.centerId },
+      metadata: { version: "4.1.0", timestamp: new Date(), centerId: req.centerId },
       centers: await prisma.center.findMany({ where: { id: req.centerId } }),
       subscriptions: await prisma.subscription.findMany({ where: { centerId: req.centerId } }),
       licenses: await prisma.license.findMany({ where: { centerId: req.centerId } }),
@@ -139,13 +110,22 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
       studentDeliberations: await prisma.studentDeliberation.findMany({ where: { deliberation: { centerId: req.centerId } } }),
       documentTemplates: await prisma.documentTemplate.findMany({ where: { centerId: req.centerId } }),
       documents: await prisma.document.findMany({ where: { centerId: req.centerId } }),
+
+      // Tables Miroir Examens Blancs
+      mockSubjects: await prisma.mockSubject.findMany({ where: { centerId: req.centerId } }),
+      filiereMockSubjects: await prisma.filiereMockSubject.findMany({ where: { centerId: req.centerId } }),
+      mockExamSessions: await prisma.mockExamSession.findMany({ where: { centerId: req.centerId } }),
+      classeMockExams: await prisma.classeMockExam.findMany({ where: { centerId: req.centerId } }),
+      classeMockExamSubjects: await prisma.classeMockExamSubject.findMany({ where: { classeMockExam: { centerId: req.centerId } } }),
+      mockExamGrades: await prisma.mockExamGrade.findMany({ where: { classeMockExam: { centerId: req.centerId } } }),
+      mockExamSummaries: await prisma.mockExamSummary.findMany({ where: { classeMockExam: { centerId: req.centerId } } }),
     };
 
     const output = fs.createWriteStream(zipPath);
     const archive = archiver("zip", { zlib: { level: 9 } });
 
     output.on("close", () => {
-      console.log(`[Backup] Archive V4 générée : ${zipFilename}`);
+      console.log(`[Backup] Archive complète générée : ${zipFilename}`);
       res.json({ success: true, file: zipFilename });
     });
     archive.on("error", (err) => { throw err; });
@@ -167,7 +147,91 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
   }
 });
 
-// 5. Restauration transactionnelle sécurisée
+// 4. Importation d'une archive externe (.zip) avec validation d'intégrité
+router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
+  const { filename, fileDataBase64 } = req.body || {};
+  if (!fileDataBase64) {
+    return res.status(400).json({ error: "Fichier d'archive manquant." });
+  }
+
+  await ensureStorageTree(req.centerId);
+  const dir = backupDir(req.centerId);
+  const cleanBaseName = filename ? path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_") : `import_${Date.now()}.zip`;
+  const finalFilename = cleanBaseName.endsWith(".zip") ? cleanBaseName : `${cleanBaseName}.zip`;
+
+  // Vérification de collision de nom
+  let destinationPath = path.join(dir, finalFilename);
+  if (fs.existsSync(destinationPath)) {
+    const uniquePrefix = `imported_${new Date().toISOString().replace(/[:.]/g, "-")}_`;
+    destinationPath = path.join(dir, `${uniquePrefix}${finalFilename}`);
+  }
+
+  const tmpValidateDir = path.join(dir, `tmp_val_${Date.now()}`);
+
+  try {
+    const match = /^data:application\/[a-zA-Z0-9+.-]+;base64,(.+)$/.exec(fileDataBase64);
+    const rawBase64 = match ? match[1] : fileDataBase64;
+    const buffer = Buffer.from(rawBase64, "base64");
+
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: "L'archive transmise est vide." });
+    }
+
+    // Écriture temporaire pour validation de l'archive
+    const tempZipPath = path.join(dir, `temp_check_${Date.now()}.zip`);
+    fs.writeFileSync(tempZipPath, buffer);
+
+    fs.mkdirSync(tmpValidateDir, { recursive: true });
+    await extract(tempZipPath, { dir: tmpValidateDir });
+
+    const dbDumpPath = path.join(tmpValidateDir, "db_dump.json");
+    if (!fs.existsSync(dbDumpPath)) {
+      fs.unlinkSync(tempZipPath);
+      fs.rmSync(tmpValidateDir, { recursive: true, force: true });
+      return res.status(400).json({
+        error: "Archive invalide : le fichier db_dump.json structuré par CECO Suite ERP est introuvable.",
+      });
+    }
+
+    // L'archive est saine, déplacement vers l'emplacement final
+    fs.renameSync(tempZipPath, destinationPath);
+    fs.rmSync(tmpValidateDir, { recursive: true, force: true });
+
+    const stats = fs.statSync(destinationPath);
+    res.json({
+      success: true,
+      message: `Archive "${path.basename(destinationPath)}" importée avec succès.`,
+      backup: {
+        name: path.basename(destinationPath),
+        sizeBytes: stats.size,
+        createdAt: stats.mtime,
+      },
+    });
+  } catch (err) {
+    if (fs.existsSync(tmpValidateDir)) fs.rmSync(tmpValidateDir, { recursive: true, force: true });
+    next(err);
+  }
+});
+
+// 5. Suppression d'une archive
+router.delete("/backups/:filename", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
+  try {
+    const { filename } = req.params;
+    const safeFilename = path.basename(filename);
+    const filePath = path.join(backupDir(req.centerId), safeFilename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Fichier de sauvegarde introuvable." });
+    }
+
+    fs.unlinkSync(filePath);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 6. Restauration transactionnelle sécurisée
 router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
   const { filename } = req.body || {};
   if (!filename) return res.status(400).json({ error: "Nom de fichier requis." });
@@ -192,7 +256,10 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
     }
     const dumpData = JSON.parse(fs.readFileSync(dbDumpPath, "utf-8"));
 
+    // Ordre de purge rigoureux respectant les contraintes d'intégrité
     const tablesToTruncate = [
+      "MockExamGrade", "MockExamSummary", "ClasseMockExamSubject", "ClasseMockExam",
+      "MockExamSession", "FiliereMockSubject", "MockSubject",
       "StudentDeliberation", "Deliberation", "SubjectResult", "Grade", "SubjectOffering",
       "FiliereSubject", "SubjectCategory", "Promotion", "GradePeriod", "GradingPolicy",
       "Inscription", "Student", "Classe", "Salle", "AcademicYear", "Niveau", "Filiere",
@@ -276,6 +343,19 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
       await prisma.document.createMany({ data: dumpData.documents.map((d) => ({ ...d, generatedAt: new Date(d.generatedAt) })) });
     }
 
+    // Réinjection des tables d'Examens Blancs
+    if (dumpData.mockSubjects?.length) await prisma.mockSubject.createMany({ data: dumpData.mockSubjects });
+    if (dumpData.filiereMockSubjects?.length) await prisma.filiereMockSubject.createMany({ data: dumpData.filiereMockSubjects });
+    if (dumpData.mockExamSessions?.length) {
+      await prisma.mockExamSession.createMany({
+        data: dumpData.mockExamSessions.map((ms) => ({ ...ms, startDate: new Date(ms.startDate), endDate: new Date(ms.endDate) })),
+      });
+    }
+    if (dumpData.classeMockExams?.length) await prisma.classeMockExam.createMany({ data: dumpData.classeMockExams });
+    if (dumpData.classeMockExamSubjects?.length) await prisma.classeMockExamSubject.createMany({ data: dumpData.classeMockExamSubjects });
+    if (dumpData.mockExamGrades?.length) await prisma.mockExamGrade.createMany({ data: dumpData.mockExamGrades });
+    if (dumpData.mockExamSummaries?.length) await prisma.mockExamSummary.createMany({ data: dumpData.mockExamSummaries });
+
     const extractedMediaDir = path.join(tmpDir, "media");
     if (fs.existsSync(extractedMediaDir)) {
       const mediaRoot = centerStoragePath(req.centerId);
@@ -287,8 +367,8 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    console.log(`[Restauration V4] Effectuée avec succès depuis : ${filename}`);
-    res.json({ success: true, message: "Base relationnelle, licences et médias restaurés avec succès." });
+    console.log(`[Restauration] Effectuée avec succès depuis : ${filename}`);
+    res.json({ success: true, message: "Base relationnelle, examens blancs et médias restaurés avec succès." });
   } catch (err) {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     next(err);

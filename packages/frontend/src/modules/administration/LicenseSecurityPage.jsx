@@ -7,25 +7,15 @@ import useAuthStore from "../../store/authStore";
 import PageHeader from "../../design-system/layout/PageHeader";
 import { StructuredPanel, DataModule } from "../../design-system/layout/Card";
 import Button from "../../design-system/primitives/Button";
-import Input from "../../design-system/primitives/Input";
 import Textarea from "../../design-system/primitives/Textarea";
-import Select from "../../design-system/primitives/Select";
 import Badge from "../../design-system/primitives/Badge";
-import Icon from "../../components/Icon";
 
 export default function LicenseSecurityPage() {
   const { updateSubscription } = useAuthStore();
   const [data, setData] = useState(null);
-  const [activeTab, setActiveTab] = useState("offline");
   const [activationKey, setActivationKey] = useState("");
   const [activating, setActivating] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  // Mobile Money
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [operator, setOperator] = useState("MTN");
-  const [months, setMonths] = useState(1);
-  const [paymentStep, setPaymentStep] = useState("idle");
 
   async function loadLicense() {
     try {
@@ -43,7 +33,9 @@ export default function LicenseSecurityPage() {
     }
   }
 
-  useEffect(() => { loadLicense(); }, []);
+  useEffect(() => {
+    loadLicense();
+  }, []);
 
   function handleCopyId() {
     if (data?.centerId) {
@@ -74,32 +66,7 @@ export default function LicenseSecurityPage() {
     }
   }
 
-  async function handleMobileMoney(e) {
-    e.preventDefault();
-    if (!phoneNumber.match(/^(65|67|68|69|62)\d{7}$/)) {
-      showToast("Numéro camerounais invalide (9 chiffres).", "warning");
-      return;
-    }
-    setPaymentStep("connecting");
-    try {
-      const res = await apiFetch("/license/pay", { method: "POST", body: JSON.stringify({ operator, phoneNumber, months }) });
-      setPaymentStep("waiting_pin");
-      setTimeout(() => {
-        setPaymentStep("success");
-        showToast("Paiement Mobile Money validé et licence rechargée.", "success");
-        setTimeout(() => {
-          setPaymentStep("idle");
-          loadLicense();
-        }, 2500);
-      }, 3500);
-    } catch (err) {
-      setPaymentStep("idle");
-      showToast(err.message, "error");
-    }
-  }
-
   const isGrace = data?.status === "GRACE_PERIOD";
-  const isReadOnly = data?.status === "READ_ONLY";
   const isFullyActive = data?.status === "ACTIVE";
 
   return (
@@ -107,7 +74,7 @@ export default function LicenseSecurityPage() {
       <PageHeader
         contextBadge={<Badge variant="brand">Sécurité • Cryptographie Ed25519</Badge>}
         title="Licence Locale &amp; Souveraineté des Données"
-        subtitle="Validité cryptographique hors-ligne, délai de grâce opérationnel et rechargement"
+        subtitle="Validité cryptographique hors-ligne, délai de grâce opérationnel et rechargement certifié"
         actions={
           <Button variant="secondary" icon="refresh" onClick={loadLicense}>
             Actualiser
@@ -118,7 +85,7 @@ export default function LicenseSecurityPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <DataModule
           label="État de la Licence"
-          value={isFullyActive ? "ACTIVE" : isGrace ? "GRÂCE" : "LECTURE"}
+          value={isFullyActive ? "ACTIVE" : isGrace ? "GRÂCE" : "LECTURE SEULE"}
           subtext={`Plan : ${data?.plan || "Local Pro"}`}
           icon="verified_user"
           badge={<Badge variant={isFullyActive ? "success" : isGrace ? "warning" : "error"} withDot>{data?.status}</Badge>}
@@ -132,15 +99,18 @@ export default function LicenseSecurityPage() {
         <DataModule
           label="Échéance Officielle"
           value={data?.expiresAt ? new Date(data.expiresAt).toLocaleDateString("fr-FR") : "—"}
-          subtext="Signature certifiée Ed25519"
+          subtext="Signature inviolable Ed25519"
           icon="calendar_month"
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Gauche : Center ID (6 cols) */}
         <div className="lg:col-span-6 space-y-6">
-          <StructuredPanel title="Identifiant Unique d'Établissement (Center ID)" subtitle="Transmettez cette clé à l'éditeur pour recevoir votre certificat" icon="fingerprint">
+          <StructuredPanel
+            title="Identifiant Unique d'Établissement (Center ID)"
+            subtitle="Transmettez cette clé à l'autorité de certification CECO pour générer votre certificat"
+            icon="fingerprint"
+          >
             <div className="space-y-4">
               <div className="p-4 rounded bg-[#F5F7FA] border border-border flex items-center justify-between font-mono font-bold text-body-md text-brand-900 dark:bg-[#07111D] dark:border-border-dark dark:text-brand-500">
                 <span className="truncate">{data?.centerId || "—"}</span>
@@ -149,69 +119,31 @@ export default function LicenseSecurityPage() {
                 </Button>
               </div>
               <p className="text-caption text-ink-muted leading-relaxed">
-                Le Center ID constitue la racine de signature asymétrique. Toute licence générée est scellée mathématiquement pour ce centre physique.
+                Le Center ID constitue l'ancre mathématique de signature asymétrique. Tout certificat de licence émis est scellé pour cette machine physique et ne peut pas être dupliqué.
               </p>
             </div>
           </StructuredPanel>
         </div>
 
-        {/* Droite : Rechargement (6 cols) */}
         <div className="lg:col-span-6 space-y-6">
           <StructuredPanel
-            title="Activation &amp; Rechargement"
-            subtitle="Choisissez votre méthode d'activation"
+            title="Activation par Certificat Hors-Ligne (Ed25519)"
+            subtitle="Collez la clé inviolable fournie par l'autorité de certification CECO"
             icon="key"
-            headerAction={
-              <div className="flex p-0.5 bg-[#F5F7FA] rounded border border-border dark:bg-[#07111D] dark:border-border-dark">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("offline")}
-                  className={`px-3 py-1 text-caption font-semibold rounded-[2px] ${activeTab === "offline" ? "bg-brand-900 text-white dark:bg-brand-500" : "text-ink-secondary"}`}
-                >
-                  Clé Hors-Ligne
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("online")}
-                  className={`px-3 py-1 text-caption font-semibold rounded-[2px] ${activeTab === "online" ? "bg-brand-900 text-white dark:bg-brand-500" : "text-ink-secondary"}`}
-                >
-                  Mobile Money
-                </button>
-              </div>
-            }
           >
-            {activeTab === "offline" ? (
-              <form onSubmit={handleActivateOffline} className="space-y-4">
-                <Textarea
-                  required
-                  label="Certificat de Licence Signé (Clé 24+ car.)"
-                  placeholder="Collez ici votre clé : CECO-eyJkYXRhI..."
-                  rows={3}
-                  value={activationKey}
-                  onChange={(e) => setActivationKey(e.target.value)}
-                />
-                <Button type="submit" variant="primary" icon="lock_open" isLoading={activating} className="w-full">
-                  Activer la Licence
-                </Button>
-              </form>
-            ) : (
-              <form onSubmit={handleMobileMoney} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <Button variant={operator === "MTN" ? "primary" : "secondary"} onClick={() => setOperator("MTN")}>MTN MoMo</Button>
-                  <Button variant={operator === "ORANGE" ? "primary" : "secondary"} onClick={() => setOperator("ORANGE")}>Orange Money</Button>
-                </div>
-                <Select label="Durée" value={months} onChange={(e) => setMonths(parseInt(e.target.value, 10))}>
-                  <option value={1}>1 Mois (25 000 FCFA)</option>
-                  <option value={3}>3 Mois (75 000 FCFA)</option>
-                  <option value={6}>6 Mois (150 000 FCFA)</option>
-                  <option value={12}>12 Mois (300 000 FCFA)</option>
-                </Select>
-                <Input required label="Numéro Mobile Money (+237)" placeholder="6XXXXXXXX" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
-                <Button type="submit" variant="primary" isLoading={paymentStep !== "idle"} className="w-full">
-                  Payer via {operator}
-                </Button>
-              </form>
-            )}
+            <form onSubmit={handleActivateOffline} className="space-y-4">
+              <Textarea
+                required
+                label="Certificat de Licence Signé (Clé 24+ caractères)"
+                placeholder="Collez ici votre clé : CECO-eyJkYXRhI..."
+                rows={4}
+                value={activationKey}
+                onChange={(e) => setActivationKey(e.target.value)}
+              />
+              <Button type="submit" variant="primary" icon="lock_open" isLoading={activating} className="w-full">
+                Activer la Licence Hors-Ligne
+              </Button>
+            </form>
           </StructuredPanel>
         </div>
       </div>

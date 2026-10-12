@@ -6,15 +6,23 @@ const { centerStoragePath } = require("./paths");
 const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "svg", "webp"];
 
 /**
- * Recherche le fichier physique de sceau par défaut dans les dossiers d'assets
+ * Recherche le fichier physique de sceau par défaut dans les dossiers d'assets en dev et prod
  */
 function getDefaultSealFilePath() {
   const possibleDirs = [
     path.join(__dirname, "../../assets"),
+    path.join(__dirname, "../../../desktop/assets"),
     path.join(process.cwd(), "assets"),
     path.join(process.cwd(), "packages/backend/assets"),
     path.join(process.cwd(), "packages/desktop/assets"),
-    ...(process.resourcesPath ? [path.join(process.resourcesPath, "backend/assets"), path.join(process.resourcesPath, "assets")] : []),
+    ...(process.resourcesPath ? [
+      path.join(process.resourcesPath, "backend/assets"),
+      path.join(process.resourcesPath, "assets"),
+      path.join(process.resourcesPath, "desktop/assets"),
+      path.join(process.resourcesPath, "app.asar.unpacked/assets"),
+      path.join(process.resourcesPath, "app.asar.unpacked/backend/assets"),
+      path.join(process.resourcesPath, "app.asar.unpacked/packages/desktop/assets"),
+    ] : []),
   ];
 
   for (const dir of possibleDirs) {
@@ -62,7 +70,11 @@ function ensureDefaultSealOnDisk(centerId) {
     const defaultAsset = getDefaultSealFilePath();
     if (defaultAsset) {
       const destPath = path.join(brandingDir, `seal.${defaultAsset.ext}`);
-      fs.copyFileSync(defaultAsset.filePath, destPath);
+      try {
+        fs.copyFileSync(defaultAsset.filePath, destPath);
+      } catch (err) {
+        console.warn("[DefaultSeal] Échec de copie vers storage du centre :", err.message);
+      }
     }
   }
 }

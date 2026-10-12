@@ -28,6 +28,7 @@ const EXT_TO_MIME = Object.fromEntries(Object.entries(MIME_TO_EXT).map(([m, e]) 
 const DEFAULT_SIGNATURE_ROLES = [
   { key: "directeur", title: "Directeur Général", desc: "Signature officielle de la Direction" },
   { key: "promoteur", title: "Promoteur / Fondateur", desc: "Signature officielle du Promoteur" },
+  { key: "delegue", title: "Le Délégué Départemental", desc: "Visa de la tutelle MINEFOP pour examens blancs" },
 ];
 
 function brandingDir(centerId) {
@@ -91,10 +92,16 @@ function serializeCenter(center) {
   return out;
 }
 
-// 1. Informations du centre & Détection du Sceau
+// 1. Informations du centre & Récupération du format de matricule
 router.get("/center", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
-    const center = await prisma.center.findUnique({ where: { id: req.centerId } });
+    const [center, matriculeSetting] = await Promise.all([
+      prisma.center.findUnique({ where: { id: req.centerId } }),
+      prisma.setting.findUnique({
+        where: { centerId_key: { centerId: req.centerId, key: "center.matricule_format" } },
+      }),
+    ]);
+
     if (!center) return res.status(404).json({ error: "Centre introuvable." });
 
     ensureDefaultSealOnDisk(req.centerId);
@@ -109,6 +116,8 @@ router.get("/center", verifyJwt, requirePermission("center.read", "center.update
     const payload = serializeCenter(center);
     payload.hasSeal = hasCustomSeal || Boolean(getDefaultSealFilePath());
     payload.isDefaultSeal = !hasCustomSeal;
+    payload.matriculeFormat = matriculeSetting?.value?.format || "{CTR}-{FIL}{YY}-{NUM4}";
+
     res.json(payload);
   } catch (err) {
     next(err);
@@ -167,10 +176,10 @@ router.get("/center/seal", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 4. Mise à jour des coordonnées de l'établissement
+// 4. Mise à jour des coordonnées & Enregistrement du masque de matricule
 router.put("/center", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
-    const { name, logo, seal } = req.body || {};
+    const { name, logo, seal, matriculeFormat } = req.body || {};
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Le nom du centre est requis." });
     }
@@ -197,9 +206,22 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
       saveSealFromDataUrl(req.centerId, seal);
     }
 
+    let savedMatriculeFormat = "{CTR}-{FIL}{YY}-{NUM4}";
+    if (matriculeFormat && typeof matriculeFormat === "string") {
+      const cleanFormat = matriculeFormat.trim();
+      await prisma.setting.upsert({
+        where: { centerId_key: { centerId: req.centerId, key: "center.matricule_format" } },
+        update: { value: { format: cleanFormat } },
+        create: { centerId: req.centerId, key: "center.matricule_format", value: { format: cleanFormat } },
+      });
+      savedMatriculeFormat = cleanFormat;
+    }
+
     const center = await prisma.center.update({ where: { id: req.centerId }, data });
     const payload = serializeCenter(center);
     payload.hasSeal = true;
+    payload.matriculeFormat = savedMatriculeFormat;
+
     res.json(payload);
   } catch (err) {
     if (err.message?.includes("Image trop volumineuse") || err.message?.includes("Format")) {
@@ -220,13 +242,12 @@ router.post("/center/seal/reset", verifyJwt, requirePermission("center.update"),
   }
 });
 
-// 6. Récupération des rôles de signatures configurés (Par défaut : Directeur et Promoteur)
+// 6. Rôles de signatures configurés
 router.get("/center/signature-roles", verifyJwt, async (req, res, next) => {
   try {
     const setting = await prisma.setting.findUnique({
       where: { centerId_key: { centerId: req.centerId, key: "center.signature_roles" } },
     });
-
     res.json(setting?.value || DEFAULT_SIGNATURE_ROLES);
   } catch (err) {
     next(err);
@@ -252,7 +273,7 @@ router.put("/center/signature-roles", verifyJwt, requirePermission("center.updat
   }
 });
 
-// 7. Liste des signatures physiques existantes
+// 7. Signatures physiques existantes
 router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);
@@ -275,7 +296,6 @@ router.get("/center/signatures", verifyJwt, requirePermission("center.read", "ce
   }
 });
 
-// 8. Streaming direct de l'image PNG d'une signature
 router.get("/center/signatures/:roleKey", verifyJwt, async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);
@@ -294,7 +314,6 @@ router.get("/center/signatures/:roleKey", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 9. Enregistrement d'une signature
 router.post("/center/signatures", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { roleKey, signatureDataUrl } = req.body || {};
@@ -319,7 +338,6 @@ router.post("/center/signatures", verifyJwt, requirePermission("center.update"),
   }
 });
 
-// 10. Suppression d'une signature
 router.delete("/center/signatures/:roleKey", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);

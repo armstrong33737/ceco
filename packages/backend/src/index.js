@@ -19,6 +19,7 @@ const licenseRoutes = require("./routes/license");
 const backupsRoutes = require("./routes/backups");
 const formationsRoutes = require("./routes/formations");
 const pedagogieRoutes = require("./routes/pedagogie");
+const examensBlancsRoutes = require("./routes/examensBlancs");
 const gradesRoutes = require("./routes/grades");
 const studentsRoutes = require("./routes/students");
 const documentsRoutes = require("./routes/documents");
@@ -33,7 +34,7 @@ app.use(express.json({ limit: "10mb" }));
 
 app.use(buildTenantResolver(MODE));
 
-// 1. Routes ouvertes (Santé, Authentification, Consultation & Renouvellement Licence)
+// 1. Routes ouvertes
 app.use("/", healthRoutes);
 app.use("/", authRoutes);
 app.use("/", licenseRoutes);
@@ -41,13 +42,14 @@ app.use("/", licenseRoutes);
 // 2. Garde de licence (Mode Lecture Seule / Période de Grâce)
 app.use(checkLicense);
 
-// 3. Routes métier
+// 3. Contrôleurs métier spécialisés (Sans duplication)
 app.use("/", centerRoutes);
 app.use("/", usersRoutes);
 app.use("/", rolesRoutes);
 app.use("/", backupsRoutes);
 app.use("/", formationsRoutes);
 app.use("/", pedagogieRoutes);
+app.use("/", examensBlancsRoutes);
 app.use("/", gradesRoutes);
 app.use("/", studentsRoutes);
 app.use("/", documentsRoutes);

@@ -52,6 +52,72 @@ function saveStudentPhoto(centerId, studentId, dataUrl) {
   return fileName;
 }
 
+function deriveFiliereCode(filiereName) {
+  if (!filiereName) return "GEN";
+  const clean = filiereName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, "")
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.substring(0, 3).toUpperCase();
+}
+
+/**
+ * Moteur atomique de matricule dynamique avec résolution de collision transactionnelle
+ */
+async function generateDynamicMatricule(centerId, targetClass, targetYear, offset = 0) {
+  const [center, matriculeSetting] = await Promise.all([
+    prisma.center.findUnique({ where: { id: centerId }, select: { slug: true, name: true } }),
+    prisma.setting.findUnique({ where: { centerId_key: { centerId, key: "center.matricule_format" } } }),
+  ]);
+
+  const pattern = matriculeSetting?.value?.format || "{CTR}-{FIL}{YY}-{NUM4}";
+
+  let centerPrefix = "CECO";
+  if (center?.slug && center.slug !== "local") {
+    centerPrefix = center.slug.substring(0, 7).toUpperCase();
+  } else if (center?.name) {
+    const letters = center.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 7).toUpperCase();
+    if (letters.length >= 2) centerPrefix = letters;
+  }
+
+  const filiereCode = deriveFiliereCode(targetClass?.filiere?.name);
+  const cycleCode = (targetClass?.filiere?.programType?.code || "DQP").toUpperCase();
+  const yearLabel = targetYear?.label || new Date().getFullYear().toString();
+  const yearSuffix = yearLabel.substring(2, 4);
+  const fullYear = yearLabel.split("-")[0] || "2026";
+
+  const countTotalStudents = await prisma.student.count({ where: { centerId } });
+  let seq = countTotalStudents + 1 + offset;
+
+  const replaceTokens = (num) => {
+    return pattern
+      .replace(/\{CTR\}|\{CENTER\}/g, centerPrefix)
+      .replace(/\{FIL\}|\{FILIERE\}/g, filiereCode)
+      .replace(/\{CYCLE\}/g, cycleCode)
+      .replace(/\{YY\}|\{YEAR\}/g, yearSuffix)
+      .replace(/\{YYYY\}/g, fullYear)
+      .replace(/\{NUM5\}/g, String(num).padStart(5, "0"))
+      .replace(/\{NUM4\}|\{NUM\}/g, String(num).padStart(4, "0"));
+  };
+
+  let finalMatricule = replaceTokens(seq);
+
+  // Résolution atomique anti-collision en base
+  let exists = await prisma.student.findFirst({ where: { centerId, matricule: finalMatricule } });
+  while (exists) {
+    seq++;
+    finalMatricule = replaceTokens(seq);
+    exists = await prisma.student.findFirst({ where: { centerId, matricule: finalMatricule } });
+  }
+
+  return finalMatricule;
+}
+
 function buildStudentWhereClause(centerId, query) {
   const {
     search, classeId, academicYearId, promotionId, status, filiereId, onlyArchived,
@@ -86,7 +152,7 @@ function buildStudentWhereClause(centerId, query) {
   };
 }
 
-// 1. Lister les apprenants (Paginé côté serveur)
+// 1. Lister les apprenants
 router.get("/students", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const { page = 1, limit = 25, all = "false" } = req.query || {};
@@ -119,8 +185,8 @@ router.get("/students", verifyJwt, requirePermission("students.read"), async (re
       return res.json({ data: students, pagination: { total: students.length, page: 1, limit: students.length, totalPages: 1 } });
     }
 
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(5, parseInt(limit) || 25));
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(5, parseInt(limit, 10) || 25));
     const skip = (pageNum - 1) * limitNum;
 
     const [total, students] = await Promise.all([
@@ -156,7 +222,11 @@ router.get("/students", verifyJwt, requirePermission("students.read"), async (re
 router.get("/students/:id", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
-      where: { id: req.params.id, centerId: req.centerId, deletedAt: null },
+      where: {
+        centerId: req.centerId,
+        deletedAt: null,
+        OR: [{ id: req.params.id }, { matricule: req.params.id }],
+      },
       include: {
         inscriptions: {
           include: {
@@ -182,7 +252,7 @@ router.get("/students/:id", verifyJwt, requirePermission("students.read"), async
   }
 });
 
-// 3. Création sous Transaction avec MATRICULE AUTO-GÉNÉRÉ SCELLÉ
+// 3. Création transactionnelle avec matricule paramétré sécurisé
 router.post("/students", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const {
@@ -201,7 +271,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
     if (classeId) {
       targetClass = await prisma.classe.findFirst({
         where: { id: classeId, centerId: req.centerId },
-        include: { niveau: true, filiere: true, academicYear: true },
+        include: { niveau: true, filiere: { include: { programType: true } }, academicYear: true },
       });
     }
 
@@ -211,7 +281,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
           centerId: req.centerId,
           ...(academicYearId ? { academicYearId } : { academicYear: { isCurrent: true } }),
         },
-        include: { niveau: true, filiere: true, academicYear: true },
+        include: { niveau: true, filiere: { include: { programType: true } }, academicYear: true },
         orderBy: { label: "asc" },
       });
     }
@@ -225,14 +295,13 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
     const targetYear = targetClass.academicYear;
     const finalYearId = targetYear?.id || academicYearId;
 
-    // Résolution automatique de la promotion (cohorte)
     let promotion = await prisma.promotion.findFirst({
       where: { centerId: req.centerId, filiereId: targetClass.filiereId, academicYearId: finalYearId },
     });
 
     if (!promotion) {
       const yearLabel = targetYear?.label || "2026-2027";
-      const startYear = parseInt(yearLabel.split("-")[0]) || 2026;
+      const startYear = parseInt(yearLabel.split("-")[0], 10) || 2026;
       const duration = targetClass.filiere?.durationInYears || 2;
       promotion = await prisma.promotion.create({
         data: {
@@ -245,10 +314,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
       });
     }
 
-    // GÉNÉRATION SCELLÉE DU MATRICULE OFFICIEL (STU{YY}-{XXXX})
-    const yearPrefix = (targetYear?.label || "26").substring(2, 4);
-    const count = await prisma.student.count({ where: { centerId: req.centerId } });
-    const autoMatricule = `STU${yearPrefix}-${String(count + 1).padStart(4, "0")}`;
+    const autoMatricule = await generateDynamicMatricule(req.centerId, targetClass, targetYear);
 
     const result = await prisma.$transaction(async (tx) => {
       const student = await tx.student.create({
@@ -309,7 +375,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
   }
 });
 
-// 4. Modification (SANS MODIFICATION DU MATRICULE)
+// 4. Modification (avec scellement juridique du matricule existant)
 router.put("/students/:id", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const {
@@ -361,7 +427,7 @@ router.put("/students/:id", verifyJwt, requirePermission("students.update"), asy
   }
 });
 
-// 5. Photo
+// 5. Récupération photo
 router.get("/students/:id/photo", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -385,77 +451,7 @@ router.get("/students/:id/photo", verifyJwt, requirePermission("students.read"),
   }
 });
 
-// 6. Réinscription
-router.post("/students/:id/inscribe", verifyJwt, requirePermission("students.create", "students.update"), async (req, res, next) => {
-  try {
-    const { classeId, academicYearId, status } = req.body || {};
-    const studentId = req.params.id;
-
-    if (!classeId || !academicYearId) {
-      return res.status(400).json({ error: "Classe et session requises." });
-    }
-
-    const year = await prisma.academicYear.findFirst({
-      where: { id: academicYearId, centerId: req.centerId },
-    });
-    if (!year || !year.isCurrent) {
-      return res.status(400).json({ error: "La session sélectionnée n'est pas active." });
-    }
-
-    const existingInsc = await prisma.inscription.findUnique({
-      where: { studentId_academicYearId: { studentId, academicYearId } },
-    });
-
-    if (existingInsc) {
-      return res.status(409).json({ error: "Cet apprenant est déjà inscrit pour cette session académique." });
-    }
-
-    const lastInsc = await prisma.inscription.findFirst({
-      where: { studentId, centerId: req.centerId },
-      orderBy: { createdAt: "asc" },
-    });
-
-    const created = await prisma.inscription.create({
-      data: {
-        centerId: req.centerId,
-        studentId,
-        classeId,
-        academicYearId,
-        promotionId: lastInsc?.promotionId || null,
-        status: status || "en_cours",
-      },
-      include: {
-        classe: { include: { filiere: true, niveau: true } },
-        promotion: true,
-        academicYear: true,
-      },
-    });
-
-    res.status(201).json(created);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 7. Statut d'inscription
-router.put("/inscriptions/:id/status", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
-  try {
-    const { status } = req.body || {};
-    if (!["en_cours", "admis", "redouble", "abandon", "diplome"].includes(status)) {
-      return res.status(400).json({ error: "Statut invalide." });
-    }
-
-    const updated = await prisma.inscription.update({
-      where: { id: req.params.id },
-      data: { status },
-    });
-    res.json(updated);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// 8. Suppression douce (Archivage)
+// 6. Suppression douce
 router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -474,7 +470,7 @@ router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), 
   }
 });
 
-// 9. Restauration d'un apprenant archivé
+// 7. Restauration
 router.put("/students/:id/restore", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -502,7 +498,7 @@ router.put("/students/:id/restore", verifyJwt, requirePermission("students.updat
   }
 });
 
-// 10. Exportation CSV filtrée
+// 8. Export CSV
 router.get("/students-export", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const where = buildStudentWhereClause(req.centerId, req.query);
@@ -559,7 +555,7 @@ router.get("/students-export", verifyJwt, requirePermission("students.read"), as
   }
 });
 
-// 11. Importation en masse avec auto-génération de matricule si absent
+// 9. Import CSV avec auto-génération sécurisée
 router.post("/students/import", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const { students: items, classeId, academicYearId } = req.body || {};
@@ -570,7 +566,7 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
 
     const [year, classe] = await Promise.all([
       prisma.academicYear.findFirst({ where: { id: academicYearId, centerId: req.centerId, isCurrent: true } }),
-      prisma.classe.findFirst({ where: { id: classeId, centerId: req.centerId }, include: { filiere: true } }),
+      prisma.classe.findFirst({ where: { id: classeId, centerId: req.centerId }, include: { filiere: { include: { programType: true } } } }),
     ]);
 
     if (!year) return res.status(400).json({ error: "La session sélectionnée n'est pas active." });
@@ -580,7 +576,7 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
       where: { centerId: req.centerId, filiereId: classe.filiereId, academicYearId: year.id },
     });
     if (!promotion) {
-      const startYear = parseInt(year.label.split("-")[0]) || 2026;
+      const startYear = parseInt(year.label.split("-")[0], 10) || 2026;
       promotion = await prisma.promotion.create({
         data: {
           centerId: req.centerId,
@@ -593,7 +589,6 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
 
     let createdCount = 0;
     const errors = [];
-    const yearPrefix = year.label.substring(2, 4);
 
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
@@ -606,8 +601,7 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
 
       let matricule = item.matricule ? item.matricule.trim().toUpperCase() : null;
       if (!matricule) {
-        const count = await prisma.student.count({ where: { centerId: req.centerId } });
-        matricule = `STU${yearPrefix}-${String(count + 1 + createdCount).padStart(4, "0")}`;
+        matricule = await generateDynamicMatricule(req.centerId, classe, year, createdCount);
       }
 
       const existing = await prisma.student.findFirst({

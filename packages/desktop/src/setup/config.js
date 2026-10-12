@@ -1,3 +1,4 @@
+// packages/desktop/src/setup/config.js
 const fs = require("fs");
 const path = require("path");
 const { app } = require("electron");
@@ -8,22 +9,33 @@ const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
 
 function readConfig() {
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return null; // aucune configuration encore choisie
+    if (!fs.existsSync(CONFIG_PATH)) return null;
+    const content = fs.readFileSync(CONFIG_PATH, "utf-8");
+    return JSON.parse(content);
+  } catch (err) {
+    console.warn("[Config] Impossible de lire config.json :", err.message);
+    return null;
   }
 }
 
 function writeConfig(config) {
-  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf-8");
+  } catch (err) {
+    console.error("[Config] Erreur lors de l'écriture de config.json :", err.message);
+    throw err;
+  }
 }
 
 function clearConfig() {
   try {
-    fs.unlinkSync(CONFIG_PATH);
-  } catch {
-    // rien à supprimer, ce n'est pas une erreur
+    if (fs.existsSync(CONFIG_PATH)) {
+      fs.unlinkSync(CONFIG_PATH);
+      console.log("[Config] Fichier config.json réinitialisé.");
+    }
+  } catch (err) {
+    console.warn("[Config] Erreur lors de la suppression de config.json :", err.message);
   }
 }
 

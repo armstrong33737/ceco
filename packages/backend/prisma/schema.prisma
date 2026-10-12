@@ -66,6 +66,12 @@ model Center {
   documentTemplates  DocumentTemplate[]
   documents          Document[]
 
+  // Miroir Examens Blancs
+  mockSubjects       MockSubject[]
+  filiereMockSubjects FiliereMockSubject[]
+  mockExamSessions   MockExamSession[]
+  classeMockExams    ClasseMockExam[]
+
   auditLogs          AuditLog[]
   notifications      Notification[]
 }
@@ -157,18 +163,19 @@ model ProgramType {
 }
 
 model Filiere {
-  id              String           @id @default(cuid())
-  centerId        String
-  center          Center           @relation(fields: [centerId], references: [id])
-  programTypeId   String
-  programType     ProgramType      @relation(fields: [programTypeId], references: [id])
-  name            String
-  durationInYears Int
-  niveaux         Niveau[]
-  promotions      Promotion[]
-  classes         Classe[]
-  subjects        FiliereSubject[]
-  gradingPolicies GradingPolicy[]
+  id                 String               @id @default(cuid())
+  centerId           String
+  center             Center               @relation(fields: [centerId], references: [id])
+  programTypeId      String
+  programType        ProgramType          @relation(fields: [programTypeId], references: [id])
+  name               String
+  durationInYears    Int
+  niveaux            Niveau[]
+  promotions         Promotion[]
+  classes            Classe[]
+  subjects           FiliereSubject[]
+  filiereMockSubjects FiliereMockSubject[]
+  gradingPolicies    GradingPolicy[]
 }
 
 model Niveau {
@@ -189,10 +196,11 @@ model AcademicYear {
   isCurrent Boolean  @default(false)
   status    String   @default("UPCOMING") // "UPCOMING" | "CURRENT" | "CLOSED"
 
-  promotions   Promotion[]
-  classes      Classe[]
-  inscriptions Inscription[]
-  gradePeriods GradePeriod[]
+  promotions       Promotion[]
+  classes          Classe[]
+  inscriptions     Inscription[]
+  gradePeriods     GradePeriod[]
+  mockExamSessions MockExamSession[]
 
   @@unique([centerId, label])
 }
@@ -241,6 +249,7 @@ model Classe {
   subjectOfferings SubjectOffering[]
   deliberations    Deliberation[]
   presences        Presence[]
+  classeMockExams  ClasseMockExam[]
 
   @@unique([filiereId, niveauId, academicYearId])
 }
@@ -263,12 +272,14 @@ model Student {
   createdAt      DateTime  @default(now())
   deletedAt      DateTime?
 
-  inscriptions   Inscription[]
-  grades         Grade[]
-  subjectResults SubjectResult[]
-  presences      Presence[]
-  stages         Stage[]
-  deliberations  StudentDeliberation[]
+  inscriptions       Inscription[]
+  grades             Grade[]
+  subjectResults     SubjectResult[]
+  presences          Presence[]
+  stages             Stage[]
+  deliberations      StudentDeliberation[]
+  mockExamGrades     MockExamGrade[]
+  mockExamSummaries  MockExamSummary[]
 
   @@unique([centerId, matricule])
 }
@@ -285,23 +296,22 @@ model Inscription {
   academicYear   AcademicYear  @relation(fields: [academicYearId], references: [id])
   promotionId    String?
   promotion      Promotion?    @relation(fields: [promotionId], references: [id])
-  status         String        @default("en_cours") // en_cours | admis | redouble | abandon | diplome
+  status         String        @default("en_cours")
   createdAt      DateTime      @default(now())
 
   @@unique([studentId, academicYearId])
 }
 
-// ---------------- PÉDAGOGIE V3 (Matières, Catégories Libres, Formateurs) ----------------
+// ---------------- PÉDAGOGIE V3 (Cours Normaux) ----------------
 
-// Catégories / Groupes d'enseignement 100% dynamiques définis par l'établissement
 model SubjectCategory {
   id              String           @id @default(cuid())
   centerId        String
   center          Center           @relation(fields: [centerId], references: [id])
-  name            String           // Nom libre : "Matières Scientifiques", "Matières Professionnelles", etc.
-  code            String?          // Code court facultatif : "SCI", "PRO", "GEN"
-  order           Int              @default(1) // Ordre d'apparition sur les relevés / diplômes
-  isEliminatory   Boolean          @default(false) // Option : note éliminatoire si sous le seuil
+  name            String
+  code            String?
+  order           Int              @default(1)
+  isEliminatory   Boolean          @default(false)
   createdAt       DateTime         @default(now())
 
   filiereSubjects FiliereSubject[]
@@ -310,13 +320,12 @@ model SubjectCategory {
   @@unique([centerId, name])
 }
 
-// Référentiel neutre et universel des matières (sans catégorie en dur)
 model Subject {
   id               String           @id @default(cuid())
   centerId         String
   center           Center           @relation(fields: [centerId], references: [id])
-  name             String           // "Thermodynamique", "Informatique", "Dessin Technique"
-  code             String?          // "THM101", "INF102"
+  name             String
+  code             String?
   createdAt        DateTime         @default(now())
 
   filiereTemplates FiliereSubject[]
@@ -326,18 +335,17 @@ model Subject {
   @@unique([centerId, code])
 }
 
-// Maquette type permanente par filière & niveau (Gabarit réutilisable d'une année sur l'autre)
 model FiliereSubject {
   id                   String           @id @default(cuid())
   centerId             String
   center               Center           @relation(fields: [centerId], references: [id])
   filiereId            String
   filiere              Filiere          @relation(fields: [filiereId], references: [id], onDelete: Cascade)
-  niveauOrder          Int              // Niveau 1, 2 ou 3
-  semesterOrder        Int              // Semestre 1 ou 2
+  niveauOrder          Int
+  semesterOrder        Int
   subjectId            String
   subject              Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  categoryId           String?          // Liaison contextuelle à une catégorie de l'établissement
+  categoryId           String?
   category             SubjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   defaultCoefficient   Float            @default(2.0)
   defaultVolumeHoraire Int?
@@ -345,7 +353,6 @@ model FiliereSubject {
   @@unique([filiereId, niveauOrder, semesterOrder, subjectId])
 }
 
-// Formateurs / Enseignants
 model Formateur {
   id          String   @id @default(cuid())
   centerId    String
@@ -354,7 +361,7 @@ model Formateur {
   lastName    String
   email       String?
   phone       String?
-  specialite  String?  // ex: "Génie Mécanique / Froid"
+  specialite  String?
   userId      String?  @unique
   user        User?    @relation(fields: [userId], references: [id])
   createdAt   DateTime @default(now())
@@ -362,18 +369,17 @@ model Formateur {
   offerings   SubjectOffering[]
 }
 
-// Instance Annuelle de Matière dans une Classe (Générée depuis la maquette ou ajoutée en cours d'année)
 model SubjectOffering {
   id            String           @id @default(cuid())
   subjectId     String
   subject       Subject          @relation(fields: [subjectId], references: [id])
   classeId      String
   classe        Classe           @relation(fields: [classeId], references: [id], onDelete: Cascade)
-  gradePeriodId String           // Semestre 1 ou Semestre 2
+  gradePeriodId String
   gradePeriod   GradePeriod      @relation(fields: [gradePeriodId], references: [id])
-  categoryId    String?          // Catégorie contextuelle pour cette classe
+  categoryId    String?
   category      SubjectCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  formateurId   String?          // Multi-affectation libre (le formateur peut avoir plusieurs cours)
+  formateurId   String?
   formateur     Formateur?       @relation(fields: [formateurId], references: [id], onDelete: SetNull)
 
   coefficient   Float            @default(2.0)
@@ -385,12 +391,11 @@ model SubjectOffering {
   @@unique([subjectId, classeId, gradePeriodId])
 }
 
-// Politique de Pondération CC_TP vs NORMALE (30/70, 40/60...)
 model GradingPolicy {
   id            String    @id @default(cuid())
   centerId      String
   center        Center    @relation(fields: [centerId], references: [id])
-  filiereId     String?   // null = politique globale de l'établissement
+  filiereId     String?
   filiere       Filiere?  @relation(fields: [filiereId], references: [id])
   ccWeight      Float     @default(0.30)
   normalWeight  Float     @default(0.70)
@@ -408,8 +413,8 @@ model GradePeriod {
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   type           String       // "SEMESTRE" | "ANNUEL"
-  order          Int          // 1, 2 pour semestre ; 1 pour annuel
-  label          String       // "Semestre 1", "Semestre 2"
+  order          Int
+  label          String
   startDate      DateTime
   endDate        DateTime
 
@@ -421,7 +426,6 @@ model GradePeriod {
   @@unique([centerId, academicYearId, type, order])
 }
 
-// Notes brutes individuelles saisies (avec prise en compte des absences)
 model Grade {
   id                String          @id @default(cuid())
   centerId          String
@@ -434,15 +438,14 @@ model Grade {
   gradePeriod       GradePeriod     @relation(fields: [gradePeriodId], references: [id])
   
   evaluationType    String          // "CC_TP" | "NORMALE" | "RATTRAPAGE"
-  label             String?         // "CC1", "CC2", "TP1", "Examen Final", "Rattrapage"
-  value             Float           // Note sur 20
+  label             String?
+  value             Float
   maxValue          Float           @default(20)
   isAbsent          Boolean         @default(false)
-  absenceReason     String?         // "JUSTIFIED" | "UNJUSTIFIED" | null
+  absenceReason     String?
   createdAt         DateTime        @default(now())
 }
 
-// Synthèse figée par matière pour le relevé/bulletin (Rétroactivité Zéro)
 model SubjectResult {
   id              String      @id @default(cuid())
   centerId        String
@@ -451,17 +454,17 @@ model SubjectResult {
   student         Student     @relation(fields: [studentId], references: [id])
   subjectId       String
   subject         Subject     @relation(fields: [subjectId], references: [id])
-  gradePeriodId   String      // Semestre 1, Semestre 2 ou Annuel
+  gradePeriodId   String
   gradePeriod     GradePeriod @relation(fields: [gradePeriodId], references: [id])
 
-  computationMode String      // "CC_NORMALE" | "AGGREGATE_SEMESTRES"
-  ccAverage       Float?      // Moyenne arithmétique des CC_TP
-  normalAverage   Float?      // Note examen (ou retenue avec rattrapage)
-  ccWeight        Float       // ex: 0.30
-  normalWeight    Float       // ex: 0.70
+  computationMode String
+  ccAverage       Float?
+  normalAverage   Float?
+  ccWeight        Float
+  normalWeight    Float
   gradingPolicyId String?
   coefficient     Float
-  finalGrade      Float       // Note finale calculée (/20)
+  finalGrade      Float
   isLocked        Boolean     @default(false)
   computedAt      DateTime    @default(now())
 
@@ -547,12 +550,139 @@ model Document {
   type           String
   studentId      String?
   classeId       String?
+  gradePeriodId  String?
   filePath       String
   fileHash       String
   renderSnapshot Json
   qrToken        String   @unique
   generatedAt    DateTime @default(now())
+
+  @@index([centerId, studentId, type, gradePeriodId])
 }
+
+// ============================================================================
+// MODULE EXAMENS BLANCS (ARCHITECTURE MIROIR COMPLÈTE)
+// ============================================================================
+
+// 1. Référentiel universel des épreuves d'examen blanc
+model MockSubject {
+  id                 String               @id @default(cuid())
+  centerId           String
+  center             Center               @relation(fields: [centerId], references: [id])
+  code               String               // ex: "EPS", "MSP", "EPT", "EPP"
+  name               String               // ex: "Éducation Physique & Sportive", "Matière Spécialité Pratique"
+  defaultCoefficient Float                @default(2.0)
+  createdAt          DateTime             @default(now())
+
+  filiereMockSubjects    FiliereMockSubject[]
+  classeMockExamSubjects ClasseMockExamSubject[]
+
+  @@unique([centerId, code])
+}
+
+// 2. Attribution par filière (Maquette type avec coefs d'examen par défaut)
+model FiliereMockSubject {
+  id            String      @id @default(cuid())
+  centerId      String
+  center        Center      @relation(fields: [centerId], references: [id])
+  filiereId     String
+  filiere       Filiere     @relation(fields: [filiereId], references: [id], onDelete: Cascade)
+  mockSubjectId String
+  mockSubject   MockSubject @relation(fields: [mockSubjectId], references: [id], onDelete: Cascade)
+  coefficient   Float       @default(2.0)
+  order         Int         @default(1)
+
+  @@unique([filiereId, mockSubjectId])
+}
+
+// 3. Session d'Examen Blanc (Rattachée obligatoirement à l'année académique active)
+model MockExamSession {
+  id             String          @id @default(cuid())
+  centerId       String
+  center         Center          @relation(fields: [centerId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear    @relation(fields: [academicYearId], references: [id])
+  title          String          // ex: "EXAMEN REGIONAL DU DQP BLANC, SESSION DE 2026"
+  startDate      DateTime
+  endDate        DateTime
+  isLocked       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+
+  classeMockExams ClasseMockExam[]
+
+  @@index([centerId, academicYearId])
+}
+
+// 4. Examen Blanc instancié pour une classe lors d'une session
+model ClasseMockExam {
+  id                String          @id @default(cuid())
+  centerId          String
+  center            Center          @relation(fields: [centerId], references: [id])
+  mockExamSessionId String
+  mockExamSession   MockExamSession @relation(fields: [mockExamSessionId], references: [id], onDelete: Cascade)
+  classeId          String
+  classe            Classe          @relation(fields: [classeId], references: [id], onDelete: Cascade)
+  isLocked          Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+
+  subjects          ClasseMockExamSubject[]
+  grades            MockExamGrade[]
+  summaries         MockExamSummary[]
+
+  @@unique([mockExamSessionId, classeId])
+}
+
+// 5. Épreuves attribuées à la classe pour la session (instanciées depuis la maquette de filière)
+model ClasseMockExamSubject {
+  id               String          @id @default(cuid())
+  classeMockExamId String
+  classeMockExam   ClasseMockExam  @relation(fields: [classeMockExamId], references: [id], onDelete: Cascade)
+  mockSubjectId    String
+  mockSubject      MockSubject     @relation(fields: [mockSubjectId], references: [id], onDelete: Restrict)
+  coefficient      Float           @default(2.0)
+  order            Int             @default(1)
+
+  grades           MockExamGrade[]
+
+  @@unique([classeMockExamId, mockSubjectId])
+}
+
+// 6. Notes des élèves inscrits (Note/20, Points Note*Coef, et statut 'M' d'absence)
+model MockExamGrade {
+  id                      String                @id @default(cuid())
+  classeMockExamId        String
+  classeMockExam          ClasseMockExam        @relation(fields: [classeMockExamId], references: [id], onDelete: Cascade)
+  classeMockExamSubjectId String
+  classeMockExamSubject   ClasseMockExamSubject @relation(fields: [classeMockExamSubjectId], references: [id], onDelete: Cascade)
+  studentId               String
+  student                 Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  score                   Float?                // Note brute / 20 (null si absence 'M' ou non saisie)
+  points                  Float?                // Points pondérés = score * coefficient
+  isAbsent                Boolean               @default(false) // true si noté 'M'
+  absenceCode             String?               // "M" pour Manqué / Malade / Absent
+  createdAt               DateTime              @default(now())
+
+  @@unique([classeMockExamSubjectId, studentId])
+}
+
+// 7. Synthèse et Moyenne Finale / 20 de chaque élève pour le Bordereau MINEFOP
+model MockExamSummary {
+  id               String         @id @default(cuid())
+  classeMockExamId String
+  classeMockExam   ClasseMockExam @relation(fields: [classeMockExamId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  totalPoints      Float          @default(0)
+  totalCoefs       Float          @default(0)
+  average          Float          @default(0) // Moyenne Finale / 20
+  rank             Int?
+  decision         String?        // "ADMIS" | "REFUSE"
+
+  @@unique([classeMockExamId, studentId])
+}
+
+// ---------------- Traçabilité & Notifications ----------------
 
 model AuditLog {
   id        String   @id @default(cuid())

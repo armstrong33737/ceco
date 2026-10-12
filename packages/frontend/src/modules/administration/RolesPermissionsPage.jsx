@@ -1,5 +1,5 @@
 // packages/frontend/src/modules/administration/RolesPermissionsPage.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiFetch } from "../../lib/apiClient";
 import { showToast } from "../../store/toastStore";
@@ -16,7 +16,7 @@ const MODULES = [
   { key: "users", label: "Gestion des Comptes Utilisateurs", icon: "group" },
   { key: "roles", label: "Rôles & Habilitations RBAC", icon: "badge" },
   { key: "students", label: "Dossiers & Registre Apprenants", icon: "school" },
-  { key: "grades", label: "Évaluations, Notes & Bordereaux", icon: "grade" },
+  { key: "grades", label: "Évaluations, Notes & Examens Blancs", icon: "grade" },
   { key: "bulletins", label: "Bulletins, Relevés & Diplômes", icon: "receipt_long" },
   { key: "backups", label: "Sauvegardes & Restauration", icon: "archive" },
 ];
@@ -30,7 +30,6 @@ const ACTIONS = [
   { key: "generate", label: "Générer PDF" },
 ];
 
-// Socles fonctionnels minimaux garantis des rôles système
 const SYSTEM_ROLE_BASELINES = {
   "Admin": ["*"],
   "Directeur des Études": [
@@ -98,7 +97,6 @@ export default function RolesPermissionsPage() {
     const isSystemRole = Boolean(role.isSystem);
     const baseline = SYSTEM_ROLE_BASELINES[role.name] || [];
 
-    // Règle d'augmentation : les permissions du socle de base ne peuvent pas être décochées
     if (isSystemRole && baseline.includes(permissionKey)) {
       showToast("Cette permission fait partie du socle système garanti et ne peut pas être retirée.", "info");
       return;
@@ -165,7 +163,6 @@ export default function RolesPermissionsPage() {
             <div key={role.id} className={`p-6 rounded bg-surface border transition-colors shadow-xs space-y-4 dark:bg-surface-dark ${
               hasChanges ? "border-brand-700 dark:border-brand-500" : "border-border dark:border-border-dark"
             }`}>
-              {/* En-tête du Rôle */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-3 dark:border-border-dark">
                 <div className="flex items-center gap-3">
                   <Icon name="badge" className="text-[20px] text-brand-900 dark:text-brand-500" />
@@ -187,20 +184,18 @@ export default function RolesPermissionsPage() {
                 </div>
               </div>
 
-              {/* Information UX : Règle d'Augmentation pour les Rôles Système */}
               {isSystemRole && !isAdminRole && (
                 <div className="p-3.5 rounded bg-info-subtle border border-info/30 text-info text-body-sm flex items-start gap-2.5 dark:bg-info-subtle-dark dark:text-info-dark">
-                  <Icon name="info" className="text-[18px] flex-shrink-0 mt-0.5" />
+                  <Icon name="verified_user" className="text-[18px] flex-shrink-0 mt-0.5" />
                   <div>
-                    <strong className="block font-semibold">Socle Système Garanti &amp; Règle d'Augmentation</strong>
+                    <strong className="block font-semibold">Socle Système Garanti (Règle d'Augmentation)</strong>
                     <span>
-                      Ce rôle possède un socle fonctionnel de base verrouillé pour assurer son fonctionnement. Vous ne pouvez pas réduire ses droits vitaux, mais vous pouvez <strong>librement lui accorder de nouvelles permissions</strong> en cochant les cases additionnelles ci-dessous.
+                      Ce rôle dispose d'un ensemble de permissions vitales garanties. Vous pouvez <strong>librement lui accorder des privilèges supplémentaires</strong> en cochant les cases disponibles ci-dessous.
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Matrice des Habilitations */}
               {isAdminRole ? (
                 <div className="p-4 rounded bg-success-subtle border border-success/30 text-success text-body-sm flex items-center gap-2 dark:bg-success-subtle-dark dark:text-success-dark">
                   <Icon name="verified_user" className="text-[18px]" />
@@ -238,9 +233,9 @@ export default function RolesPermissionsPage() {
                                     disabled={isBaseline}
                                     onChange={() => togglePermission(role, permissionKey)}
                                     className={`w-4 h-4 rounded-[2px] accent-brand-900 transition-colors ${
-                                      isBaseline ? "opacity-70 cursor-not-allowed" : "cursor-pointer"
+                                      isBaseline ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
                                     }`}
-                                    title={isBaseline ? "Permission de base système verrouillée" : "Cocher pour accorder cette permission"}
+                                    title={isBaseline ? "Permission vitale garantie (non révocable)" : "Cocher pour accorder"}
                                   />
                                 </label>
                               </td>

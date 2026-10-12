@@ -40,14 +40,14 @@ const MANUAL_CHAPTERS = [
     number: "02",
     title: "Sécurité, Rôles RBAC & Licences",
     icon: "security",
-    summary: "Comptes utilisateurs, matrice des permissions, clés Ed25519 et sauvegardes .zip.",
+    summary: "Comptes utilisateurs, matrice des permissions et clés cryptographiques Ed25519.",
     sections: [
       {
         title: "2.1 Contrôle d'Accès Basé sur les Rôles (RBAC Granulaire)",
         content:
           "L'accès aux modules est strictement cloisonné par le système RBAC :\n" +
           "• Admin (Super-Admin) : Accès universel (*) à l'ensemble de l'ERP.\n" +
-          "• Rôles d'Usine Protégés (isSystem: true) : Directeur des Études, Secrétaire, Formateur possèdent un socle de permissions garanti par le système. L'administrateur peut leur accorder des privilèges supplémentaires mais ne peut pas supprimer leurs droits vitaux.\n" +
+          "• Rôles d'Usine Protégés (isSystem: true) : Directeur des Études, Secrétaire, Formateur possèdent un socle de permissions garanti par le système. L'administrateur peut leur accorder des privilèges supplémentaires mais ne peut pas supprimer leurs droits vitaux (règle d'augmentation).\n" +
           "• Rôles Personnalisés : Vous pouvez créer des rôles sur-mesure (ex: Surveillant Général, Comptable) et cocher exactement leurs autorisations de consultation, création, modification, suppression, validation ou émission PDF.",
       },
       {
@@ -58,10 +58,9 @@ const MANUAL_CHAPTERS = [
           "2. Mode Consultation / Lecture Seule : À l'issue des 7 jours de grâce, les modifications et nouvelles saisies sont verrouillées. Toutes les données historiques, la consultation et l'impression des actes restent disponibles à vie sans risque de perte.",
       },
       {
-        title: "2.3 Rechargement Hors-Ligne & Mobile Money",
+        title: "2.3 Rechargement Hors-Ligne Déconnecté",
         content:
-          "• Activation Hors-Ligne : Transmettez votre Center ID à l'éditeur pour recevoir un certificat de licence signé de 24+ caractères à coller dans le menu Administration > Licence.\n" +
-          "• Rechargement Mobile Money : En présence d'une connexion Internet, vous pouvez recharger directement via MTN MoMo ou Orange Money Cameroun.",
+          "Transmettez votre Center ID unique à l'éditeur pour recevoir un certificat de licence signé de 24+ caractères à coller dans le menu Administration > Licence. L'authentification mathématique par clé publique s'exécute localement sans aucune connexion Internet.",
       },
     ],
   },
@@ -103,12 +102,12 @@ const MANUAL_CHAPTERS = [
     number: "04",
     title: "Gestion des Apprenants & Badges",
     icon: "group",
-    summary: "Inscriptions, matricules scellés, capture webcam 4:4, import CSV et planches A4.",
+    summary: "Inscriptions, matricules paramétrables, capture webcam 4:4, import CSV et planches A4.",
     sections: [
       {
-        title: "4.1 Matricule Officiel Auto-Généré Scellé",
+        title: "4.1 Moteur de Matricule Paramétrable & Scellement",
         content:
-          "Lors de chaque inscription, le serveur génère automatiquement un matricule officiel immuable respectant le format national STU{YY}-{XXXX} (ex: STU26-0042). Ce matricule ne peut pas être altéré pour garantir l'intégrité juridique du registre.",
+          "Le format du matricule est entièrement configurable dans les paramètres du centre (ex: {CTR}-{FIL}{YY}-{NUM4}). Une fois attribué, le matricule devient immuable pour garantir la conformité juridique du registre.",
       },
       {
         title: "4.2 Studio Photo & Capture Webcam 4:4 Directe",
@@ -123,7 +122,7 @@ const MANUAL_CHAPTERS = [
       {
         title: "4.4 Tirage de Planches A4 de Badges Duplex (CR80)",
         content:
-          "Depuis le menu Scolarité ou l'en-tête de classe, imprimez en 1 clic une planche A4 contenant jusqu'à 8 cartes d'étudiant recto/verso au format standard CR80 avec repères de coupe d'imprimerie et QR Code de certification.",
+          "Depuis le menu Scolarité ou l'en-tête de classe, imprimez en 1 clic une planche A4 contenant jusqu'à 8 cartes d'étudiant recto/verso au format standard CR80 avec repères de coupe d'imprimerie et QR Code compact de certification.",
       },
     ],
   },
@@ -142,12 +141,12 @@ const MANUAL_CHAPTERS = [
       {
         title: "5.2 Accès Direct Enseignant & Grille Matricielle Excel-Like",
         content:
-          "Les enseignants disposent d'un accès direct à leurs cours via le bouton [Saisir] du tableau de bord. La grille matricielle permet une saisie ultra-rapide au clavier (navigation par flèches directionnelles, Entrée et Tabulation) avec clamping automatique des notes de 0.00 à 20.00.",
+          "Les enseignants disposent d'un accès direct à leurs cours via le tableau de bord. La grille matricielle permet une saisie ultra-rapide au clavier (touches directionnelles, Entrée et Tabulation) avec clamping automatique des notes de 0.00 à 20.00.",
       },
       {
-        title: "5.3 Qualification des Absences (Bouton ABS)",
+        title: "5.3 Qualification des Absences (Touche « M » ou Bouton ABS)",
         content:
-          "Le bouton ABS qualifie les absences aux évaluations :\n" +
+          "Le bouton ABS ou la saisie de la lettre « M » qualifie les absences aux évaluations :\n" +
           "• Absence Justifiée (Certificat médical) : Non pénalisée dans la moyenne continue.\n" +
           "• Absence Injustifiée : Comptabilisée comme note 0.00 / 20.",
       },
@@ -161,24 +160,24 @@ const MANUAL_CHAPTERS = [
   {
     id: "chapitre-6",
     number: "06",
-    title: "Délibérations du Jury & Jurys",
-    icon: "gavel",
-    summary: "Arbitrage souverain, calcul des rangs, seuil éliminatoire et délibération globale.",
+    title: "Examens Blancs Régionaux MINEFOP",
+    icon: "school",
+    summary: "Enrôlement des classes sortantes, bordereaux officiels sans QR code et recueil compilé.",
     sections: [
       {
-        title: "6.1 Délibération Semestrielle vs Annuelle (S1 + S2)",
+        title: "6.1 Enrôlement Automatique & Diagnostic",
         content:
-          "La délibération semestrielle valide les modules du semestre. La délibération annuelle cumule l'intégralité des semestres 1 et 2 pour arrêter la décision définitive : Admis au Niveau supérieur, Redouble ou Diplômé.",
+          "Créez une session d'examen blanc en 1 clic : toutes les classes sortantes terminales sont automatiquement enrôlées et leurs épreuves injectées depuis la maquette de filière avec diagnostic immédiat.",
       },
       {
-        title: "6.2 Seuil Éliminatoire de Spécialité (< 08.00/20)",
+        title: "6.2 Saisie des Notes & Commutateur d'Éligibilité",
         content:
-          "Le moteur détecte automatiquement les notes inférieures à 08.00/20 dans les matières de spécialité (1er Groupe) et alerte le jury sur les cas éliminatoires nécessitant un passage au rattrapage.",
+          "La grille d'examen blanc calcule automatiquement les points Note * Coef et la moyenne / 20. Vous pouvez marquer un candidat comme 'Disqualifié' ou 'Abandon' pour l'exclure du bordereau officiel sans toucher à son dossier annuel.",
       },
       {
-        title: "6.3 Délibération Globale de Tout l'Établissement en 1 Clic",
+        title: "6.3 Actes Réglementaires de Délégation & Recueil Unique Compilé",
         content:
-          "Un bouton souverain permet de calculer et sceller automatiquement les décisions, moyennes et rangs de toutes les classes de la session active en une seule opération transactionnelle.",
+          "Générez les bordereaux officiels sans QR code conformes aux délégations départementales (Ouest/Bafoussam), les feuilles d'émargement de salle pour les examinateurs, et compilez toutes les classes candidates en un seul fichier PDF A4 paginé pour le dépôt administratif.",
       },
     ],
   },
@@ -187,12 +186,12 @@ const MANUAL_CHAPTERS = [
     number: "07",
     title: "Bulletins, Diplômes & Studio PDF",
     icon: "workspace_premium",
-    summary: "Certification QR Code autonome hors-ligne, livrets A4 et diplômes d'État paysage.",
+    summary: "Certification QR Code compacte (< 150 car.), livrets A4 et diplômes d'État paysage.",
     sections: [
       {
-        title: "7.1 Certification par QR Code Autonome Hors-Ligne (Offline)",
+        title: "7.1 Certification par QR Code Compact (< 150 Caractères)",
         content:
-          "Le QR code apposé sur les actes encode un certificat textuel complet lisible par tout smartphone sans connexion Internet (nom, matricule, filière, moyenne, rang, décision, sceau cryptographique).",
+          "Le QR code apposé sur les actes encode un certificat textuel compact lisible instantanément par tout smartphone hors-ligne (CTR, MAT, DOC, NOM, MOY, RNG, DEC, SIG), garantissant une netteté de scan optimale.",
       },
       {
         title: "7.2 Bulletin Semestriel Bilingue (A4 Portrait)",
@@ -205,7 +204,7 @@ const MANUAL_CHAPTERS = [
           "Parchemin officiel ornemental avec triple filet or/bleu nuit, fleurons d'angle, mentions de l'arrêté ministériel d'agrément, mention obtenue (Passable, Assez Bien, Bien, Très Bien) et signatures officielles.",
       },
       {
-        title: "7.4 Studio de Personnalisation des Gabarits en Écran Scindé",
+        title: "7.4 Studio de Personnalisation des Gabarits",
         content:
           "Dans Administration > Studio Gabarits, configurez vos en-têtes bilingues, la couleur primaire, le filigrane translucide (Logo ou Sceau de la République) et visualisez le rendu vectoriel en direct.",
       },
@@ -214,24 +213,24 @@ const MANUAL_CHAPTERS = [
   {
     id: "chapitre-8",
     number: "08",
-    title: "Sauvegardes, Restauration & Audit",
+    title: "Sauvegardes, Importation & PRA Local",
     icon: "archive",
-    summary: "Archives hybrides .zip, procédure de restauration et journal d'audit immuable.",
+    summary: "Archives hybrides .zip, exportation physique, importation à chaud et restauration.",
     sections: [
       {
-        title: "8.1 Sauvegardes Hybrides (.zip) & Externalisation",
+        title: "8.1 Sauvegardes Hybrides Universelles (.zip) & Externalisation",
         content:
-          "Chaque archive générée rassemble le dump relationnel PostgreSQL complet et l'arborescence des fichiers médias (/storage). Vous pouvez télécharger ces archives pour les externaliser sur clé USB.",
+          "Chaque archive générée rassemble le dump relationnel complet de la base de données (db_dump.json) et l'arborescence physique des médias (/storage : photographies, signatures, documents scellés). Exportez régulièrement ces fichiers .zip sur une clé USB ou un disque externe.",
       },
       {
-        title: "8.2 Procédure de Restauration Transactionnelle d'Urgence",
+        title: "8.2 Importation à Chaud d'une Sauvegarde Externe",
         content:
-          "En cas d'incident matériel, ré-injectez une archive .zip depuis le menu Sauvegardes. Le système exécute une purge sécurisée (TRUNCATE CASCADE) puis restaure la base et les médias.",
+          "En cas de changement d'ordinateur ou de réinstallation, utilisez le bouton 'Importer Sauvegarde (.zip)'. L'ERP valide l'intégrité de l'archive et l'ajoute immédiatement à votre registre local, prête à être restaurée en 1 clic.",
       },
       {
-        title: "8.3 Journal d'Audit Système Immuable (AuditLog)",
+        title: "8.3 Procédure de Restauration Transactionnelle d'Urgence",
         content:
-          "Toutes les opérations sensibles (déverrouillages de notes, délibérations, clôtures de session, suppressions) sont consignées de manière immuable avec l'horodatage, l'auteur et la charge utile JSON brute.",
+          "La restauration exécute une purge sécurisée (TRUNCATE CASCADE) puis réinjecte l'intégralité des données relationnelles et des médias tels qu'ils étaient au moment de la sauvegarde sans corruption.",
       },
     ],
   },
@@ -325,7 +324,7 @@ export default function UserDocumentationModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* CORPS SCINDÉ : SOMMAIRE GAUCHE (4 cols) | CONTENU DROITE (8 cols) */}
+          {/* CORPS SCINDÉ : SOMMAIRE GAUCHE | CONTENU DROITE */}
           <div className="grid grid-cols-1 md:grid-cols-12 flex-1 overflow-hidden">
             {/* Sommaire */}
             <div className="md:col-span-4 border-r border-border p-3 space-y-1.5 overflow-y-auto bg-[#F5F7FA] dark:bg-[#07111D] dark:border-border-dark">

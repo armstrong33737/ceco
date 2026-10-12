@@ -7,7 +7,7 @@ const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
-const { assertActiveAcademicYear, assertEditableAcademicYear } = require("../middleware/academicYearGuard");
+const { assertActiveAcademicYear } = require("../middleware/academicYearGuard");
 const { getDefaultSealBase64 } = require("../storage/defaultSeal");
 const {
   generateBlankGradeSheetPdf,
@@ -60,7 +60,7 @@ async function getConnectedFormateur(req) {
   });
 }
 
-// 1. Grille de Saisie Matricielle avec Scoping & Sanitisation
+// 1. Grille de Saisie Matricielle
 router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.create"), async (req, res, next) => {
   try {
     const { offeringId, classeId, gradePeriodId, subjectId } = req.query || {};
@@ -116,7 +116,6 @@ router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.c
 
     if (!offering) return res.status(404).json({ error: "Cours sélectionné introuvable pour cette classe et ce semestre." });
 
-    // Sécurité Enseignant : Un formateur ne peut consulter que ses propres cours
     const connectedFormateur = await getConnectedFormateur(req);
     if (connectedFormateur && offering.formateurId && offering.formateurId !== connectedFormateur.id) {
       return res.status(403).json({ error: "Accès refusé : vous n'êtes pas l'enseignant assigné à ce cours." });
@@ -156,7 +155,6 @@ router.get("/grades/grid", verifyJwt, requirePermission("grades.read", "grades.c
           isCurrentSession: offering.gradePeriod.academicYear?.isCurrent || false,
         },
       },
-      // Sanitisation : transmission exclusive des champs nécessaires à l'évaluation
       students: offering.classe.inscriptions.map((i) => ({
         id: i.student.id,
         matricule: i.student.matricule,
@@ -189,17 +187,14 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
     });
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
 
-    // Garde-fou session close
     const yearId = offering.classe.academicYearId || offering.gradePeriod.academicYearId;
     await assertActiveAcademicYear(yearId, req.centerId);
 
-    // Contrôle d'accès formateur
     const connectedFormateur = await getConnectedFormateur(req);
     if (connectedFormateur && offering.formateurId && offering.formateurId !== connectedFormateur.id) {
       return res.status(403).json({ error: "Accès refusé : vous n'êtes pas l'enseignant assigné à ce cours." });
     }
 
-    // Vérification du verrouillage
     const lockedCount = await prisma.subjectResult.count({
       where: {
         subjectId: offering.subjectId,
@@ -355,7 +350,6 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
           }
         }
 
-        // Calcul automatique SubjectResult
         const ccAverage = validCcScores.length > 0
           ? Number((validCcScores.reduce((a, b) => a + b, 0) / validCcScores.length).toFixed(2))
           : null;
@@ -443,9 +437,9 @@ router.post("/grades/unlock", verifyJwt, requirePermission("center.update"), asy
     });
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
 
-    if (offering.classe.academicYear?.status === "CLOSED" || (!offering.classe.academicYear?.isCurrent && offering.classe.academicYear?.status !== "UPCOMING")) {
+    if (offering.classe.academicYear?.status === "CLOSED") {
       return res.status(403).json({
-        error: `Opération refusée : la session "${offering.classe.academicYear?.label}" est officiellement clôturée. Aucun déverrouillage n'est autorisé sur les archives historiques.`,
+        error: `Opération refusée : la session "${offering.classe.academicYear?.label}" est officiellement clôturée.`,
       });
     }
 
@@ -480,7 +474,7 @@ router.post("/grades/unlock", verifyJwt, requirePermission("center.update"), asy
   }
 });
 
-// 5. Bordereau Vierge PDF
+// 5. Bordereau Vierge PDF (Stockage temporaire)
 router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     const { offeringId } = req.params;
@@ -514,21 +508,19 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
 
     const qrTokenKey = `BLANK-${offering.id}`;
     const existingDoc = await prisma.document.findFirst({
-      where: { centerId: req.centerId, qrToken: { startsWith: qrTokenKey } },
+      where: { centerId: req.centerId, qrToken: qrTokenKey },
       orderBy: { generatedAt: "desc" },
     });
 
     if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
       return res.json({
         success: true,
-        reused: true,
         previewUrl: `/documents/${existingDoc.id}/preview`,
         downloadUrl: `/documents/${existingDoc.id}/download`,
       });
     }
 
-    const yearFolder = (offering.gradePeriod.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
+    const docFolder = centerStoragePath(req.centerId, "documents", "temp", "bordereaux_vierges");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
     const fileName = `VIERGE_${offering.subject.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${offering.id.substring(0, 6)}.pdf`;
@@ -586,7 +578,7 @@ router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermi
   }
 });
 
-// 6. Bordereau Officiel Certifié Scellé par QR Code (PV_MATIERE)
+// 6. Procès-Verbal Certifié de Matière (PV_MATIERE)
 router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { offeringId } = req.params;
@@ -621,25 +613,19 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
 
     if (!offering) return res.status(404).json({ error: "Cours introuvable." });
 
-    const docType = "PV_MATIERE";
+    const qrTokenKey = `PV-MAT-${offering.id}`;
     const existingDoc = await prisma.document.findFirst({
-      where: { centerId: req.centerId, type: docType, classeId: offering.classeId, qrToken: { contains: offering.id } },
+      where: { centerId: req.centerId, qrToken: qrTokenKey },
       orderBy: { generatedAt: "desc" },
     });
 
     if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
       return res.json({
         success: true,
-        reused: true,
         previewUrl: `/documents/${existingDoc.id}/preview`,
         downloadUrl: `/documents/${existingDoc.id}/download`,
       });
     }
-
-    const cuid = crypto.randomBytes(8).toString("hex");
-    const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key").update(`${cuid}:${offering.id}`).digest("hex").slice(0, 16);
-    const qrToken = `${cuid}?t=${hmacSig}&off=${offering.id}`;
-    const verificationUrl = `${req.protocol}://${req.get("host")}/verify/${qrToken}`;
 
     const rows = offering.classe.inscriptions.map((insc) => {
       const st = insc.student;
@@ -697,28 +683,35 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
       },
       rows,
       stats,
-      qrToken,
+      qrToken: qrTokenKey,
       templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
-    const yearFolder = (offering.gradePeriod.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
+    const docFolder = centerStoragePath(req.centerId, "documents", "archive", "pvs");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
     const fileName = `PV_MATIERE_${offering.subject.name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${offering.id.substring(0, 6)}.pdf`;
     const fullPath = path.join(docFolder, fileName);
 
-    await generateCertifiedGradeSheetPdf(snapshot, verificationUrl, fullPath);
+    const compactQrPayload = `CECO:V1|CTR:${center.name.substring(0, 10)}|DOC:PV_MAT|MAT:${offering.subject.code || "—"}|CLS:${offering.classe.label}|SUCC:${stats.successRate}%`;
+    await generateCertifiedGradeSheetPdf(snapshot, compactQrPayload, fullPath);
 
-    const doc = await prisma.document.create({
-      data: {
+    const doc = await prisma.document.upsert({
+      where: { qrToken: qrTokenKey },
+      update: {
+        filePath: fullPath,
+        fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
+        renderSnapshot: snapshot,
+        generatedAt: new Date(),
+      },
+      create: {
         centerId: req.centerId,
-        type: docType,
+        type: "PV_MATIERE",
         classeId: offering.classeId,
         filePath: fullPath,
         fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
         renderSnapshot: snapshot,
-        qrToken,
+        qrToken: qrTokenKey,
       },
     });
 
@@ -732,7 +725,7 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
   }
 });
 
-// 7. PV de Délibération de Classe (A4 Paysage - PV_SEMESTRE & PV_ANNUEL)
+// 7. PV de Délibération de Classe (A4 Paysage)
 router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { classeId } = req.params;
@@ -784,24 +777,19 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
       }),
     ]);
 
+    const qrTokenKey = `PV-DELIB-${classe.id}-${period.id}`;
     const existingDoc = await prisma.document.findFirst({
-      where: { centerId: req.centerId, type: docType, classeId, qrToken: { contains: period.id } },
+      where: { centerId: req.centerId, qrToken: qrTokenKey },
       orderBy: { generatedAt: "desc" },
     });
 
     if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
       return res.json({
         success: true,
-        reused: true,
         previewUrl: `/documents/${existingDoc.id}/preview`,
         downloadUrl: `/documents/${existingDoc.id}/download`,
       });
     }
-
-    const cuid = crypto.randomBytes(8).toString("hex");
-    const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key").update(`${cuid}:${classeId}`).digest("hex").slice(0, 16);
-    const qrToken = `${cuid}?t=${hmacSig}&cls=${classeId}&p=${period.id}`;
-    const verificationUrl = `${req.protocol}://${req.get("host")}/verify/${qrToken}`;
 
     const isFinalYear = classe.niveau?.order >= classe.filiere?.durationInYears;
 
@@ -865,28 +853,36 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
       periodLabel: period.label,
       offerings,
       summaries,
-      qrToken,
+      qrToken: qrTokenKey,
       templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
-    const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
+    const docFolder = centerStoragePath(req.centerId, "documents", "archive", "pvs");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
     const fileName = `${docType}_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${period.id.substring(0, 6)}.pdf`;
     const fullPath = path.join(docFolder, fileName);
 
-    await generateClassSemesterSummaryPdf(snapshot, verificationUrl, fullPath);
+    const compactQrPayload = `CECO:V1|CTR:${center.name.substring(0, 10)}|DOC:${docType}|CLS:${classe.label}|PER:${period.label}`;
+    await generateClassSemesterSummaryPdf(snapshot, compactQrPayload, fullPath);
 
-    const doc = await prisma.document.create({
-      data: {
-        centerId: req.centerId,
-        type: docType,
-        classeId: classe.id,
+    const doc = await prisma.document.upsert({
+      where: { qrToken: qrTokenKey },
+      update: {
         filePath: fullPath,
         fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
         renderSnapshot: snapshot,
-        qrToken,
+        generatedAt: new Date(),
+      },
+      create: {
+        centerId: req.centerId,
+        type: docType,
+        classeId: classe.id,
+        gradePeriodId: period.id,
+        filePath: fullPath,
+        fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
+        renderSnapshot: snapshot,
+        qrToken: qrTokenKey,
       },
     });
 
@@ -946,24 +942,19 @@ router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("
       },
     });
 
+    const qrTokenKey = `PV-CC-${classe.id}-${gradePeriodId || "all"}`;
     const existingDoc = await prisma.document.findFirst({
-      where: { centerId: req.centerId, type: docType, classeId, qrToken: { contains: gradePeriodId || "cc" } },
+      where: { centerId: req.centerId, qrToken: qrTokenKey },
       orderBy: { generatedAt: "desc" },
     });
 
     if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
       return res.json({
         success: true,
-        reused: true,
         previewUrl: `/documents/${existingDoc.id}/preview`,
         downloadUrl: `/documents/${existingDoc.id}/download`,
       });
     }
-
-    const cuid = crypto.randomBytes(8).toString("hex");
-    const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key").update(`${cuid}:${classeId}`).digest("hex").slice(0, 16);
-    const qrToken = `${cuid}?t=${hmacSig}&cls=${classeId}&doc=PV_CC`;
-    const verificationUrl = `${req.protocol}://${req.get("host")}/verify/${qrToken}`;
 
     const summaries = classe.inscriptions.map((insc) => {
       const st = insc.student;
@@ -1011,28 +1002,36 @@ router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("
       periodLabel: period?.label || "Contrôle Continu",
       offerings,
       summaries,
-      qrToken,
+      qrToken: qrTokenKey,
       templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
 
-    const yearFolder = (classe.academicYear?.label || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const docFolder = centerStoragePath(req.centerId, "documents", yearFolder, "pvs");
+    const docFolder = centerStoragePath(req.centerId, "documents", "archive", "pvs");
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
 
     const fileName = `PV_CC_${classe.label.replace(/[^a-zA-Z0-9_-]/g, "_")}_${Date.now()}.pdf`;
     const fullPath = path.join(docFolder, fileName);
 
-    await generateClassContinuousAssessmentSummaryPdf(snapshot, verificationUrl, fullPath);
+    const compactQrPayload = `CECO:V1|CTR:${center.name.substring(0, 10)}|DOC:PV_CC|CLS:${classe.label}`;
+    await generateClassContinuousAssessmentSummaryPdf(snapshot, compactQrPayload, fullPath);
 
-    const doc = await prisma.document.create({
-      data: {
-        centerId: req.centerId,
-        type: docType,
-        classeId: classe.id,
+    const doc = await prisma.document.upsert({
+      where: { qrToken: qrTokenKey },
+      update: {
         filePath: fullPath,
         fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
         renderSnapshot: snapshot,
-        qrToken,
+        generatedAt: new Date(),
+      },
+      create: {
+        centerId: req.centerId,
+        type: docType,
+        classeId: classe.id,
+        gradePeriodId: gradePeriodId || null,
+        filePath: fullPath,
+        fileHash: crypto.createHash("sha256").update(fs.readFileSync(fullPath)).digest("hex"),
+        renderSnapshot: snapshot,
+        qrToken: qrTokenKey,
       },
     });
 

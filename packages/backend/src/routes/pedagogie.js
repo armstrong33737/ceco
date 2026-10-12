@@ -1,12 +1,22 @@
 // packages/backend/src/routes/pedagogie.js
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
-const { assertEditableAcademicYear, assertActiveAcademicYear } = require("../middleware/academicYearGuard");
+const { assertEditableAcademicYear } = require("../middleware/academicYearGuard");
 
 const router = express.Router();
+
+async function getConnectedFormateur(req) {
+  if (!req.userId) return null;
+  return prisma.formateur.findFirst({
+    where: { centerId: req.centerId, userId: req.userId },
+  });
+}
 
 function generateSubjectCode(name, existingCount = 1) {
   const clean = (name || "")
@@ -27,16 +37,38 @@ function validateSubjectCode(code) {
   return typeof code === "string" && /^[A-Z0-9]{5}$/.test(code.trim().toUpperCase());
 }
 
-async function getConnectedFormateur(req) {
-  if (!req.userId) return null;
-  return prisma.formateur.findFirst({
-    where: { centerId: req.centerId, userId: req.userId },
+async function ensureYearGradePeriods(centerId, academicYear) {
+  let periods = await prisma.gradePeriod.findMany({
+    where: { centerId, academicYearId: academicYear.id },
+    orderBy: { order: "asc" },
   });
+
+  if (periods.length === 0) {
+    const s1End = new Date(academicYear.startDate);
+    s1End.setMonth(s1End.getMonth() + 5);
+    const s2Start = new Date(academicYear.startDate);
+    s2Start.setMonth(s2Start.getMonth() + 6);
+
+    await prisma.gradePeriod.createMany({
+      data: [
+        { centerId, academicYearId: academicYear.id, type: "SEMESTRE", order: 1, label: "Semestre 1", startDate: new Date(academicYear.startDate), endDate: s1End },
+        { centerId, academicYearId: academicYear.id, type: "SEMESTRE", order: 2, label: "Semestre 2", startDate: s2Start, endDate: new Date(academicYear.endDate) },
+        { centerId, academicYearId: academicYear.id, type: "ANNUEL", order: 1, label: `Année ${academicYear.label}`, startDate: new Date(academicYear.startDate), endDate: new Date(academicYear.endDate) },
+      ],
+    });
+
+    periods = await prisma.gradePeriod.findMany({
+      where: { centerId, academicYearId: academicYear.id },
+      orderBy: { order: "asc" },
+    });
+  }
+  return periods;
 }
 
 // ============================================================================
-// 1. CATÉGORIES / GROUPES D'ENSEIGNEMENT (100% DYNAMIQUES)
+// 1. CATÉGORIES / GROUPES D'ENSEIGNEMENT (CRUD)
 // ============================================================================
+
 router.get("/categories", verifyJwt, requirePermission("formations.read", "grades.read", "students.read"), async (req, res, next) => {
   try {
     const categories = await prisma.subjectCategory.findMany({
@@ -119,6 +151,7 @@ router.delete("/categories/:id", verifyJwt, requirePermission("formations.delete
 // ============================================================================
 // 2. RÉFÉRENTIEL DES MATIÈRES & IMPORTATION CSV
 // ============================================================================
+
 router.get("/subjects", verifyJwt, requirePermission("formations.read", "grades.read", "students.read"), async (req, res, next) => {
   try {
     const subjects = await prisma.subject.findMany({
@@ -163,7 +196,6 @@ router.post("/subjects", verifyJwt, requirePermission("formations.create", "cent
   }
 });
 
-// Importation en masse de matières par CSV
 router.post("/subjects/import", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
   try {
     const { subjects: items } = req.body || {};
@@ -265,6 +297,7 @@ router.delete("/subjects/:id", verifyJwt, requirePermission("formations.delete",
 // ============================================================================
 // 3. CURSUS PLURIANNUEL DE FILIÈRE
 // ============================================================================
+
 router.get("/filieres/:id/curriculum", verifyJwt, requirePermission("formations.read"), async (req, res, next) => {
   try {
     const filiere = await prisma.filiere.findFirst({
@@ -371,8 +404,9 @@ router.delete("/filieres/subjects/:id", verifyJwt, requirePermission("formations
 });
 
 // ============================================================================
-// 4. ANNUAIRE DES FORMATEURS & IMPORTATION CSV
+// 4. ANNUAIRE DES FORMATEURS & COMPTES D'ACCÈS
 // ============================================================================
+
 router.get("/formateurs", verifyJwt, requirePermission("formations.read", "grades.read", "center.read"), async (req, res, next) => {
   try {
     const formateurs = await prisma.formateur.findMany({
@@ -418,7 +452,6 @@ router.post("/formateurs", verifyJwt, requirePermission("formations.create", "ce
   }
 });
 
-// Importation en masse d'enseignants par CSV
 router.post("/formateurs/import", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
   try {
     const { formateurs: items } = req.body || {};
@@ -568,37 +601,9 @@ router.delete("/formateurs/:id", verifyJwt, requirePermission("formations.delete
 });
 
 // ============================================================================
-// 5. MAQUETTES DE COURS & ENDPOINT CONTEXTUEL FORMATEUR
+// 5. MAQUETTES DE COURS & INSTANCIATION PAR CLASSE
 // ============================================================================
-async function ensureYearGradePeriods(centerId, academicYear) {
-  let periods = await prisma.gradePeriod.findMany({
-    where: { centerId, academicYearId: academicYear.id },
-    orderBy: { order: "asc" },
-  });
 
-  if (periods.length === 0) {
-    const s1End = new Date(academicYear.startDate);
-    s1End.setMonth(s1End.getMonth() + 5);
-    const s2Start = new Date(academicYear.startDate);
-    s2Start.setMonth(s2Start.getMonth() + 6);
-
-    await prisma.gradePeriod.createMany({
-      data: [
-        { centerId, academicYearId: academicYear.id, type: "SEMESTRE", order: 1, label: "Semestre 1", startDate: new Date(academicYear.startDate), endDate: s1End },
-        { centerId, academicYearId: academicYear.id, type: "SEMESTRE", order: 2, label: "Semestre 2", startDate: s2Start, endDate: new Date(academicYear.endDate) },
-        { centerId, academicYearId: academicYear.id, type: "ANNUEL", order: 1, label: `Année ${academicYear.label}`, startDate: new Date(academicYear.startDate), endDate: new Date(academicYear.endDate) },
-      ],
-    });
-
-    periods = await prisma.gradePeriod.findMany({
-      where: { centerId, academicYearId: academicYear.id },
-      orderBy: { order: "asc" },
-    });
-  }
-  return periods;
-}
-
-// Endpoint d'accès direct pour les formateurs connectés
 router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     const connectedFormateur = await getConnectedFormateur(req);
@@ -897,6 +902,7 @@ router.delete("/offerings/:id", verifyJwt, requirePermission("formations.delete"
 // ============================================================================
 // 6. POLITIQUES DE PONDÉRATION (30/70, 40/60...)
 // ============================================================================
+
 router.get("/grading-policies", verifyJwt, requirePermission("formations.read", "center.read"), async (req, res, next) => {
   try {
     const policies = await prisma.gradingPolicy.findMany({
@@ -936,12 +942,22 @@ router.post("/grading-policies", verifyJwt, requirePermission("formations.update
 });
 
 // ============================================================================
-// 7. ANALYTIQUE & KPIS PÉDAGOGIQUES DU DASHBOARD (100% DYNAMIQUES)
+// 7. TABLEAU DE BORD & KPIS DYNAMIQUES ADAPTATIFS SELON LE RÔLE
 // ============================================================================
-router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.read", "formations.read", "students.read"), async (req, res, next) => {
+
+router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
   try {
     const connectedFormateur = await getConnectedFormateur(req);
     const isTeacher = Boolean(connectedFormateur);
+
+    const currentUser = await prisma.user.findUnique({
+      where: { id: req.userId },
+      include: { role: true },
+    });
+
+    const roleName = currentUser?.role?.name?.toLowerCase() || "";
+    const isSecretary = roleName.includes("secrétaire") || roleName.includes("secretaire");
+    const roleType = isTeacher ? "TEACHER" : isSecretary ? "SECRETARY" : "ADMIN";
 
     const activeYear = await prisma.academicYear.findFirst({
       where: { centerId: req.centerId, isCurrent: true },
@@ -952,7 +968,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       return res.json({
         hasActiveYear: false,
         activeYear: null,
-        isTeacher,
+        roleType,
         stats: {
           totalStudents: 0,
           totalClasses: 0,
@@ -964,14 +980,17 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
           sessionProgressPercent: 0,
           roomOccupationRate: 0,
         },
+        mockExamStats: null,
         criticalSubjects: [],
         pendingOfferings: [],
         teacherLoads: [],
         cohortDistribution: [],
+        incompleteStudentsList: [],
+        myOfferingsList: [],
+        recentAuditLogs: [],
       });
     }
 
-    // 1. Calcul dynamique de l'avancement temporel de l'année scolaire
     const startMs = new Date(activeYear.startDate).getTime();
     const endMs = new Date(activeYear.endDate).getTime();
     const nowMs = Date.now();
@@ -979,7 +998,6 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
     const elapsedSessionMs = Math.max(0, Math.min(totalSessionMs, nowMs - startMs));
     const sessionProgressPercent = Math.round((elapsedSessionMs / totalSessionMs) * 100);
 
-    // 2. Offres de cours
     const offerings = await prisma.subjectOffering.findMany({
       where: {
         classe: { academicYearId: activeYear.id, centerId: req.centerId },
@@ -1019,29 +1037,39 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       include: { subject: true },
     });
 
-    // 3. Calcul dynamique de la complétude des dossiers (Data Quality Score)
     const allInscriptions = await prisma.inscription.findMany({
       where: {
         centerId: req.centerId,
         academicYearId: activeYear.id,
         student: { deletedAt: null },
       },
-      include: { student: true },
+      include: { student: true, classe: true },
     });
 
     const uniqueStudentsMap = new Map();
-    allInscriptions.forEach((i) => uniqueStudentsMap.set(i.studentId, i.student));
+    allInscriptions.forEach((i) => uniqueStudentsMap.set(i.studentId, { ...i.student, classeLabel: i.classe?.label }));
     const uniqueStudents = Array.from(uniqueStudentsMap.values());
 
+    const incompleteStudentsList = [];
     let completeDossiersCount = 0;
-    uniqueStudents.forEach((st) => {
-      const hasPhoto = Boolean(st.photoPath);
-      const hasGuardian = Boolean(st.guardianPhone || st.guardianName);
-      const hasBirth = Boolean(st.birthDate);
-      const hasDiploma = Boolean(st.entryDiploma);
 
-      if (hasPhoto && hasGuardian && hasBirth && hasDiploma) {
+    uniqueStudents.forEach((st) => {
+      const missing = [];
+      if (!st.photoPath) missing.push("Photo manquante");
+      if (!st.guardianPhone && !st.guardianName) missing.push("Contact tuteur manquant");
+      if (!st.birthDate) missing.push("Date naissance manquante");
+      if (!st.entryDiploma) missing.push("Diplôme d'entrée non spécifié");
+
+      if (missing.length === 0) {
         completeDossiersCount++;
+      } else if (incompleteStudentsList.length < 8) {
+        incompleteStudentsList.push({
+          id: st.id,
+          matricule: st.matricule,
+          fullName: `${st.lastName} ${st.firstName}`,
+          classeLabel: st.classeLabel || "—",
+          missingReasons: missing,
+        });
       }
     });
 
@@ -1049,7 +1077,6 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       ? Number(((completeDossiersCount / uniqueStudents.length) * 100).toFixed(1))
       : 100;
 
-    // 4. Calcul dynamique du taux d'occupation des salles
     const salles = await prisma.salle.findMany({
       where: { centerId: req.centerId },
       include: {
@@ -1086,6 +1113,85 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
     const globalPassRate = evaluatedResults.length > 0
       ? Math.round((passedResultsCount / evaluatedResults.length) * 100)
       : null;
+
+    // Cockpit Examen Blanc MINEFOP
+    let mockExamStats = null;
+    const activeMockSession = await prisma.mockExamSession.findFirst({
+      where: { centerId: req.centerId, academicYearId: activeYear.id },
+      include: {
+        classeMockExams: {
+          include: {
+            classe: {
+              include: {
+                inscriptions: { where: { student: { deletedAt: null } } },
+                filiere: true,
+              },
+            },
+            subjects: true,
+            grades: true,
+            summaries: true,
+          },
+        },
+      },
+      orderBy: { startDate: "desc" },
+    });
+
+    if (activeMockSession && activeMockSession.classeMockExams.length > 0) {
+      const totalClassesCount = activeMockSession.classeMockExams.length;
+      let readyClassesCount = 0;
+      let totalCandidates = 0;
+      let totalGradesExpected = 0;
+      let totalGradesEntered = 0;
+      let totalPassed = 0;
+      let totalEvaluated = 0;
+
+      const classesStatus = activeMockSession.classeMockExams.map((ce) => {
+        const studentCount = ce.classe?.inscriptions?.length || 0;
+        totalCandidates += studentCount;
+        const subCount = ce.subjects?.length || 0;
+        const expected = studentCount * subCount;
+        totalGradesExpected += expected;
+
+        const validGrades = (ce.grades || []).filter((g) => g.score !== null || g.isAbsent);
+        totalGradesEntered += validGrades.length;
+
+        const summaries = ce.summaries || [];
+        totalEvaluated += summaries.length;
+        totalPassed += summaries.filter((s) => s.average >= 10.0).length;
+
+        const isReady = expected > 0 && validGrades.length >= expected;
+        if (isReady) readyClassesCount++;
+
+        return {
+          classeMockExamId: ce.id,
+          classeLabel: ce.classe?.label,
+          filiereName: ce.classe?.filiere?.name,
+          studentCount,
+          epreuvesCount: subCount,
+          isReady,
+          isLocked: ce.isLocked,
+        };
+      });
+
+      const mockCompletionRate = totalGradesExpected > 0
+        ? Math.min(100, Math.round((totalGradesEntered / totalGradesExpected) * 100))
+        : 0;
+
+      const mockPassRate = totalEvaluated > 0
+        ? Number(((totalPassed / totalEvaluated) * 100).toFixed(1))
+        : null;
+
+      mockExamStats = {
+        activeSessionId: activeMockSession.id,
+        activeSessionTitle: activeMockSession.title,
+        totalClassesCount,
+        readyClassesCount,
+        totalCandidates,
+        completionRate: mockCompletionRate,
+        passRate: mockPassRate,
+        classesStatus: classesStatus.slice(0, 5),
+      };
+    }
 
     const criticalSubjects = [];
     if (!isTeacher) {
@@ -1136,23 +1242,12 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
           totalHours,
         };
       }).sort((a, b) => b.totalHours - a.totalHours);
-    } else {
-      const myHours = offerings.reduce((sum, o) => sum + (o.volumeHoraire || 0), 0);
-      teacherLoads = [
-        {
-          id: connectedFormateur.id,
-          name: `${connectedFormateur.firstName} ${connectedFormateur.lastName}`,
-          specialite: connectedFormateur.specialite || "Enseignant",
-          totalCourses: offerings.length,
-          totalHours: myHours,
-        },
-      ];
     }
 
     let cohortDistribution = [];
     if (!isTeacher) {
       const promotions = await prisma.promotion.findMany({
-        where: { centerId: req.centerId },
+        where: { centerId: req.centerId, academicYearId: activeYear.id },
         include: { _count: { select: { inscriptions: true } }, filiere: true },
       });
       cohortDistribution = promotions.map((p) => ({
@@ -1163,6 +1258,28 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       })).filter((p) => p.studentCount > 0);
     }
 
+    let recentAuditLogs = [];
+    if (!isTeacher) {
+      recentAuditLogs = await prisma.auditLog.findMany({
+        where: { centerId: req.centerId },
+        take: 5,
+        orderBy: { createdAt: "desc" },
+      });
+    }
+
+    let myOfferingsList = [];
+    if (isTeacher) {
+      myOfferingsList = offerings.map((o) => ({
+        id: o.id,
+        subjectName: o.subject?.name,
+        classeLabel: o.classe?.label,
+        semesterLabel: o.gradePeriod?.label,
+        coefficient: o.coefficient,
+        volumeHoraire: o.volumeHoraire || 0,
+        hasGrades: (o._count?.grades || 0) > 0,
+      }));
+    }
+
     res.json({
       hasActiveYear: true,
       activeYear: {
@@ -1171,7 +1288,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
         startDate: activeYear.startDate,
         endDate: activeYear.endDate,
       },
-      isTeacher,
+      roleType,
       stats: {
         totalStudents,
         totalClasses: classes.length,
@@ -1183,6 +1300,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
         sessionProgressPercent,
         roomOccupationRate,
       },
+      mockExamStats,
       criticalSubjects: criticalSubjects.slice(0, 5),
       pendingOfferings: pendingOfferings.slice(0, 5).map((o) => ({
         id: o.id,
@@ -1193,6 +1311,9 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
       })),
       teacherLoads: teacherLoads.slice(0, 6),
       cohortDistribution: cohortDistribution.slice(0, 6),
+      incompleteStudentsList,
+      recentAuditLogs,
+      myOfferingsList,
     });
   } catch (err) {
     next(err);
@@ -1200,8 +1321,9 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, requirePermission("grades.rea
 });
 
 // ============================================================================
-// 8. MOTEUR DE DÉLIBÉRATION (SEMESTRE & ANNUEL PAR AGRÉGATION S1+S2)
+// 8. JURYS DE DÉLIBÉRATION (COURS RÉGULIERS)
 // ============================================================================
+
 router.get("/deliberations", verifyJwt, requirePermission("grades.read", "formations.read"), async (req, res, next) => {
   try {
     const { classeId, gradePeriodId, scope = "ANNUEL" } = req.query || {};
@@ -1786,7 +1908,7 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
 
         if (scope === "ANNUEL") {
           await tx.inscription.updateMany({
-            where: { studentId, classeId, centerId: req.centerId },
+            where: { studentId: item.studentId, classeId, centerId: req.centerId },
             data: { status: decision },
           });
         }

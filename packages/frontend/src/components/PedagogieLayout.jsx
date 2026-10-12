@@ -16,6 +16,7 @@ export default function PedagogieLayout() {
     { to: "saisie", label: "Saisie des Notes", icon: "edit_note", visible: true },
     { to: "deliberations", label: "Délibérations du Jury", icon: "gavel", visible: canDeliberate },
     { to: "bulletins", label: "Bulletins & Diplômes", icon: "receipt_long", visible: canGenerateBulletins },
+    { to: "examens-blancs", label: "Examens Blancs", icon: "school", visible: true },
     { to: "maquettes", label: "Maquettes de Classes", icon: "auto_stories", visible: true },
     { to: "programmes-filieres", label: "Cursus Filières", icon: "account_tree", visible: isDirectorOrAdmin },
     { to: "matieres", label: "Matières", icon: "library_books", visible: isDirectorOrAdmin },
@@ -28,7 +29,6 @@ export default function PedagogieLayout() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* En-tête officiel du Module Pédagogique */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-surface p-6 rounded border border-border shadow-xs dark:bg-surface-dark dark:border-border-dark">
         <div>
           <div className="flex items-center gap-2">
@@ -43,12 +43,12 @@ export default function PedagogieLayout() {
           <h1 className="text-h3 font-heading font-semibold text-ink-primary mt-1">
             {user?.role?.name === "Formateur"
               ? "Espace Enseignant — Saisie des Notes"
-              : "Gestion Pédagogique, Évaluations & Diplômes"}
+              : "Gestion Pédagogique, Évaluations, Examens Blancs & Diplômes"}
           </h1>
           <p className="text-body text-ink-secondary mt-0.5">
             {user?.role?.name === "Formateur"
-              ? "Accédez à vos cours assignés, saisissez les évaluations continues et éditez vos bordereaux officiels."
-              : "Bordereaux de notes, jurys de délibération, bulletins bilingues, relevés annuels et diplômes d'État."}
+              ? "Accédez à vos cours assignés, saisissez les évaluations et bordereaux officiels."
+              : "Bordereaux de notes, examens blancs, jurys de délibération, bulletins bilingues et diplômes d'État."}
           </p>
         </div>
 
@@ -60,7 +60,6 @@ export default function PedagogieLayout() {
         </div>
       </div>
 
-      {/* Barre d'Onglets Horizontaux Normalisée */}
       <div className="flex gap-1.5 p-1 bg-[#F5F7FA] rounded border border-border overflow-x-auto dark:bg-[#07111D] dark:border-border-dark">
         {visibleTabs.map((tab) => (
           <NavLink
