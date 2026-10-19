@@ -51,6 +51,51 @@ function getCenterSealBase64(centerId) {
   return getDefaultSealBase64();
 }
 
+/**
+ * Récupère le motif de fond du document (Recherche prioritaire recap_bg, transcript_bg, puis card_bg)
+ */
+function getCenterDocumentBgBase64(centerId, docCategory = "card") {
+  const brandingDir = centerStoragePath(centerId, "settings/branding");
+  const exts = ["png", "jpg", "jpeg", "webp"];
+
+  const prefixes = docCategory === "transcript" || docCategory === "recap"
+    ? ["recap_bg", "transcript_bg", "releve_bg", "card_bg"]
+    : ["card_bg", "card_background"];
+
+  if (fs.existsSync(brandingDir)) {
+    for (const pref of prefixes) {
+      for (const ext of exts) {
+        const p = path.join(brandingDir, `${pref}.${ext}`);
+        if (fs.existsSync(p)) {
+          const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+          return `data:${mime};base64,${fs.readFileSync(p).toString("base64")}`;
+        }
+      }
+    }
+  }
+
+  // Repli par défaut
+  const candidateDirs = [
+    path.join(__dirname, "../../assets"),
+    path.join(process.cwd(), "packages/backend/assets"),
+    path.join(process.cwd(), "packages/desktop/assets"),
+  ];
+  for (const dir of candidateDirs) {
+    if (fs.existsSync(dir)) {
+      for (const pref of prefixes) {
+        for (const ext of exts) {
+          const p = path.join(dir, `${pref}.${ext}`);
+          if (fs.existsSync(p)) {
+            const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+            return `data:${mime};base64,${fs.readFileSync(p).toString("base64")}`;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function getAllCenterSignaturesBase64(centerId) {
   const dir = centerStoragePath(centerId, "settings/signatures");
   const signatures = {};
@@ -120,9 +165,6 @@ function getGeneralObservation(avg, hasEliminatory) {
   return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
 }
 
-/**
- * Génère une charge utile QR Code ultra-compacte (< 130 caractères) pour une lecture caméra instantanée
- */
 function generateOfflineQrPayload(snapshot, docType) {
   const c = (snapshot.center?.name || "CECO").replace(/[^a-zA-Z0-9]/g, "").substring(0, 10).toUpperCase();
   const mat = (snapshot.student?.matricule || "—").substring(0, 16);
@@ -140,47 +182,60 @@ function generateOfflineQrPayload(snapshot, docType) {
 }
 
 const DEFAULT_FAMILY_CONFIGS = {
+  GENERAL_CONFIG: {
+    headerMode: "logo",
+    primaryColor: "#071A2E",
+    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE\n----\nDÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
+    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING\n----\nREGIONAL DELEGATION FOR THE WEST\nDIVISIONAL DELEGATION FOR MENOUA",
+    watermarkOpacity: 0.05,
+    bgTextureOpacity: 0.22,
+    footerLegal: "Document officiel certifié conforme • Toute surcharge ou altération annule la validité du présent acte.",
+    internalHeader: {
+      title: "",
+      accreditation: "",
+      contacts: "",
+    },
+  },
   CARTE: {
     themeColor: "#071A2E",
     accentColor: "#18527A",
-    cardTitle: "CARTE D'APPRENANT OFFICIELLE",
+    cardTitle: "CARTE D’ÉTUDIANT",
     showLogo: true,
-    showSeal: true,
+    showSeal: false,
     showWatermark: true,
     watermarkType: "logo",
     watermarkOpacity: 0.08,
-    termsOfUse: "Cette carte est strictement personnelle et obligatoire pour l'accès aux cours, ateliers et examens. En cas de perte, rapporter immédiatement à la direction.",
+    termsOfUse: "Cette carte est strictement personnelle et demeure la propriété exclusive du centre. Sa présentation est obligatoire pour l'accès aux cours, ateliers et examens.",
+    signatoryRoleKey: "directeur",
     signatoryTitle: "Le Directeur Général",
   },
   INTERNE: {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     primaryColor: "#071A2E",
     showLogo: true,
-    showSeal: true,
+    showSeal: false,
     showWatermark: true,
     watermarkType: "logo",
-    watermarkOpacity: 0.06,
-    engagementText: "Je soussigné(e), certifie sur l'honneur l'exactitude des renseignements fournis et m'engage au respect intégral du règlement intérieur de l'établissement.",
+    watermarkOpacity: 0.05,
     signatories: [
-      { title: "Signature de l'Apprenant(e)", roleKey: "student" },
-      { title: "Visa de la Direction", roleKey: "directeur" },
+      { title: "Signature de l'Apprenant(e) / Tuteur", roleKey: "student" },
+      { title: "Visa & Cachet de la Direction", roleKey: "directeur" },
     ],
     footerLegal: "Document administratif interne non diffusable à l'extérieur • CECO ERP",
   },
   EXTERNE: {
+    headerMode: "logo",
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
-    subHeaderCenter: "DÉLÉGATION RÉGIONALE DU CENTRE\nDÉLÉGATION DÉPARTEMENTALE DU MFOUNDI",
     primaryColor: "#071A2E",
     showLogo: true,
-    showSeal: true,
+    showSeal: false,
     showWatermark: true,
-    watermarkType: "seal",
-    watermarkOpacity: 0.08,
+    watermarkType: "logo",
+    watermarkOpacity: 0.05,
+    bgTextureOpacity: 0.22,
     signatories: [
-      { title: "Le Promoteur", roleKey: "promoteur" },
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Toute falsification ou altération du présent document expose son auteur aux poursuites prévues par le Code Pénal.",
@@ -251,17 +306,34 @@ router.get("/documents", verifyJwt, requirePermission("students.read", "grades.r
 router.get("/documents/templates/:type", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const { type } = req.params;
+
+    const globalTemplate = await prisma.documentTemplate.findUnique({
+      where: { centerId_type: { centerId: req.centerId, type: "GENERAL_CONFIG" } },
+    });
+    const globalConfig = globalTemplate?.config || DEFAULT_FAMILY_CONFIGS.GENERAL_CONFIG;
+
     const template = await prisma.documentTemplate.findUnique({
       where: { centerId_type: { centerId: req.centerId, type } },
     });
 
-    if (template?.config) return res.json(template.config);
+    const fallbackFamily = type.startsWith("CARTE") ? DEFAULT_FAMILY_CONFIGS.CARTE :
+      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
+      type === "GENERAL_CONFIG" ? DEFAULT_FAMILY_CONFIGS.GENERAL_CONFIG : DEFAULT_FAMILY_CONFIGS.EXTERNE;
 
-    if (type.startsWith("CARTE")) return res.json(DEFAULT_FAMILY_CONFIGS.CARTE);
-    if (["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type)) {
-      return res.json(DEFAULT_FAMILY_CONFIGS.INTERNE);
-    }
-    return res.json(DEFAULT_FAMILY_CONFIGS.EXTERNE);
+    const merged = {
+      ...fallbackFamily,
+      ...(type !== "GENERAL_CONFIG" ? {
+        headerLeft: globalConfig.headerLeft || fallbackFamily.headerLeft,
+        headerRight: globalConfig.headerRight || fallbackFamily.headerRight,
+        headerMode: globalConfig.headerMode || fallbackFamily.headerMode,
+        primaryColor: globalConfig.primaryColor || fallbackFamily.primaryColor,
+        watermarkOpacity: globalConfig.watermarkOpacity !== undefined ? globalConfig.watermarkOpacity : fallbackFamily.watermarkOpacity,
+        bgTextureOpacity: globalConfig.bgTextureOpacity !== undefined ? globalConfig.bgTextureOpacity : fallbackFamily.bgTextureOpacity,
+      } : {}),
+      ...(template?.config || {}),
+    };
+
+    res.json(merged);
   } catch (err) {
     next(err);
   }
@@ -284,7 +356,7 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// 3. Snapshot Académique Résilient
+// 3. Snapshot Académique Tolérant avec résolution dynamique de recap_bg et card_bg
 async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetClasseId, gradePeriodId) {
   const student = await prisma.student.findFirst({
     where: {
@@ -320,7 +392,7 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
   }
   if (!finalClasseId || !currentInsc) return null;
 
-  const [center, classe] = await Promise.all([
+  const [center, classe, globalTmpl] = await Promise.all([
     prisma.center.findUnique({ where: { id: centerId } }),
     prisma.classe.findFirst({
       where: { id: finalClasseId, centerId },
@@ -329,6 +401,9 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
         niveau: true,
         academicYear: { include: { gradePeriods: true } },
       },
+    }),
+    prisma.documentTemplate.findUnique({
+      where: { centerId_type: { centerId, type: "GENERAL_CONFIG" } },
     }),
   ]);
 
@@ -544,12 +619,15 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
       city: center.city,
       country: center.country,
       registrationNumber: center.registrationNumber,
-      directorName: center.directorName,
+      directorName: center.directorName || "",
       directorTitle: center.directorTitle || "Le Directeur Général",
       logoDataUrl: getCenterLogoBase64(centerId, center.logo),
       sealDataUrl: getCenterSealBase64(centerId),
+      cardBgDataUrl: getCenterDocumentBgBase64(centerId, "card"),
+      transcriptBgDataUrl: getCenterDocumentBgBase64(centerId, "transcript"), // <-- Résolution automatique de recap_bg.*
       signatures: getAllCenterSignaturesBase64(centerId),
     },
+    commonDefaults: globalTmpl?.config || DEFAULT_FAMILY_CONFIGS.GENERAL_CONFIG,
     student: {
       id: student.id,
       matricule: student.matricule,
@@ -602,7 +680,7 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
   };
 }
 
-// 4. Génération d'un document individuel (Ségrégation Archive vs Temp)
+// 4. Génération d'un document individuel
 router.post("/documents/generate", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, gradePeriodId, forceRegenerate = false } = req.body || {};
@@ -617,8 +695,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     }
 
     const targetClasseId = snapshot.classe.id;
-
-    // Détermination de la destination : Actes pérennes scellés vs fiches de travail
     const isPermanentLegalDoc = ["BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION", "ATTESTATION_INSCRIPTION"].includes(type);
 
     const existingDoc = await prisma.document.findFirst({
@@ -650,11 +726,15 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     const template = await prisma.documentTemplate.findUnique({
       where: { centerId_type: { centerId: req.centerId, type } },
     });
-    const templateConfig = template?.config || (
-      type.startsWith("CARTE") ? DEFAULT_FAMILY_CONFIGS.CARTE :
-      ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
-      DEFAULT_FAMILY_CONFIGS.EXTERNE
-    );
+
+    const templateConfig = {
+      ...(snapshot.commonDefaults || {}),
+      ...(template?.config || (
+        type.startsWith("CARTE") ? DEFAULT_FAMILY_CONFIGS.CARTE :
+        ["FICHE_INSCRIPTION", "BORDEREAU_VIERGE", "PV_MATIERE", "PV_SEMESTRE", "PV_ANNUEL", "PV_CC"].includes(type) ? DEFAULT_FAMILY_CONFIGS.INTERNE :
+        DEFAULT_FAMILY_CONFIGS.EXTERNE
+      )),
+    };
 
     snapshot.templateConfig = templateConfig;
 
@@ -666,13 +746,11 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     const qrToken = `${cuid}?t=${hmacSig}&st=${snapshot.student.matricule}&doc=${type}`;
     snapshot.qrToken = qrToken;
 
-    const isExternalDoc = type.startsWith("CARTE") || ["ATTESTATION_INSCRIPTION", "BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
-    const offlinePayload = isExternalDoc ? generateOfflineQrPayload(snapshot, type) : null;
+    const isExternalDocWithQr = type.startsWith("CARTE") || ["BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
+    const offlinePayload = isExternalDocWithQr ? generateOfflineQrPayload(snapshot, type) : null;
     snapshot.offlineQrPayload = offlinePayload;
 
     const yearFolder = (snapshot.classe.academicYearLabel || "current").replace(/[^a-zA-Z0-9_-]/g, "_");
-    
-    // Ségrégation physique sur le disque
     const subFolderCategory = isPermanentLegalDoc ? "archive" : "temp";
     const docFolder = centerStoragePath(req.centerId, "documents", subFolderCategory, yearFolder);
     if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
@@ -765,14 +843,17 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
       DEFAULT_FAMILY_CONFIGS.EXTERNE
     );
 
-    const isExternalDoc = type.startsWith("CARTE") || ["ATTESTATION_INSCRIPTION", "BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
+    const isExternalDocWithQr = type.startsWith("CARTE") || ["BULLETIN_CC", "BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION"].includes(type);
     const snapshotsList = [];
     const qrPayloadsList = [];
 
     for (const insc of classe.inscriptions) {
       const snap = await buildStudentAcademicSnapshot(req.centerId, insc.studentId, classeId, gradePeriodId);
       if (snap) {
-        snap.templateConfig = templateConfig;
+        snap.templateConfig = {
+          ...(snap.commonDefaults || {}),
+          ...templateConfig,
+        };
         const cuid = crypto.randomBytes(8).toString("hex");
         const hmacSig = crypto.createHmac("sha256", process.env.JWT_SECRET || "ceco_key")
           .update(`${cuid}:${snap.student.matricule}:${type}`)
@@ -780,7 +861,7 @@ router.post("/documents/generate-batch", verifyJwt, requirePermission("students.
         const qrToken = `${cuid}?t=${hmacSig}&st=${snap.student.matricule}&batch=1`;
         snap.qrToken = qrToken;
 
-        const offlinePayload = isExternalDoc ? generateOfflineQrPayload(snap, type) : null;
+        const offlinePayload = isExternalDocWithQr ? generateOfflineQrPayload(snap, type) : null;
         snap.offlineQrPayload = offlinePayload;
 
         snapshotsList.push(snap);

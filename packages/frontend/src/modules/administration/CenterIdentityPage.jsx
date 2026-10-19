@@ -15,7 +15,7 @@ import Icon from "../../components/Icon";
 const EMPTY_CENTER = {
   name: "", email: "", phone: "", hasLogo: false, hasSeal: true, isDefaultSeal: true,
   address: "", city: "", postalCode: "", country: "", website: "",
-  registrationNumber: "", directorName: "", directorTitle: "", description: "",
+  registrationNumber: "", directorName: "", directorTitle: "Le Directeur Général", description: "",
   matriculeFormat: "{CTR}-{FIL}{YY}-{NUM4}",
 };
 
@@ -66,6 +66,8 @@ export default function CenterIdentityPage() {
       setForm({
         ...EMPTY_CENTER,
         ...centerData,
+        directorName: centerData?.directorName || "",
+        directorTitle: centerData?.directorTitle || "Le Directeur Général",
         matriculeFormat: centerData?.matriculeFormat || "{CTR}-{FIL}{YY}-{NUM4}",
       });
       setSignatureRoles(rolesData || []);
@@ -194,7 +196,6 @@ export default function CenterIdentityPage() {
     }));
   }
 
-  // Calcul dynamique en temps réel de l'aperçu du matricule
   const computedMatriculePreview = useMemo(() => {
     const pattern = form.matriculeFormat || "{CTR}-{FIL}{YY}-{NUM4}";
     const centerSigle = form.name ? form.name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 7).toUpperCase() : "CEFOPIA";
@@ -224,7 +225,7 @@ export default function CenterIdentityPage() {
       setForm({ ...EMPTY_CENTER, ...updated });
       setPendingLogoDataUrl(null);
       setPendingSealDataUrl(null);
-      showToast("Paramètres du centre et format du matricule enregistrés.", "success");
+      showToast("Paramètres du centre, direction et format du matricule enregistrés.", "success");
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -237,7 +238,7 @@ export default function CenterIdentityPage() {
       <PageHeader
         contextBadge={<Badge variant="brand">Administration • Identité Légale</Badge>}
         title="Configuration de l'Établissement"
-        subtitle="Dénomination légale, agrément ministériel (MINEFOP), format officiel du matricule, armoiries et signatures"
+        subtitle="Dénomination légale, direction générale, agrément ministériel (MINEFOP), format du matricule et signatures"
         actions={
           <Button variant="primary" icon="save" onClick={handleSubmit} isLoading={saving}>
             Enregistrer les Paramètres
@@ -265,7 +266,7 @@ export default function CenterIdentityPage() {
             </div>
           </StructuredPanel>
 
-          <StructuredPanel title="Sceau de la République" subtitle="Armoiries officielles de l'État" icon="military_tech">
+          <StructuredPanel title="Sceau de la République" subtitle="Armoiries officielles pour examens d'État" icon="military_tech">
             <div className="flex flex-col items-center text-center space-y-3">
               <div className="w-28 h-28 rounded bg-[#F5F7FA] border border-border flex items-center justify-center overflow-hidden p-1 shadow-inner dark:bg-[#07111D] dark:border-border-dark">
                 {sealPreviewUrl ? (
@@ -292,7 +293,7 @@ export default function CenterIdentityPage() {
           </StructuredPanel>
         </div>
 
-        {/* Colonne Droite : Coordonnées, Agrément, Format Matricule & Signatures (8 cols) */}
+        {/* Colonne Droite : Coordonnées, Direction, Agrément, Matricule & Signatures (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
           <StructuredPanel title="Dénomination &amp; Agrément Ministériel" subtitle="Mentions inscrites sur les actes officiels et diplômes" icon="business">
             <div className="space-y-4">
@@ -301,6 +302,30 @@ export default function CenterIdentityPage() {
                 <Input label="N° d'Arrêté / Agrément Ministériel" value={form.registrationNumber || ""} onChange={(e) => setForm({ ...form, registrationNumber: e.target.value })} placeholder="Ex: N° 0042/MINEFOP/SG/DFOP" />
               </div>
               <Textarea label="Description / Devise de l'établissement" rows={2} value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Devise ou mentions légales d'en-tête" />
+            </div>
+          </StructuredPanel>
+
+          {/* NOUVEAU BLOC EXPLICITE : DIRECTION GÉNÉRALE DE L'ÉTABLISSEMENT */}
+          <StructuredPanel
+            title="Direction de l'Établissement (Signataire Légal)"
+            subtitle="Identité utilisée automatiquement pour la formule solennelle « Je soussigné » et les visas"
+            icon="badge"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                required
+                label="Nom et Prénom du Directeur / Chef de Centre"
+                value={form.directorName || ""}
+                onChange={(e) => setForm({ ...form, directorName: e.target.value })}
+                placeholder="Ex: NGALEU Armstrong Euclador"
+              />
+              <Input
+                required
+                label="Titre officiel de la fonction"
+                value={form.directorTitle || "Le Directeur Général"}
+                onChange={(e) => setForm({ ...form, directorTitle: e.target.value })}
+                placeholder="Ex: Le Directeur Général"
+              />
             </div>
           </StructuredPanel>
 
@@ -320,7 +345,6 @@ export default function CenterIdentityPage() {
                 />
               </div>
 
-              {/* Jetons interactifs d'insertion */}
               <div>
                 <span className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block mb-1.5 dark:text-ink-secondary-dark">
                   Variables d'auto-complétion disponibles (cliquez pour insérer) :
@@ -340,7 +364,6 @@ export default function CenterIdentityPage() {
                 </div>
               </div>
 
-              {/* Aperçu en temps réel */}
               <div className="p-3.5 rounded bg-brand-900/5 border border-brand-900/20 flex items-center justify-between dark:bg-brand-500/10 dark:border-brand-500/30">
                 <div>
                   <span className="text-caption font-semibold text-ink-secondary block dark:text-ink-secondary-dark">
@@ -351,13 +374,6 @@ export default function CenterIdentityPage() {
                   </span>
                 </div>
                 <Badge variant="brand">Garantie Anti-Collision</Badge>
-              </div>
-
-              <div className="p-3 rounded bg-info-subtle border border-info/30 text-info text-caption font-medium flex items-start gap-2 dark:bg-info-subtle-dark dark:text-info-dark">
-                <Icon name="verified_user" className="text-[18px] flex-shrink-0 mt-0.5" />
-                <span>
-                  <strong>Règle de scellement juridique :</strong> Tout matricule déjà attribué reste scellé et immuable. La modification du patron ne s'appliquera qu'aux futurs élèves inscrits sans altérer les anciens dossiers historiques.
-                </span>
               </div>
             </div>
           </StructuredPanel>

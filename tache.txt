@@ -1,3 +1,17 @@
 correction et dynamisme des modal de generation et de previsualisation de document
-ajuster les guides
 correction des bugs d'interface
+completion des gabarits
+deliberation ne marche pas
+generationde pv dans le menu BULLETIN(generation individiuelle a retirer pour ce document collectif)
+la modification des notes ne met pas a jour les documents et l'interface.
+ajuste l'interface etudiant pour reduire les actions et corriger le modal qui s'ouvre par erreur.
+
+la restauration se fait comment si la machine serveur est ne panne ? faire un mecanisme qui permet de restaurer meme dans une nouvelle instance(id_center different) mais en concervant la licence (modifier l'id_center)
+
+le module examen blanck n'est pas stable et scalable(les session ne sont pas clauturable,..)
+
+opacite des arrieres plan
+faire les pv et les gabarits avec l'entete interne
+dans exam blanc je vois des classe non terminale
+les session d'exam blanc doivent etre clauturable. 
+je veux que la liste de selection de la porte de l'enrolement soit variable en fonction des vrai cycle du centre.

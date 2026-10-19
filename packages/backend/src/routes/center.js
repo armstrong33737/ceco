@@ -32,7 +32,36 @@ const DEFAULT_SIGNATURE_ROLES = [
 ];
 
 function brandingDir(centerId) {
-  return centerStoragePath(centerId, "settings/branding");
+  const primaryDir = centerStoragePath(centerId, "settings/branding");
+  if (fs.existsSync(primaryDir)) {
+    try {
+      const files = fs.readdirSync(primaryDir);
+      if (files.length > 0) return primaryDir;
+    } catch {}
+  }
+
+  const candidateAssetDirs = [
+    path.join(__dirname, "../../assets"),
+    path.join(process.cwd(), "packages/backend/assets"),
+    path.join(process.cwd(), "packages/desktop/assets"),
+    path.join(process.cwd(), "assets"),
+    ...(process.resourcesPath ? [
+      path.join(process.resourcesPath, "backend/assets"),
+      path.join(process.resourcesPath, "desktop/assets"),
+      path.join(process.resourcesPath, "assets"),
+    ] : []),
+  ];
+
+  for (const dir of candidateAssetDirs) {
+    if (fs.existsSync(dir)) {
+      try {
+        const files = fs.readdirSync(dir);
+        if (files.length > 0) return dir;
+      } catch {}
+    }
+  }
+
+  return primaryDir;
 }
 
 function signaturesDir(centerId) {
@@ -40,18 +69,22 @@ function signaturesDir(centerId) {
 }
 
 function removeExistingLogoFiles(centerId) {
-  const dir = brandingDir(centerId);
+  const dir = centerStoragePath(centerId, "settings/branding");
   if (!fs.existsSync(dir)) return;
   for (const file of fs.readdirSync(dir)) {
-    if (file.startsWith("logo.")) fs.unlinkSync(path.join(dir, file));
+    if (file.startsWith("logo.")) {
+      try { fs.unlinkSync(path.join(dir, file)); } catch {}
+    }
   }
 }
 
 function removeExistingSealFiles(centerId) {
-  const dir = brandingDir(centerId);
+  const dir = centerStoragePath(centerId, "settings/branding");
   if (!fs.existsSync(dir)) return;
   for (const file of fs.readdirSync(dir)) {
-    if (file.startsWith("seal.")) fs.unlinkSync(path.join(dir, file));
+    if (file.startsWith("seal.")) {
+      try { fs.unlinkSync(path.join(dir, file)); } catch {}
+    }
   }
 }
 
@@ -66,7 +99,9 @@ function saveLogoFromDataUrl(centerId, dataUrl) {
   if (buffer.length > 3 * 1024 * 1024) throw new Error("Image trop volumineuse (3 Mo max).");
 
   removeExistingLogoFiles(centerId);
-  fs.writeFileSync(path.join(brandingDir(centerId), `logo.${ext}`), buffer);
+  const targetDir = centerStoragePath(centerId, "settings/branding");
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, `logo.${ext}`), buffer);
   return ext;
 }
 
@@ -80,7 +115,9 @@ function saveSealFromDataUrl(centerId, dataUrl) {
   if (buffer.length > 3 * 1024 * 1024) throw new Error("Image du sceau trop volumineuse (3 Mo max).");
 
   removeExistingSealFiles(centerId);
-  fs.writeFileSync(path.join(brandingDir(centerId), `seal.${ext}`), buffer);
+  const targetDir = centerStoragePath(centerId, "settings/branding");
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(path.join(targetDir, `seal.${ext}`), buffer);
   return ext;
 }
 
@@ -92,7 +129,7 @@ function serializeCenter(center) {
   return out;
 }
 
-// 1. Informations du centre & Récupération du format de matricule
+// 1. Informations du centre
 router.get("/center", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const [center, matriculeSetting] = await Promise.all([
@@ -134,14 +171,191 @@ router.get("/center/logo", verifyJwt, async (req, res, next) => {
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Fichier logo introuvable." });
 
     res.setHeader("Content-Type", EXT_TO_MIME[center.logo] || "application/octet-stream");
-    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("Cache-Control", "no-cache");
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     next(err);
   }
 });
 
-// 3. Sceau de la République (Streaming direct)
+// 3. Texture de fond de la carte (Streaming)
+router.get("/center/card-bg", verifyJwt, async (req, res, next) => {
+  try {
+    const dir = brandingDir(req.centerId);
+    let filePath = null;
+    let ext = "png";
+
+    if (fs.existsSync(dir)) {
+      const file = fs.readdirSync(dir).find((f) => f.startsWith("card_bg."));
+      if (file) {
+        filePath = path.join(dir, file);
+        ext = path.extname(file).replace(".", "").toLowerCase();
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Aucune texture de carte disponible." });
+    }
+
+    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
+    res.setHeader("Cache-Control", "no-cache");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/center/card-bg", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { bgDataUrl } = req.body || {};
+    if (!bgDataUrl || !bgDataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ error: "Fichier image invalide." });
+    }
+
+    await ensureStorageTree(req.centerId);
+    const targetDir = centerStoragePath(req.centerId, "settings/branding");
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    for (const file of fs.readdirSync(targetDir)) {
+      if (file.startsWith("card_bg.")) {
+        try { fs.unlinkSync(path.join(targetDir, file)); } catch {}
+      }
+    }
+
+    const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(bgDataUrl);
+    const ext = MIME_TO_EXT[match[1]] || "png";
+    const buffer = Buffer.from(match[2], "base64");
+
+    fs.writeFileSync(path.join(targetDir, `card_bg.${ext}`), buffer);
+    res.json({ success: true, message: "Texture de carte enregistrée avec succès." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 4. Texture de fond du Relevé Annuel (recap_bg)
+router.get("/center/transcript-bg", verifyJwt, async (req, res, next) => {
+  try {
+    const dir = brandingDir(req.centerId);
+    let filePath = null;
+    let ext = "png";
+
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      const foundFile =
+        files.find((f) => f.startsWith("recap_bg.")) ||
+        files.find((f) => f.startsWith("transcript_bg.")) ||
+        files.find((f) => f.startsWith("releve_bg.")) ||
+        files.find((f) => f.startsWith("card_bg."));
+
+      if (foundFile) {
+        filePath = path.join(dir, foundFile);
+        ext = path.extname(foundFile).replace(".", "").toLowerCase();
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Aucun fond pour relevé disponible." });
+    }
+
+    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
+    res.setHeader("Cache-Control", "no-cache");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/center/transcript-bg", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { bgDataUrl } = req.body || {};
+    if (!bgDataUrl || !bgDataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ error: "Fichier image invalide." });
+    }
+
+    await ensureStorageTree(req.centerId);
+    const targetDir = centerStoragePath(req.centerId, "settings/branding");
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    for (const file of fs.readdirSync(targetDir)) {
+      if (file.startsWith("recap_bg.") || file.startsWith("transcript_bg.") || file.startsWith("releve_bg.")) {
+        try { fs.unlinkSync(path.join(targetDir, file)); } catch {}
+      }
+    }
+
+    const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(bgDataUrl);
+    const ext = MIME_TO_EXT[match[1]] || "png";
+    const buffer = Buffer.from(match[2], "base64");
+
+    fs.writeFileSync(path.join(targetDir, `recap_bg.${ext}`), buffer);
+    res.json({ success: true, message: "Texture de relevé (recap_bg) enregistrée avec succès." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 5. NOUVELLE ROUTE : Texture de fond de l'Attestation de Fin de Formation (attestation_bg / diplome_bg)
+router.get("/center/diploma-bg", verifyJwt, async (req, res, next) => {
+  try {
+    const dir = brandingDir(req.centerId);
+    let filePath = null;
+    let ext = "png";
+
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      const foundFile =
+        files.find((f) => f.startsWith("attestation_bg.")) ||
+        files.find((f) => f.startsWith("diplome_bg.")) ||
+        files.find((f) => f.startsWith("certificat_bg.")) ||
+        files.find((f) => f.startsWith("card_bg."));
+
+      if (foundFile) {
+        filePath = path.join(dir, foundFile);
+        ext = path.extname(foundFile).replace(".", "").toLowerCase();
+      }
+    }
+
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Aucun fond pour attestation disponible." });
+    }
+
+    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
+    res.setHeader("Cache-Control", "no-cache");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/center/diploma-bg", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
+  try {
+    const { bgDataUrl } = req.body || {};
+    if (!bgDataUrl || !bgDataUrl.startsWith("data:image/")) {
+      return res.status(400).json({ error: "Fichier image invalide." });
+    }
+
+    await ensureStorageTree(req.centerId);
+    const targetDir = centerStoragePath(req.centerId, "settings/branding");
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    for (const file of fs.readdirSync(targetDir)) {
+      if (file.startsWith("attestation_bg.") || file.startsWith("diplome_bg.") || file.startsWith("certificat_bg.")) {
+        try { fs.unlinkSync(path.join(targetDir, file)); } catch {}
+      }
+    }
+
+    const match = /^data:(image\/[a-zA-Z+]+);base64,(.+)$/.exec(bgDataUrl);
+    const ext = MIME_TO_EXT[match[1]] || "png";
+    const buffer = Buffer.from(match[2], "base64");
+
+    fs.writeFileSync(path.join(targetDir, `attestation_bg.${ext}`), buffer);
+    res.json({ success: true, message: "Fond d'attestation (attestation_bg) enregistré avec succès." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 6. Sceau de la République (Streaming)
 router.get("/center/seal", verifyJwt, async (req, res, next) => {
   try {
     const dir = brandingDir(req.centerId);
@@ -169,14 +383,14 @@ router.get("/center/seal", verifyJwt, async (req, res, next) => {
     }
 
     res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
-    res.setHeader("Cache-Control", "private, max-age=120");
+    res.setHeader("Cache-Control", "no-cache");
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     next(err);
   }
 });
 
-// 4. Mise à jour des coordonnées & Enregistrement du masque de matricule
+// 7. Mise à jour des coordonnées & direction
 router.put("/center", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     const { name, logo, seal, matriculeFormat } = req.body || {};
@@ -231,7 +445,7 @@ router.put("/center", verifyJwt, requirePermission("center.update"), async (req,
   }
 });
 
-// 5. Rétablissement du Sceau par défaut
+// 8. Rétablissement du Sceau par défaut
 router.post("/center/seal/reset", verifyJwt, requirePermission("center.update"), async (req, res, next) => {
   try {
     removeExistingSealFiles(req.centerId);
@@ -242,7 +456,7 @@ router.post("/center/seal/reset", verifyJwt, requirePermission("center.update"),
   }
 });
 
-// 6. Rôles de signatures configurés
+// 9. Rôles de signatures configurés
 router.get("/center/signature-roles", verifyJwt, async (req, res, next) => {
   try {
     const setting = await prisma.setting.findUnique({
@@ -273,7 +487,7 @@ router.put("/center/signature-roles", verifyJwt, requirePermission("center.updat
   }
 });
 
-// 7. Signatures physiques existantes
+// 10. Signatures physiques existantes
 router.get("/center/signatures", verifyJwt, requirePermission("center.read", "center.update", "students.read"), async (req, res, next) => {
   try {
     const dir = signaturesDir(req.centerId);
@@ -307,7 +521,7 @@ router.get("/center/signatures/:roleKey", verifyJwt, async (req, res, next) => {
     }
 
     res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "private, max-age=120");
+    res.setHeader("Cache-Control", "no-cache");
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     next(err);
