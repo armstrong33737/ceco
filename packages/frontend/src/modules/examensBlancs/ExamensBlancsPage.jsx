@@ -1,5 +1,5 @@
 // packages/frontend/src/modules/examensBlancs/ExamensBlancsPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiFetch, API_BASE, getToken } from "../../lib/apiClient";
@@ -12,7 +12,6 @@ import Select from "../../design-system/primitives/Select";
 import Modal from "../../design-system/overlays/Modal";
 import DocumentViewerModal from "../documents/components/DocumentViewerModal";
 
-// Sous-composants modulaires
 import BordereauGrid from "./components/BordereauGrid";
 import SessionsTab from "./components/SessionsTab";
 import MaquettesTab from "./components/MaquettesTab";
@@ -44,10 +43,11 @@ export default function ExamensBlancsPage() {
     else navigate("/examens-blancs/bordereau");
   };
 
-  // 1. Données du Bordereau
+  // 1. Données Principales
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [classes, setClasses] = useState([]);
+  const [allClasses, setAllClasses] = useState([]);
+  const [programTypes, setProgramTypes] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState("");
   const [currentClasseExam, setCurrentClasseExam] = useState(null);
   const [inputGrades, setInputGrades] = useState({});
@@ -93,18 +93,19 @@ export default function ExamensBlancsPage() {
 
   async function loadInitialData() {
     try {
-      const [clsList, filsList, subsList, sessList] = await Promise.all([
+      const [clsList, filsList, subsList, sessList, ptsList] = await Promise.all([
         apiFetch("/classes"),
         apiFetch("/filieres"),
         apiFetch("/mock-subjects"),
         apiFetch("/mock-exam-sessions"),
+        apiFetch("/program-types").catch(() => []),
       ]);
-      setClasses(clsList || []);
+      setAllClasses(clsList || []);
       setFilieres(filsList || []);
       setMockSubjects(subsList || []);
       setSessions(sessList || []);
+      setProgramTypes(ptsList || []);
 
-      if (clsList?.length > 0 && !selectedClassId) setSelectedClassId(clsList[0].id);
       if (filsList?.length > 0 && !selectedFiliereId) setSelectedFiliereId(filsList[0].id);
       if (sessList?.length > 0 && !selectedSessionId) setSelectedSessionId(sessList[0].id);
     } catch (e) {
@@ -115,6 +116,38 @@ export default function ExamensBlancsPage() {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  const currentSession = useMemo(() => {
+    return sessions.find((s) => s.id === selectedSessionId) || null;
+  }, [sessions, selectedSessionId]);
+
+  // RÈGLE MÉTIER STRICTE : Seules les classes candidates ENRÔLÉES dans la session sont affichées
+  const enrolledClassesInSession = useMemo(() => {
+    if (!currentSession || !currentSession.classeMockExams) return [];
+    return currentSession.classeMockExams
+      .map((ce) => ce.classe)
+      .filter((c) => Boolean(c));
+  }, [currentSession]);
+
+  // Classes candidates terminales éligibles pour l'enrôlement manuel
+  const terminalCandidateClasses = useMemo(() => {
+    return allClasses.filter((c) => {
+      const isTerminal = c.niveau?.order >= c.filiere?.durationInYears;
+      return isTerminal && c.academicYear?.isCurrent;
+    });
+  }, [allClasses]);
+
+  // Auto-sélection de la première classe enrôlée
+  useEffect(() => {
+    if (enrolledClassesInSession.length > 0) {
+      if (!enrolledClassesInSession.some((c) => c.id === selectedClassId)) {
+        setSelectedClassId(enrolledClassesInSession[0].id);
+      }
+    } else {
+      setSelectedClassId("");
+      setCurrentClasseExam(null);
+    }
+  }, [enrolledClassesInSession, selectedClassId]);
 
   async function loadFiliereMaquette() {
     if (!selectedFiliereId) return;
@@ -136,7 +169,6 @@ export default function ExamensBlancsPage() {
       return;
     }
 
-    const currentSession = sessions.find((s) => s.id === selectedSessionId);
     const linkedExam = currentSession?.classeMockExams?.find((ce) => ce.classeId === selectedClassId);
 
     if (!linkedExam) {
@@ -169,7 +201,7 @@ export default function ExamensBlancsPage() {
 
   useEffect(() => {
     loadClasseGrid();
-  }, [selectedSessionId, selectedClassId, sessions]);
+  }, [selectedSessionId, selectedClassId, currentSession]);
 
   function handleScoreChange(studentId, subjectId, rawVal) {
     let val = rawVal;
@@ -246,6 +278,21 @@ export default function ExamensBlancsPage() {
         body: JSON.stringify({ lock: nextLock }),
       });
       showToast(nextLock ? "Bordereau verrouillé." : "Bordereau déverrouillé.", "info");
+      await loadClasseGrid();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+
+  async function handleToggleSessionLock(sessionId, shouldLock) {
+    try {
+      const res = await apiFetch(`/mock-exam-sessions/${sessionId}/lock`, {
+        method: "POST",
+        body: JSON.stringify({ lock: shouldLock }),
+      });
+      showToast(res.message, "success");
+      const sessList = await apiFetch("/mock-exam-sessions");
+      setSessions(sessList || []);
       await loadClasseGrid();
     } catch (err) {
       showToast(err.message, "error");
@@ -448,9 +495,9 @@ export default function ExamensBlancsPage() {
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
-        contextBadge={<span className="text-[11px] font-bold uppercase tracking-wider text-brand-900 dark:text-brand-500">EXAMENS D'ÉTAT MINEFOP • DQP / CQP</span>}
-        title="Gestion des Examens Blancs"
-        subtitle="Enrôlement automatique des classes sortantes, grille de saisie MINEFOP et bordereaux officiels sans QR code"
+        contextBadge={<span className="text-[11px] font-bold uppercase tracking-wider text-brand-900 dark:text-brand-500">EXAMENS D'ÉTAT MINEFOP • CERTIFICATION SORTANTE</span>}
+        title="Gestion des Examens Blancs Régionaux"
+        subtitle="Enrôlement automatique des classes terminales, grille de saisie MINEFOP, clôture de session et bordereaux officiels"
         actions={
           <div className="flex gap-2">
             <Button variant="secondary" icon="library_books" onClick={() => handleTabChange("referentiel")}>
@@ -529,18 +576,30 @@ export default function ExamensBlancsPage() {
       {/* ONGLET 1 : BORDEREAU & SAISIE */}
       {activeTab === "bordereau" && (
         <div className="space-y-4">
-          <StructuredPanel title="Sélection de la Session &amp; de la Classe Candidate" subtitle="Sélectionnez la session et la classe pour afficher la grille de notes" icon="tune">
+          <StructuredPanel title="Sélection de la Session &amp; de la Classe Candidate" subtitle="Seules les classes candidates enrôlées sont sélectionnables" icon="tune">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Select label="1. Session d'Examen Blanc" value={selectedSessionId} onChange={(e) => setSelectedSessionId(e.target.value)}>
                 {sessions.map((s) => (
-                  <option key={s.id} value={s.id}>{s.title} ({s.academicYear?.label})</option>
+                  <option key={s.id} value={s.id}>
+                    {s.title} ({s.academicYear?.label}) {s.isLocked ? "🔒 [Clôturée]" : "🟢 [Active]"}
+                  </option>
                 ))}
               </Select>
 
-              <Select label="2. Classe Candidate" value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}>
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label} ({c.filiere?.name})</option>
-                ))}
+              {/* RÈGLE MÉTIER STRICTE : Affiche UNIQUEMENT les classes candidates de cette session */}
+              <Select
+                label="2. Classe Candidate Sortante (Enrôlée)"
+                value={selectedClassId}
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                disabled={enrolledClassesInSession.length === 0}
+              >
+                {enrolledClassesInSession.length === 0 ? (
+                  <option value="">Aucune classe enrôlée dans cette session</option>
+                ) : (
+                  enrolledClassesInSession.map((c) => (
+                    <option key={c.id} value={c.id}>{c.label} ({c.filiere?.name})</option>
+                  ))
+                )}
               </Select>
             </div>
           </StructuredPanel>
@@ -548,14 +607,15 @@ export default function ExamensBlancsPage() {
           {!currentClasseExam ? (
             <div className="p-8 text-center bg-surface border border-border rounded space-y-3 dark:bg-surface-dark dark:border-border-dark">
               <span className="material-symbols-outlined text-4xl text-brand-900 dark:text-brand-500">info</span>
-              <h3 className="text-body-md font-semibold text-ink-primary dark:text-white">Cette classe n'est pas encore instanciée pour cette session</h3>
+              <h3 className="text-body-md font-semibold text-ink-primary dark:text-white">Sélectionnez une session et une classe candidate</h3>
               <p className="text-caption text-ink-muted max-w-md mx-auto">
-                La classe sélectionnée ne dispose pas encore de ses épreuves d'examen blanc pour la session choisie.
+                Choisissez une session d'examen blanc active pour afficher la grille des épreuves et saisir les notes.
               </p>
             </div>
           ) : (
             <BordereauGrid
               currentClasseExam={currentClasseExam}
+              isSessionLocked={Boolean(currentSession?.isLocked)}
               inputGrades={inputGrades}
               onScoreChange={handleScoreChange}
               onSaveGrades={handleSaveGrades}
@@ -590,6 +650,7 @@ export default function ExamensBlancsPage() {
         <SessionsTab
           sessions={sessions}
           onPrintSessionBundle={handlePrintSessionBundle}
+          onToggleSessionLock={handleToggleSessionLock}
           onDeleteSession={handleDeleteSession}
         />
       )}
@@ -648,7 +709,7 @@ export default function ExamensBlancsPage() {
         </div>
       </Modal>
 
-      {/* MODALE CRÉATION SESSION */}
+      {/* MODALE CRÉATION SESSION AVEC CYCLES DYNAMIQUES DU CENTRE */}
       <Modal isOpen={showSessionModal} onClose={() => setShowSessionModal(false)} title="Nouvelle Session d'Examen Blanc" icon="calendar_month">
         <form onSubmit={handleCreateSession} className="space-y-4">
           <Input
@@ -664,42 +725,52 @@ export default function ExamensBlancsPage() {
             <Input required type="date" label="Date de Fin" value={sessionForm.endDate} onChange={(e) => setSessionForm({ ...sessionForm, endDate: e.target.value })} />
           </div>
 
+          {/* DYNAMISATION DE LA PORTÉE D'ENRÔLEMENT SELON LES CYCLES RÉELS DU CENTRE */}
           <Select
-            label="Portée de l'enrôlement automatique"
+            label="Portée de l'enrôlement automatique des classes sortantes"
             value={sessionForm.targetScope}
             onChange={(e) => setSessionForm({ ...sessionForm, targetScope: e.target.value })}
           >
-            <option value="ALL">Toutes les classes sortantes (Recommandé)</option>
-            <option value="DQP">Classes sortantes DQP uniquement</option>
-            <option value="CQP">Classes sortantes CQP uniquement</option>
-            <option value="MANUAL">Sélection manuelle des classes</option>
+            <option value="ALL">Toutes les classes sortantes terminales (Tous cycles)</option>
+            {programTypes.map((pt) => (
+              <option key={pt.id} value={pt.code}>
+                Classes sortantes {pt.code} ({pt.label}) uniquement
+              </option>
+            ))}
+            <option value="MANUAL">Sélection manuelle des classes candidates</option>
           </Select>
 
           {sessionForm.targetScope === "MANUAL" && (
             <div className="p-3 border border-border rounded max-h-40 overflow-y-auto space-y-1">
-              <span className="text-[11px] font-bold text-ink-muted uppercase block">Cocher les classes candidates :</span>
-              {classes.map((cls) => (
-                <label key={cls.id} className="flex items-center gap-2 text-caption cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sessionForm.manualClasseIds.includes(cls.id)}
-                    onChange={(e) => {
-                      const cur = sessionForm.manualClasseIds;
-                      setSessionForm({
-                        ...sessionForm,
-                        manualClasseIds: e.target.checked ? [...cur, cls.id] : cur.filter((id) => id !== cls.id),
-                      });
-                    }}
-                  />
-                  <span>{cls.label}</span>
-                </label>
-              ))}
+              <span className="text-[11px] font-bold text-ink-muted uppercase block">
+                Classes terminales candidates ({terminalCandidateClasses.length}) :
+              </span>
+              {terminalCandidateClasses.length === 0 ? (
+                <p className="text-caption text-ink-muted">Aucune classe terminale active.</p>
+              ) : (
+                terminalCandidateClasses.map((cls) => (
+                  <label key={cls.id} className="flex items-center gap-2 text-caption cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sessionForm.manualClasseIds.includes(cls.id)}
+                      onChange={(e) => {
+                        const cur = sessionForm.manualClasseIds;
+                        setSessionForm({
+                          ...sessionForm,
+                          manualClasseIds: e.target.checked ? [...cur, cls.id] : cur.filter((id) => id !== cls.id),
+                        });
+                      }}
+                    />
+                    <span>{cls.label} ({cls.filiere?.name})</span>
+                  </label>
+                ))
+              )}
             </div>
           )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setShowSessionModal(false)}>Annuler</Button>
-            <Button variant="primary" type="submit">Créer la Session</Button>
+            <Button variant="primary" type="submit">Créer &amp; Enrôler les Classes</Button>
           </div>
         </form>
       </Modal>
@@ -871,7 +942,7 @@ export default function ExamensBlancsPage() {
         </div>
       </Modal>
 
-      {/* VISIONNEUSE PDF */}
+      {/* VISIONNEUSE PDF UNIFIÉE */}
       <DocumentViewerModal
         isOpen={Boolean(pdfModal)}
         title={pdfModal?.title}

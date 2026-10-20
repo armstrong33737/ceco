@@ -37,7 +37,6 @@ export default function StudioTranscriptConfig({
     onChange("signatories", signatories.filter((_, i) => i !== idx));
   }
 
-  // Téléversement direct du fichier recap_bg.png
   function handleTextureFileSelect(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -60,6 +59,9 @@ export default function StudioTranscriptConfig({
     };
     reader.readAsDataURL(file);
   }
+
+  // Opacité par défaut à 100% (1.0)
+  const currentOpacity = config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 1.0;
 
   return (
     <div className="space-y-4">
@@ -105,7 +107,7 @@ export default function StudioTranscriptConfig({
         />
       </div>
 
-      {/* Téléversement interactif direct de la texture de fond recap_bg */}
+      {/* Téléversement du motif recap_bg avec curseur 0 à 100% (défaut 100%) */}
       <div className="p-3.5 rounded bg-[#F5F7FA] border border-border space-y-2 dark:bg-[#07111D] dark:border-border-dark">
         <div className="flex items-center justify-between">
           <span className="text-overline text-ink-secondary uppercase tracking-wider font-semibold">
@@ -123,23 +125,20 @@ export default function StudioTranscriptConfig({
             />
           </label>
         </div>
-        <p className="text-caption text-ink-muted leading-relaxed">
-          Le fichier est stocké sous <code>recap_bg.png</code> et appliqué sur l'ensemble du relevé annuel.
-        </p>
 
         <div className="space-y-1 pt-1 border-t border-border dark:border-border-dark">
           <div className="flex justify-between text-caption font-semibold">
             <span className="text-ink-secondary dark:text-ink-secondary-dark">Opacité de la texture :</span>
             <span className="font-mono text-brand-900 dark:text-brand-500 font-bold">
-              {Math.round((config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 0.22) * 100)} %
+              {Math.round(currentOpacity * 100)} %
             </span>
           </div>
           <input
             type="range"
-            min="0.05"
-            max="0.50"
+            min="0"
+            max="1"
             step="0.01"
-            value={config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 0.22}
+            value={currentOpacity}
             onChange={(e) => onChange("bgTextureOpacity", parseFloat(e.target.value))}
             className="w-full accent-brand-900 cursor-pointer"
           />

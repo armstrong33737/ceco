@@ -20,9 +20,8 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen w-full bg-canvas-light text-ink-primary font-sans antialiased dark:bg-canvas-dark dark:text-ink-primary-dark">
-      {/* Panneau Latéral Gauche : Identité Institutionnelle Sobre (Masqué sur mobile) */}
+      {/* Panneau Latéral Gauche */}
       <div className="relative hidden w-5/12 bg-brand-900 border-r border-border-strong-dark lg:flex lg:flex-col lg:justify-between p-12 text-white">
-        {/* En-tête */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-24 items-center justify-center rounded bg-white p-1 shadow-xs">
             <img src={logo} alt="Logo CECO" className="h-full w-full object-contain" />
@@ -37,7 +36,6 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Corps d'information de l'établissement */}
         <div className="space-y-6 max-w-sm">
           <div className="space-y-2">
             <h1 className="text-h2 font-heading font-semibold text-white tracking-tight">
@@ -60,13 +58,13 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Pied de panneau */}
+        {/* PIED DE PANNEAU : VERSION 4.0.0 */}
         <div className="text-caption text-white/50 font-mono">
-          © 2026 CECO Africa • Version 1.0.0 Stable
+          © 2026 CECO Africa • Version 4.0.0 Stable
         </div>
       </div>
 
-      {/* Panneau Droit : Formulaire d'Authentification */}
+      {/* Panneau Droit */}
       <div className="flex flex-1 items-center justify-center p-6 sm:p-12">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -74,14 +72,13 @@ export default function Login() {
           transition={{ duration: 0.15 }}
           className="w-full max-w-[400px] space-y-6"
         >
-          {/* Logo visible sur écran mobile */}
           <div className="lg:hidden flex items-center gap-3 mb-6">
             <div className="flex h-10 w-24 items-center justify-center rounded bg-white p-1 border border-border shadow-xs">
               <img src={logo} alt="Logo CECO" className="h-full w-full object-contain" />
             </div>
             <div>
               <h2 className="text-body-md font-heading font-semibold text-ink-primary">CECO ERP</h2>
-              <span className="text-overline text-ink-muted uppercase">Connexion</span>
+              <span className="text-overline text-ink-muted uppercase">Connexion • v4.0.0</span>
             </div>
           </div>
 

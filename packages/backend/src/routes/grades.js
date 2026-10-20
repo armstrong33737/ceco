@@ -299,6 +299,8 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
 
         // Examen Session Normale
         let examScore = null;
+        let isExamEvaluated = false;
+
         if (normaleAbsent) {
           await tx.grade.create({
             data: {
@@ -314,6 +316,7 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
             },
           });
           if (normaleAbsenceReason === "UNJUSTIFIED") examScore = 0.0;
+          isExamEvaluated = true;
         } else if (normale !== null && normale !== undefined && normale !== "") {
           examScore = Math.max(0, Math.min(20, parseFloat(normale)));
           await tx.grade.create({
@@ -328,6 +331,7 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
               isAbsent: false,
             },
           });
+          isExamEvaluated = true;
         }
 
         // Session de Rattrapage
@@ -348,6 +352,7 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
           if (examScore === null || rattVal > examScore) {
             examScore = rattVal;
           }
+          isExamEvaluated = true;
         }
 
         const ccAverage = validCcScores.length > 0
@@ -359,43 +364,44 @@ router.post("/grades/batch", verifyJwt, requirePermission("grades.create", "grad
           finalGrade = Number(((ccAverage * ccWeight) + (examScore * normalWeight)).toFixed(2));
         } else if (examScore !== null) {
           finalGrade = Number(examScore.toFixed(2));
-        } else if (ccAverage !== null) {
+        } else if (ccAverage !== null && isExamEvaluated) {
           finalGrade = Number(ccAverage.toFixed(2));
         }
 
-        if (finalGrade !== null) {
-          await tx.subjectResult.upsert({
-            where: {
-              studentId_subjectId_gradePeriodId: {
-                studentId,
-                subjectId: offering.subjectId,
-                gradePeriodId: offering.gradePeriodId,
-              },
-            },
-            update: {
-              ccAverage,
-              normalAverage: examScore,
-              ccWeight,
-              normalWeight,
-              coefficient: offering.coefficient,
-              finalGrade,
-              computedAt: new Date(),
-            },
-            create: {
-              centerId: req.centerId,
+        // Si l'examen n'a pas encore eu lieu, la note finale n'est calculée qu'à titre provisoire
+        const resolvedFinalGrade = finalGrade !== null ? finalGrade : (ccAverage !== null ? ccAverage : 0.0);
+
+        await tx.subjectResult.upsert({
+          where: {
+            studentId_subjectId_gradePeriodId: {
               studentId,
               subjectId: offering.subjectId,
               gradePeriodId: offering.gradePeriodId,
-              computationMode: "CC_NORMALE",
-              ccAverage,
-              normalAverage: examScore,
-              ccWeight,
-              normalWeight,
-              coefficient: offering.coefficient,
-              finalGrade,
             },
-          });
-        }
+          },
+          update: {
+            ccAverage,
+            normalAverage: examScore,
+            ccWeight,
+            normalWeight,
+            coefficient: offering.coefficient,
+            finalGrade: resolvedFinalGrade,
+            computedAt: new Date(),
+          },
+          create: {
+            centerId: req.centerId,
+            studentId,
+            subjectId: offering.subjectId,
+            gradePeriodId: offering.gradePeriodId,
+            computationMode: "CC_NORMALE",
+            ccAverage,
+            normalAverage: examScore,
+            ccWeight,
+            normalWeight,
+            coefficient: offering.coefficient,
+            finalGrade: resolvedFinalGrade,
+          },
+        });
       }
     });
 
@@ -474,7 +480,7 @@ router.post("/grades/unlock", verifyJwt, requirePermission("center.update"), asy
   }
 });
 
-// 5. Bordereau Vierge PDF (Stockage temporaire)
+// 5. Bordereau Vierge PDF
 router.post("/grades/offerings/:offeringId/blank-sheet", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     const { offeringId } = req.params;
@@ -676,6 +682,7 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
       offering: {
         classeLabel: offering.classe.label,
         subjectName: offering.subject.name,
+        subjectCode: offering.subject.code,
         categoryName: offering.category?.name,
         semesterLabel: offering.gradePeriod.label,
         coefficient: offering.coefficient,
@@ -725,7 +732,10 @@ router.post("/grades/offerings/:offeringId/certified-sheet", verifyJwt, requireP
   }
 });
 
-// 7. PV de Délibération de Classe (A4 Paysage)
+/**
+ * 7. PV DE DÉLIBÉRATION DE CLASSE (PV_SEMESTRE / PV_ANNUEL - A4 Paysage)
+ * Aligné rigoureusement sur le total des coefficients prescrits de la classe.
+ */
 router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { classeId } = req.params;
@@ -741,7 +751,7 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
         include: {
           filiere: true,
           niveau: true,
-          academicYear: true,
+          academicYear: { include: { gradePeriods: true } },
           inscriptions: {
             where: { student: { deletedAt: null } },
             include: { student: true },
@@ -758,7 +768,7 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
     const isAnnual = period.type === "ANNUEL";
     const docType = isAnnual ? "PV_ANNUEL" : "PV_SEMESTRE";
 
-    const [template, offerings, results] = await Promise.all([
+    const [template, offerings, results, deliberation] = await Promise.all([
       prisma.documentTemplate.findUnique({ where: { centerId_type: { centerId: req.centerId, type: docType } } }),
       prisma.subjectOffering.findMany({
         where: {
@@ -774,6 +784,10 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
           subjectId: { in: (await prisma.subjectOffering.findMany({ where: { classeId }, select: { subjectId: true } })).map((o) => o.subjectId) },
           studentId: { in: classe.inscriptions.map((i) => i.studentId) },
         },
+      }),
+      prisma.deliberation.findUnique({
+        where: { classeId_gradePeriodId_scope: { classeId, gradePeriodId, scope: isAnnual ? "ANNUEL" : "SEMESTRE" } },
+        include: { studentResults: true },
       }),
     ]);
 
@@ -793,9 +807,13 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
 
     const isFinalYear = classe.niveau?.order >= classe.filiere?.durationInYears;
 
+    // RÈGLE UNIFIÉE : Division par les coefficients prescrits
+    const totalPrescribedCoeffs = offerings.reduce((sum, o) => sum + (o.coefficient || 0), 0);
+
     const summaries = classe.inscriptions.map((insc) => {
       const st = insc.student;
       const stResults = results.filter((r) => r.studentId === st.id);
+      const stDelib = deliberation?.studentResults?.find((d) => d.studentId === st.id);
 
       let totalPoints = 0;
       let evaluatedCoeff = 0;
@@ -817,11 +835,14 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
         };
       });
 
-      const average = evaluatedCoeff > 0 ? Number((totalPoints / evaluatedCoeff).toFixed(2)) : null;
+      // Synchronisation sur la délibération officielle si elle existe, sinon calcul intègre prescrit
+      const average = stDelib
+        ? stDelib.moyenne
+        : (totalPrescribedCoeffs > 0 ? Number((totalPoints / totalPrescribedCoeffs).toFixed(2)) : null);
 
-      let decision = "EN_ATTENTE";
-      if (average !== null) {
-        if (average >= 10.0 && !hasEliminatory) {
+      let decision = stDelib ? stDelib.decision : "EN_ATTENTE";
+      if (!stDelib && average !== null) {
+        if (average >= 10.0 && !hasEliminatory && evaluatedCoeff === totalPrescribedCoeffs) {
           decision = isAnnual ? (isFinalYear ? "DIPLÔMÉ" : "ADMIS") : "VALIDÉ";
         } else {
           decision = isAnnual ? "REDOUBLE" : "AJOURNÉ";
@@ -853,6 +874,7 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
       periodLabel: period.label,
       offerings,
       summaries,
+      totalPrescribedCoeffs,
       qrToken: qrTokenKey,
       templateConfig: template?.config || { primaryColor: "#071A2E" },
     };
@@ -896,7 +918,10 @@ router.post("/grades/classes/:classeId/semester-sheet", verifyJwt, requirePermis
   }
 });
 
-// 8. PV Récapitulatif du Contrôle Continu de Classe (PV_CC - A4 Paysage)
+/**
+ * 8. PV RÉCAPITULATIF DU CONTRÔLE CONTINU (PV_CC - A4 Paysage)
+ * Aligné rigoureusement sur le total des coefficients prescrits de la classe.
+ */
 router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { classeId } = req.params;
@@ -956,6 +981,8 @@ router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("
       });
     }
 
+    const totalPrescribedCoeffs = offerings.reduce((sum, o) => sum + (o.coefficient || 0), 0);
+
     const summaries = classe.inscriptions.map((insc) => {
       const st = insc.student;
       const stResults = results.filter((r) => r.studentId === st.id);
@@ -976,7 +1003,8 @@ router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("
         };
       });
 
-      const ccAverage = evaluatedCoeff > 0 ? Number((totalCcPoints / evaluatedCoeff).toFixed(2)) : null;
+      // Moyenne CC officielle rapportée au total des coefficients prescrits
+      const ccAverage = totalPrescribedCoeffs > 0 ? Number((totalCcPoints / totalPrescribedCoeffs).toFixed(2)) : null;
 
       return {
         student: { matricule: st.matricule, firstName: st.firstName, lastName: st.lastName },
@@ -1002,6 +1030,7 @@ router.post("/grades/classes/:classeId/cc-sheet", verifyJwt, requirePermission("
       periodLabel: period?.label || "Contrôle Continu",
       offerings,
       summaries,
+      totalPrescribedCoeffs,
       qrToken: qrTokenKey,
       templateConfig: template?.config || { primaryColor: "#071A2E" },
     };

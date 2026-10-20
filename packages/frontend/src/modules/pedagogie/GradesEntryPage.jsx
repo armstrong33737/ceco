@@ -28,10 +28,8 @@ export default function GradesEntryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryOfferingId = searchParams.get("offeringId");
 
-  // Mode Enseignant : Liste directe de ses cours assignés
   const [myOfferings, setMyOfferings] = useState([]);
 
-  // Mode Administrateur : Entonnoir séquentiel 4 étapes
   const [years, setYears] = useState([]);
   const [selectedYearId, setSelectedYearId] = useState("");
   const [classes, setClasses] = useState([]);
@@ -40,21 +38,17 @@ export default function GradesEntryPage() {
   const [selectedSemesterOrder, setSelectedSemesterOrder] = useState(1);
   const [offerings, setOfferings] = useState([]);
 
-  // Cours sélectionné & Données de la Grille Matricielle
   const [selectedOfferingId, setSelectedOfferingId] = useState(queryOfferingId || "");
   const [gridData, setGridData] = useState(null);
   const [inputGrades, setInputGrades] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Modales
   const [absenceModal, setAbsenceModal] = useState(null);
   const [confirmLockModal, setConfirmLockModal] = useState(false);
   const [pdfModal, setPdfModal] = useState(null);
 
-  // 1. CHARGEMENT SELON LE RÔLE
   useEffect(() => {
     if (isTeacher) {
-      // Pour l'enseignant : chargement direct de ses cours sans passer par les registres d'administration
       apiFetch("/pedagogie/my-offerings")
         .then((data) => {
           const list = Array.isArray(data) ? data : [];
@@ -67,7 +61,6 @@ export default function GradesEntryPage() {
         })
         .catch((e) => showToast(e.message, "error"));
     } else {
-      // Pour l'administrateur : chargement de l'entonnoir
       apiFetch("/academic-years")
         .then((yrs) => {
           setYears(yrs || []);
@@ -78,7 +71,6 @@ export default function GradesEntryPage() {
     }
   }, [isTeacher, queryOfferingId]);
 
-  // Chargement des classes (Mode Admin)
   useEffect(() => {
     if (isTeacher || !selectedYearId) return;
     apiFetch("/classes")
@@ -102,7 +94,6 @@ export default function GradesEntryPage() {
     return classes.filter((c) => c.label.toLowerCase().includes(classSearch.toLowerCase()));
   }, [classes, classSearch]);
 
-  // Chargement des matières de la classe (Mode Admin)
   useEffect(() => {
     if (isTeacher || !selectedClassId) return;
     apiFetch(`/classes/${selectedClassId}/offerings`)
@@ -130,7 +121,6 @@ export default function GradesEntryPage() {
     }
   }, [semesterOfferings, isTeacher, queryOfferingId]);
 
-  // 2. CHARGEMENT DE LA GRILLE MATRICIELLE DU COURS SÉLECTIONNÉ
   useEffect(() => {
     if (!selectedOfferingId) {
       setGridData(null);
@@ -169,7 +159,6 @@ export default function GradesEntryPage() {
       });
   }, [selectedOfferingId]);
 
-  // CLAMPING STRICT DES NOTES (0.00 à 20.00)
   function handleGradeValueChange(studentId, field, rawVal) {
     if (rawVal === "" || rawVal === undefined || rawVal === null) {
       setInputGrades((prev) => ({
@@ -190,7 +179,6 @@ export default function GradesEntryPage() {
     }));
   }
 
-  // NAVIGATION AU CLAVIER FLUIDE STYLE EXCEL
   function handleKeyDown(e, stIdx, colIdx) {
     const totalStudents = gridData?.students?.length || 0;
     const totalCols = 4;
@@ -246,7 +234,7 @@ export default function GradesEntryPage() {
     setAbsenceModal(null);
   }
 
-  // CALCUL MATHÉMATIQUE INSTANTANÉ DE PRÉVISUALISATION
+  // RÈGLE PÉDAGOGIQUE STRICTE : PAS DE VALIDATION SANS EXAMEN TERMINAL
   function computePreview(stId) {
     const row = inputGrades[stId] || {};
     const validCcs = [];
@@ -260,25 +248,44 @@ export default function GradesEntryPage() {
     const ccAvg = validCcs.length > 0 ? validCcs.reduce((a, b) => a + b, 0) / validCcs.length : null;
 
     let exam = null;
-    if (row.normaleAbsent && row.normaleAbsenceReason === "UNJUSTIFIED") exam = 0;
-    else if (!row.normaleAbsent && row.normale !== "" && !isNaN(row.normale)) exam = parseFloat(row.normale);
+    let hasExamEvaluated = false;
+
+    if (row.normaleAbsent && row.normaleAbsenceReason === "UNJUSTIFIED") {
+      exam = 0;
+      hasExamEvaluated = true;
+    } else if (!row.normaleAbsent && row.normale !== "" && !isNaN(row.normale)) {
+      exam = parseFloat(row.normale);
+      hasExamEvaluated = true;
+    }
 
     if (!row.rattrapageAbsent && row.rattrapage !== "" && !isNaN(row.rattrapage)) {
       const r = parseFloat(row.rattrapage);
       if (exam === null || r > exam) exam = r;
+      hasExamEvaluated = true;
     }
 
     const ccW = gridData?.gradingPolicy?.ccWeight || 0.30;
     const normW = gridData?.gradingPolicy?.normalWeight || 0.70;
 
     let final = null;
-    if (ccAvg !== null && exam !== null) final = (ccAvg * ccW) + (exam * normW);
-    else if (exam !== null) final = exam;
-    else if (ccAvg !== null) final = ccAvg;
+    let isComplete = false;
+
+    if (ccAvg !== null && exam !== null) {
+      final = (ccAvg * ccW) + (exam * normW);
+      isComplete = true;
+    } else if (exam !== null) {
+      final = exam;
+      isComplete = true;
+    } else if (ccAvg !== null) {
+      // Si l'examen n'a pas encore eu lieu, la note finale n'est pas scellée
+      final = ccAvg;
+      isComplete = false;
+    }
 
     return {
       ccAvg: ccAvg !== null ? ccAvg.toFixed(2) : "—",
       final: final !== null ? final.toFixed(2) : "—",
+      isComplete: isComplete && hasExamEvaluated,
       passed: final !== null && final >= 10.0,
     };
   }
@@ -371,14 +378,12 @@ export default function GradesEntryPage() {
           : "Bordereau matriciel type tableur (CC1, CC2, Examen, Rattrapage) avec verrouillage officiel"}
       />
 
-      {/* SÉLECTEUR DE COURS (ADAPTATIF SELON LE RÔLE) */}
       <StructuredPanel
         title={isTeacher ? "Mon Cours à Évaluer" : "Sélection Séquentielle du Cours"}
         subtitle={isTeacher ? "Liste de vos cours assignés sur la session active" : "Session → Classe → Semestre → Discipline"}
         icon="tune"
       >
         {isTeacher ? (
-          /* VUE ENSEIGNANT : SÉLECTEUR UNIQUE DIRECT EN 1 CLIC */
           <div className="space-y-2">
             {myOfferings.length === 0 ? (
               <div className="p-4 rounded bg-[#F5F7FA] border border-border text-caption text-ink-muted dark:bg-[#07111D] dark:border-border-dark">
@@ -412,7 +417,6 @@ export default function GradesEntryPage() {
             )}
           </div>
         ) : (
-          /* VUE ADMINISTRATEUR : ENTONNOIR SÉQUENTIEL COMPLET */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <Select
               label="1. Session Académique"
@@ -499,7 +503,6 @@ export default function GradesEntryPage() {
         )}
       </StructuredPanel>
 
-      {/* GRILLE MATRICIELLE DE SAISIE */}
       {!gridData ? (
         <div className="rounded bg-surface p-12 border border-border text-center space-y-2 dark:bg-surface-dark dark:border-border-dark">
           <Icon name="table_rows" className="text-4xl text-ink-muted" />
@@ -560,7 +563,7 @@ export default function GradesEntryPage() {
                 <TableHeaderCell className="w-32 text-center">Examen /20</TableHeaderCell>
                 <TableHeaderCell className="w-28 text-center">Rattrapage /20</TableHeaderCell>
                 <TableHeaderCell className="w-28 text-center">Note Finale</TableHeaderCell>
-                <TableHeaderCell className="w-24 text-center">Validation</TableHeaderCell>
+                <TableHeaderCell className="w-28 text-center">Validation</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -695,11 +698,18 @@ export default function GradesEntryPage() {
                       {calc.final}
                     </TableCell>
 
+                    {/* STATUT DE VALIDATION PÉDAGOGIQUE INTÈGRE */}
                     <TableCell align="center">
                       {calc.final !== "—" ? (
-                        <Badge variant={calc.passed ? "success" : "error"}>
-                          {calc.passed ? "Validé" : "Échec"}
-                        </Badge>
+                        calc.isComplete ? (
+                          <Badge variant={calc.passed ? "success" : "error"}>
+                            {calc.passed ? "Validé" : "Échec"}
+                          </Badge>
+                        ) : (
+                          <Badge variant="warning" title="En attente de la note d'examen final de session normale">
+                            Attente Examen
+                          </Badge>
+                        )
                       ) : (
                         <span className="text-caption text-ink-muted">—</span>
                       )}
@@ -780,7 +790,6 @@ export default function GradesEntryPage() {
         </p>
       </Modal>
 
-      {/* Visionneuse PDF */}
       <DocumentViewerModal
         isOpen={Boolean(pdfModal)}
         title={pdfModal?.title}

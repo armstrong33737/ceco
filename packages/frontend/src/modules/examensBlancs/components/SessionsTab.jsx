@@ -2,6 +2,7 @@
 import React from "react";
 import { StructuredPanel } from "../../../design-system/layout/Card";
 import Button from "../../../design-system/primitives/Button";
+import Badge from "../../../design-system/primitives/Badge";
 import {
   Table,
   TableHead,
@@ -14,12 +15,13 @@ import {
 export default function SessionsTab({
   sessions = [],
   onPrintSessionBundle,
+  onToggleSessionLock,
   onDeleteSession,
 }) {
   return (
     <StructuredPanel
       title="Sessions d'Examen Blanc Organisées"
-      subtitle="Chaque session est automatiquement rattachée à la session académique active"
+      subtitle="Chaque session enrôle les classes sortantes terminales et peut être officiellement clôturée"
       icon="calendar_month"
     >
       <Table>
@@ -29,14 +31,15 @@ export default function SessionsTab({
             <TableHeaderCell className="w-32">Session</TableHeaderCell>
             <TableHeaderCell className="w-48">Période</TableHeaderCell>
             <TableHeaderCell className="w-32 text-center">Classes Inscrites</TableHeaderCell>
+            <TableHeaderCell className="w-32 text-center">Statut</TableHeaderCell>
             <TableHeaderCell align="right">Actes MINEFOP</TableHeaderCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {sessions.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-ink-muted py-8">
-                Aucune session créée pour le moment.
+              <TableCell colSpan={6} className="text-center text-ink-muted py-8">
+                Aucune session d'examen blanc organisée pour le moment.
               </TableCell>
             </TableRow>
           ) : (
@@ -50,6 +53,11 @@ export default function SessionsTab({
                 <TableCell align="center" className="font-mono font-bold text-brand-900 dark:text-brand-500">
                   {sess.classeMockExams?.length || 0}
                 </TableCell>
+                <TableCell align="center">
+                  <Badge variant={sess.isLocked ? "warning" : "success"} withDot>
+                    {sess.isLocked ? "🔒 Clôturée" : "🟢 Ouverte"}
+                  </Badge>
+                </TableCell>
                 <TableCell align="right">
                   <div className="flex items-center justify-end gap-2">
                     <Button
@@ -59,8 +67,19 @@ export default function SessionsTab({
                       onClick={() => onPrintSessionBundle(sess.id, sess.title)}
                       title="Compiler tous les bordereaux de toutes les classes en un seul PDF multipages"
                     >
-                      Recueil Compilé (Session)
+                      Recueil Compilé
                     </Button>
+
+                    <Button
+                      variant={sess.isLocked ? "secondary" : "warning"}
+                      size="sm"
+                      icon={sess.isLocked ? "lock_open" : "lock"}
+                      onClick={() => onToggleSessionLock(sess.id, !sess.isLocked)}
+                      title={sess.isLocked ? "Réouvrir la session" : "Clôturer et sceller la session"}
+                    >
+                      {sess.isLocked ? "Déverrouiller" : "Clôturer"}
+                    </Button>
+
                     {!sess.isLocked && (
                       <Button
                         variant="tertiary"

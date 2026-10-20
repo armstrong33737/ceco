@@ -8,6 +8,7 @@ const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
+const { resetTenantCache } = require("../middleware/tenantResolver");
 
 const router = express.Router();
 
@@ -29,7 +30,7 @@ function copyFolderRecursiveSync(from, to) {
   }
 }
 
-// 1. Liste des sauvegardes disponibles
+// 1. Liste des sauvegardes
 router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const dir = backupDir(req.centerId);
@@ -51,7 +52,7 @@ router.get("/backups", verifyJwt, requirePermission("backups.read"), async (req,
   }
 });
 
-// 2. Téléchargement physique d'une archive
+// 2. Téléchargement d'archive
 router.get("/backups/:filename/download", verifyJwt, requirePermission("backups.read"), async (req, res, next) => {
   try {
     const { filename } = req.params;
@@ -70,7 +71,7 @@ router.get("/backups/:filename/download", verifyJwt, requirePermission("backups.
   }
 });
 
-// 3. Génération manuelle d'une archive hybride .zip complète
+// 3. Déclenchement manuel d'une sauvegarde complète
 router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -80,7 +81,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     const zipPath = path.join(dir, zipFilename);
 
     const dumpData = {
-      metadata: { version: "4.1.0", timestamp: new Date(), centerId: req.centerId },
+      metadata: { version: "4.2.0", timestamp: new Date(), centerId: req.centerId },
       centers: await prisma.center.findMany({ where: { id: req.centerId } }),
       subscriptions: await prisma.subscription.findMany({ where: { centerId: req.centerId } }),
       licenses: await prisma.license.findMany({ where: { centerId: req.centerId } }),
@@ -110,8 +111,6 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
       studentDeliberations: await prisma.studentDeliberation.findMany({ where: { deliberation: { centerId: req.centerId } } }),
       documentTemplates: await prisma.documentTemplate.findMany({ where: { centerId: req.centerId } }),
       documents: await prisma.document.findMany({ where: { centerId: req.centerId } }),
-
-      // Tables Miroir Examens Blancs
       mockSubjects: await prisma.mockSubject.findMany({ where: { centerId: req.centerId } }),
       filiereMockSubjects: await prisma.filiereMockSubject.findMany({ where: { centerId: req.centerId } }),
       mockExamSessions: await prisma.mockExamSession.findMany({ where: { centerId: req.centerId } }),
@@ -132,7 +131,6 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
     archive.pipe(output);
     archive.append(JSON.stringify(dumpData, null, 2), { name: "db_dump.json" });
 
-    // Médias
     const mediaRoot = centerStoragePath(req.centerId);
     if (fs.existsSync(mediaRoot)) {
       for (const entry of fs.readdirSync(mediaRoot)) {
@@ -147,7 +145,7 @@ router.post("/backups/trigger", verifyJwt, requirePermission("backups.generate")
   }
 });
 
-// 4. Importation d'une archive externe (.zip) avec validation d'intégrité
+// 4. Importation d'archive (.zip)
 router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"), async (req, res, next) => {
   const { filename, fileDataBase64 } = req.body || {};
   if (!fileDataBase64) {
@@ -159,7 +157,6 @@ router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"),
   const cleanBaseName = filename ? path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_") : `import_${Date.now()}.zip`;
   const finalFilename = cleanBaseName.endsWith(".zip") ? cleanBaseName : `${cleanBaseName}.zip`;
 
-  // Vérification de collision de nom
   let destinationPath = path.join(dir, finalFilename);
   if (fs.existsSync(destinationPath)) {
     const uniquePrefix = `imported_${new Date().toISOString().replace(/[:.]/g, "-")}_`;
@@ -177,7 +174,6 @@ router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"),
       return res.status(400).json({ error: "L'archive transmise est vide." });
     }
 
-    // Écriture temporaire pour validation de l'archive
     const tempZipPath = path.join(dir, `temp_check_${Date.now()}.zip`);
     fs.writeFileSync(tempZipPath, buffer);
 
@@ -193,7 +189,6 @@ router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"),
       });
     }
 
-    // L'archive est saine, déplacement vers l'emplacement final
     fs.renameSync(tempZipPath, destinationPath);
     fs.rmSync(tmpValidateDir, { recursive: true, force: true });
 
@@ -213,7 +208,7 @@ router.post("/backups/upload", verifyJwt, requirePermission("backups.generate"),
   }
 });
 
-// 5. Suppression d'une archive
+// 5. Suppression d'archive
 router.delete("/backups/:filename", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
   try {
     const { filename } = req.params;
@@ -231,32 +226,56 @@ router.delete("/backups/:filename", verifyJwt, requirePermission("backups.delete
   }
 });
 
-// 6. Restauration transactionnelle sécurisée
+/**
+ * 6. RESTAURATION DU PRA SOUVERAIN AVEC TRANSPLANTATION D'IDENTITÉ RELATIONNELLE
+ * Permet de restaurer une sauvegarde d'un ancien centre sur une machine neuve
+ * sans invalider la licence Ed25519 de la nouvelle machine ni briser les clés étrangères.
+ */
 router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), async (req, res, next) => {
   const { filename } = req.body || {};
   if (!filename) return res.status(400).json({ error: "Nom de fichier requis." });
 
-  const dir = backupDir(req.centerId);
+  const currentHostCenterId = req.centerId;
+  const dir = backupDir(currentHostCenterId);
   const zipPath = path.join(dir, filename);
-  const tmpDir = path.join(dir, "tmp_restore");
+  const tmpDir = path.join(dir, `tmp_restore_${Date.now()}`);
 
   if (!fs.existsSync(zipPath)) {
     return res.status(404).json({ error: "Fichier de sauvegarde introuvable." });
   }
 
   try {
-    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
-
     await extract(zipPath, { dir: tmpDir });
 
     const dbDumpPath = path.join(tmpDir, "db_dump.json");
     if (!fs.existsSync(dbDumpPath)) {
-      throw new Error("L'archive ne contient pas de db_dump.json valide.");
+      throw new Error("L'archive ne contient pas de fichier db_dump.json valide.");
     }
-    const dumpData = JSON.parse(fs.readFileSync(dbDumpPath, "utf-8"));
 
-    // Ordre de purge rigoureux respectant les contraintes d'intégrité
+    const dumpData = JSON.parse(fs.readFileSync(dbDumpPath, "utf-8"));
+    const oldCenterId = dumpData.metadata?.centerId || dumpData.centers?.[0]?.id;
+
+    // Récupération de la licence et souscription de la machine hôte actuelle
+    const [hostLicense, hostSubscription, hostCenter] = await Promise.all([
+      prisma.license.findUnique({ where: { centerId: currentHostCenterId } }),
+      prisma.subscription.findUnique({ where: { centerId: currentHostCenterId } }),
+      prisma.center.findUnique({ where: { id: currentHostCenterId } }),
+    ]);
+
+    // Mappage relationnel si l'identifiant du centre a changé (nouvelle installation / machine de secours)
+    const remapCenterId = (list = []) => {
+      if (!Array.isArray(list)) return [];
+      if (!oldCenterId || oldCenterId === currentHostCenterId) return list;
+      return list.map((item) => {
+        const cloned = { ...item };
+        if (cloned.centerId === oldCenterId) {
+          cloned.centerId = currentHostCenterId;
+        }
+        return cloned;
+      });
+    };
+
     const tablesToTruncate = [
       "MockExamGrade", "MockExamSummary", "ClasseMockExamSubject", "ClasseMockExam",
       "MockExamSession", "FiliereMockSubject", "MockSubject",
@@ -271,94 +290,210 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
       await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE;`);
     }
 
-    if (dumpData.centers?.length) await prisma.center.createMany({ data: dumpData.centers });
-    if (dumpData.subscriptions?.length) {
-      await prisma.subscription.createMany({
-        data: dumpData.subscriptions.map((s) => ({
-          ...s,
-          maxStorage: s.maxStorage ? BigInt(s.maxStorage) : null,
-          expiresAt: s.expiresAt ? new Date(s.expiresAt) : null,
-        })),
+    // Réinjection du centre avec préservation de l'ID hôte pour maintenir la licence
+    const backupCenterMeta = dumpData.centers?.[0] || {};
+    await prisma.center.create({
+      data: {
+        id: currentHostCenterId,
+        name: backupCenterMeta.name || hostCenter?.name || "Centre CECO",
+        slug: hostCenter?.slug || backupCenterMeta.slug || "local",
+        logo: backupCenterMeta.logo || null,
+        email: backupCenterMeta.email || null,
+        phone: backupCenterMeta.phone || null,
+        address: backupCenterMeta.address || null,
+        city: backupCenterMeta.city || "Bafoussam",
+        postalCode: backupCenterMeta.postalCode || null,
+        country: backupCenterMeta.country || "Cameroun",
+        website: backupCenterMeta.website || null,
+        registrationNumber: backupCenterMeta.registrationNumber || null,
+        directorName: backupCenterMeta.directorName || null,
+        directorTitle: backupCenterMeta.directorTitle || "Le Directeur Général",
+        description: backupCenterMeta.description || null,
+        subscriptionPlan: hostSubscription?.plan || backupCenterMeta.subscriptionPlan || "local",
+      },
+    });
+
+    // Maintien de la licence valide de la machine hôte
+    if (hostLicense) {
+      await prisma.license.create({
+        data: {
+          centerId: currentHostCenterId,
+          signedPayload: hostLicense.signedPayload,
+          publicKeyId: hostLicense.publicKeyId,
+          expiresAt: hostLicense.expiresAt,
+        },
       });
-    }
-    if (dumpData.licenses?.length) {
-      await prisma.license.createMany({
-        data: dumpData.licenses.map((l) => ({
-          ...l,
-          expiresAt: new Date(l.expiresAt),
-          createdAt: new Date(l.createdAt),
-        })),
-      });
-    }
-    if (dumpData.settings?.length) await prisma.setting.createMany({ data: dumpData.settings });
-    if (dumpData.roles?.length) await prisma.role.createMany({ data: dumpData.roles });
-    if (dumpData.permissions?.length) await prisma.permission.createMany({ data: dumpData.permissions });
-    if (dumpData.users?.length) await prisma.user.createMany({ data: dumpData.users });
-    if (dumpData.programTypes?.length) await prisma.programType.createMany({ data: dumpData.programTypes });
-    if (dumpData.filieres?.length) await prisma.filiere.createMany({ data: dumpData.filieres });
-    if (dumpData.niveaux?.length) await prisma.niveau.createMany({ data: dumpData.niveaux });
-    if (dumpData.salles?.length) await prisma.salle.createMany({ data: dumpData.salles });
-    if (dumpData.academicYears?.length) {
-      await prisma.academicYear.createMany({
-        data: dumpData.academicYears.map((y) => ({ ...y, startDate: new Date(y.startDate), endDate: new Date(y.endDate) })),
-      });
-    }
-    if (dumpData.promotions?.length) await prisma.promotion.createMany({ data: dumpData.promotions });
-    if (dumpData.classes?.length) await prisma.classe.createMany({ data: dumpData.classes });
-    if (dumpData.students?.length) {
-      await prisma.student.createMany({
-        data: dumpData.students.map((s) => ({ ...s, birthDate: s.birthDate ? new Date(s.birthDate) : null, createdAt: new Date(s.createdAt) })),
-      });
-    }
-    if (dumpData.inscriptions?.length) {
-      await prisma.inscription.createMany({ data: dumpData.inscriptions.map((i) => ({ ...i, createdAt: new Date(i.createdAt) })) });
-    }
-    if (dumpData.formateurs?.length) await prisma.formateur.createMany({ data: dumpData.formateurs });
-    if (dumpData.subjectCategories?.length) await prisma.subjectCategory.createMany({ data: dumpData.subjectCategories });
-    if (dumpData.subjects?.length) await prisma.subject.createMany({ data: dumpData.subjects });
-    if (dumpData.filiereSubjects?.length) await prisma.filiereSubject.createMany({ data: dumpData.filiereSubjects });
-    if (dumpData.gradingPolicies?.length) {
-      await prisma.gradingPolicy.createMany({
-        data: dumpData.gradingPolicies.map((g) => ({ ...g, effectiveFrom: new Date(g.effectiveFrom), effectiveTo: g.effectiveTo ? new Date(g.effectiveTo) : null })),
-      });
-    }
-    if (dumpData.gradePeriods?.length) {
-      await prisma.gradePeriod.createMany({
-        data: dumpData.gradePeriods.map((g) => ({ ...g, startDate: new Date(g.startDate), endDate: new Date(g.endDate) })),
-      });
-    }
-    if (dumpData.subjectOfferings?.length) await prisma.subjectOffering.createMany({ data: dumpData.subjectOfferings });
-    if (dumpData.grades?.length) {
-      await prisma.grade.createMany({ data: dumpData.grades.map((g) => ({ ...g, createdAt: new Date(g.createdAt) })) });
-    }
-    if (dumpData.subjectResults?.length) {
-      await prisma.subjectResult.createMany({ data: dumpData.subjectResults.map((r) => ({ ...r, computedAt: new Date(r.computedAt) })) });
-    }
-    if (dumpData.deliberations?.length) {
-      await prisma.deliberation.createMany({ data: dumpData.deliberations.map((d) => ({ ...d, juryDate: new Date(d.juryDate) })) });
-    }
-    if (dumpData.studentDeliberations?.length) await prisma.studentDeliberation.createMany({ data: dumpData.studentDeliberations });
-    if (dumpData.documentTemplates?.length) await prisma.documentTemplate.createMany({ data: dumpData.documentTemplates });
-    if (dumpData.documents?.length) {
-      await prisma.document.createMany({ data: dumpData.documents.map((d) => ({ ...d, generatedAt: new Date(d.generatedAt) })) });
     }
 
-    // Réinjection des tables d'Examens Blancs
-    if (dumpData.mockSubjects?.length) await prisma.mockSubject.createMany({ data: dumpData.mockSubjects });
-    if (dumpData.filiereMockSubjects?.length) await prisma.filiereMockSubject.createMany({ data: dumpData.filiereMockSubjects });
-    if (dumpData.mockExamSessions?.length) {
-      await prisma.mockExamSession.createMany({
-        data: dumpData.mockExamSessions.map((ms) => ({ ...ms, startDate: new Date(ms.startDate), endDate: new Date(ms.endDate) })),
+    if (hostSubscription) {
+      await prisma.subscription.create({
+        data: {
+          centerId: currentHostCenterId,
+          plan: hostSubscription.plan,
+          status: hostSubscription.status,
+          expiresAt: hostSubscription.expiresAt,
+          maxUsers: hostSubscription.maxUsers,
+          maxStorage: hostSubscription.maxStorage,
+        },
       });
     }
-    if (dumpData.classeMockExams?.length) await prisma.classeMockExam.createMany({ data: dumpData.classeMockExams });
+
+    // Réinjection de toutes les données pédagogiques avec le centerId cible
+    const settingsData = remapCenterId(dumpData.settings);
+    if (settingsData.length) await prisma.setting.createMany({ data: settingsData });
+
+    const rolesData = remapCenterId(dumpData.roles);
+    if (rolesData.length) await prisma.role.createMany({ data: rolesData });
+
+    if (dumpData.permissions?.length) await prisma.permission.createMany({ data: dumpData.permissions });
+
+    const usersData = remapCenterId(dumpData.users);
+    if (usersData.length) await prisma.user.createMany({ data: usersData });
+
+    const programTypesData = remapCenterId(dumpData.programTypes);
+    if (programTypesData.length) await prisma.programType.createMany({ data: programTypesData });
+
+    const filieresData = remapCenterId(dumpData.filieres);
+    if (filieresData.length) await prisma.filiere.createMany({ data: filieresData });
+
+    if (dumpData.niveaux?.length) await prisma.niveau.createMany({ data: dumpData.niveaux });
+
+    const sallesData = remapCenterId(dumpData.salles);
+    if (sallesData.length) await prisma.salle.createMany({ data: sallesData });
+
+    const yearsData = remapCenterId(dumpData.academicYears);
+    if (yearsData.length) {
+      await prisma.academicYear.createMany({
+        data: yearsData.map((y) => ({
+          ...y,
+          startDate: new Date(y.startDate),
+          endDate: new Date(y.endDate),
+        })),
+      });
+    }
+
+    const promotionsData = remapCenterId(dumpData.promotions);
+    if (promotionsData.length) await prisma.promotion.createMany({ data: promotionsData });
+
+    const classesData = remapCenterId(dumpData.classes);
+    if (classesData.length) await prisma.classe.createMany({ data: classesData });
+
+    const studentsData = remapCenterId(dumpData.students);
+    if (studentsData.length) {
+      await prisma.student.createMany({
+        data: studentsData.map((s) => ({
+          ...s,
+          birthDate: s.birthDate ? new Date(s.birthDate) : null,
+          createdAt: new Date(s.createdAt),
+        })),
+      });
+    }
+
+    const inscriptionsData = remapCenterId(dumpData.inscriptions);
+    if (inscriptionsData.length) {
+      await prisma.inscription.createMany({
+        data: inscriptionsData.map((i) => ({ ...i, createdAt: new Date(i.createdAt) })),
+      });
+    }
+
+    const formateursData = remapCenterId(dumpData.formateurs);
+    if (formateursData.length) await prisma.formateur.createMany({ data: formateursData });
+
+    const categoriesData = remapCenterId(dumpData.subjectCategories);
+    if (categoriesData.length) await prisma.subjectCategory.createMany({ data: categoriesData });
+
+    const subjectsData = remapCenterId(dumpData.subjects);
+    if (subjectsData.length) await prisma.subject.createMany({ data: subjectsData });
+
+    const filiereSubjectsData = remapCenterId(dumpData.filiereSubjects);
+    if (filiereSubjectsData.length) await prisma.filiereSubject.createMany({ data: filiereSubjectsData });
+
+    const gradingPoliciesData = remapCenterId(dumpData.gradingPolicies);
+    if (gradingPoliciesData.length) {
+      await prisma.gradingPolicy.createMany({
+        data: gradingPoliciesData.map((g) => ({
+          ...g,
+          effectiveFrom: new Date(g.effectiveFrom),
+          effectiveTo: g.effectiveTo ? new Date(g.effectiveTo) : null,
+        })),
+      });
+    }
+
+    const gradePeriodsData = remapCenterId(dumpData.gradePeriods);
+    if (gradePeriodsData.length) {
+      await prisma.gradePeriod.createMany({
+        data: gradePeriodsData.map((g) => ({
+          ...g,
+          startDate: new Date(g.startDate),
+          endDate: new Date(g.endDate),
+        })),
+      });
+    }
+
+    if (dumpData.subjectOfferings?.length) await prisma.subjectOffering.createMany({ data: dumpData.subjectOfferings });
+
+    const gradesData = remapCenterId(dumpData.grades);
+    if (gradesData.length) {
+      await prisma.grade.createMany({
+        data: gradesData.map((g) => ({ ...g, createdAt: new Date(g.createdAt) })),
+      });
+    }
+
+    const subjectResultsData = remapCenterId(dumpData.subjectResults);
+    if (subjectResultsData.length) {
+      await prisma.subjectResult.createMany({
+        data: subjectResultsData.map((r) => ({ ...r, computedAt: new Date(r.computedAt) })),
+      });
+    }
+
+    const deliberationsData = remapCenterId(dumpData.deliberations);
+    if (deliberationsData.length) {
+      await prisma.deliberation.createMany({
+        data: deliberationsData.map((d) => ({ ...d, juryDate: new Date(d.juryDate) })),
+      });
+    }
+
+    if (dumpData.studentDeliberations?.length) await prisma.studentDeliberation.createMany({ data: dumpData.studentDeliberations });
+
+    const templatesData = remapCenterId(dumpData.documentTemplates);
+    if (templatesData.length) await prisma.documentTemplate.createMany({ data: templatesData });
+
+    const documentsData = remapCenterId(dumpData.documents);
+    if (documentsData.length) {
+      await prisma.document.createMany({
+        data: documentsData.map((d) => ({ ...d, generatedAt: new Date(d.generatedAt) })),
+      });
+    }
+
+    // Réinjection des tables Miroir Examens Blancs
+    const mockSubjectsData = remapCenterId(dumpData.mockSubjects);
+    if (mockSubjectsData.length) await prisma.mockSubject.createMany({ data: mockSubjectsData });
+
+    const filiereMockSubjectsData = remapCenterId(dumpData.filiereMockSubjects);
+    if (filiereMockSubjectsData.length) await prisma.filiereMockSubject.createMany({ data: filiereMockSubjectsData });
+
+    const mockSessionsData = remapCenterId(dumpData.mockExamSessions);
+    if (mockSessionsData.length) {
+      await prisma.mockExamSession.createMany({
+        data: mockSessionsData.map((ms) => ({
+          ...ms,
+          startDate: new Date(ms.startDate),
+          endDate: new Date(ms.endDate),
+        })),
+      });
+    }
+
+    const classeMockExamsData = remapCenterId(dumpData.classeMockExams);
+    if (classeMockExamsData.length) await prisma.classeMockExam.createMany({ data: classeMockExamsData });
+
     if (dumpData.classeMockExamSubjects?.length) await prisma.classeMockExamSubject.createMany({ data: dumpData.classeMockExamSubjects });
     if (dumpData.mockExamGrades?.length) await prisma.mockExamGrade.createMany({ data: dumpData.mockExamGrades });
     if (dumpData.mockExamSummaries?.length) await prisma.mockExamSummary.createMany({ data: dumpData.mockExamSummaries });
 
+    // Restauration des fichiers physiques dans le dossier de la machine hôte
     const extractedMediaDir = path.join(tmpDir, "media");
     if (fs.existsSync(extractedMediaDir)) {
-      const mediaRoot = centerStoragePath(req.centerId);
+      const mediaRoot = centerStoragePath(currentHostCenterId);
       for (const entry of fs.readdirSync(extractedMediaDir)) {
         const target = path.join(mediaRoot, entry);
         if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
@@ -366,9 +501,16 @@ router.post("/backups/restore", verifyJwt, requirePermission("backups.delete"), 
       }
     }
 
+    // Réinitialisation immédiate du cache du tenant
+    resetTenantCache();
+
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    console.log(`[Restauration] Effectuée avec succès depuis : ${filename}`);
-    res.json({ success: true, message: "Base relationnelle, examens blancs et médias restaurés avec succès." });
+    console.log(`[Restauration PRA] Succès depuis "${filename}" vers le centre "${currentHostCenterId}".`);
+
+    res.json({
+      success: true,
+      message: "Base relationnelle et médias restaurés avec succès. La licence de la machine hôte a été conservée.",
+    });
   } catch (err) {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
     next(err);

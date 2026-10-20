@@ -2,7 +2,7 @@
 const { safeDrawImage } = require("./pdfHelpers");
 
 /**
- * 1. EN-TÊTE NATIONAL OFFICIEL BILINGUE ALLONGÉ
+ * 1. EN-TÊTE NATIONAL OFFICIEL BILINGUE ALLONGÉ (Actes d'État, Diplômes, Certificats)
  */
 function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY = 22, customWidth = 539.28, startX = 28) {
   const primaryColor = tmpl?.primaryColor || "#071A2E";
@@ -81,39 +81,63 @@ function drawDynamicBilingualHeader(doc, tmpl, center, logoBuf, sealBuf, startY 
 }
 
 /**
- * 2. EN-TÊTE INTERNE D'ÉTABLISSEMENT NON OFFICIEL
+ * 2. EN-TÊTE INTERNE D'ÉTABLISSEMENT : DISPOSITION CÔTE À CÔTE CENTRÉE (SANS CHEVAUCHEMENT)
+ * Logo à gauche, textes empilés à droite (Titre, Agrément, Contacts), bloc global centré.
  */
-function drawInternalSimpleHeader(doc, tmpl, center, logoBuf, startY = 25, customWidth = 535.28, startX = 30) {
+function drawInternalSimpleHeader(doc, tmpl, center, logoBuf, startY = 16, customWidth = 535.28, startX = 30) {
   const primaryColor = tmpl?.primaryColor || "#071A2E";
   const internalConfig = tmpl?.internalHeader || {};
 
-  const logoSize = 55;
-  if (logoBuf) {
-    safeDrawImage(doc, logoBuf, startX, startY, { fit: [logoSize, logoSize], align: "left" });
-  }
-
-  const textX = logoBuf ? startX + logoSize + 14 : startX;
-  const textW = logoBuf ? customWidth - (logoSize + 14) : customWidth;
+  const logoSize = 48;
+  const gap = 14;
 
   const centerTitle = internalConfig.title || center.name || "CENTRE DE FORMATION PROFESSIONNELLE";
-  doc.fillColor(primaryColor).fontSize(13).font("Helvetica-Bold").text(
-    centerTitle.toUpperCase(),
-    textX, startY + 2, { width: textW }
-  );
-
-  const accredText = internalConfig.accreditation || `ARRÊTÉ D'AGRÉMENT MINEFOP : ${center.registrationNumber || "Autorisé / En cours"} • ${(center.city || "Cameroun").toUpperCase()}`;
-  doc.fillColor("#334155").fontSize(8).font("Helvetica-Bold").text(
-    accredText,
-    textX, startY + 20, { width: textW }
-  );
-
+  const defaultAccred = `ARRÊTÉ D'AGRÉMENT MINEFOP : ${center.registrationNumber || "Autorisé / En cours"} • VILLE : ${(center.city || "Cameroun").toUpperCase()}`;
+  const accredText = internalConfig.accreditation || defaultAccred;
   const defaultContacts = `Tél : ${center.phone || "Non renseigné"}  •  Email : ${center.email || "Non renseigné"}${center.address ? `  •  ${center.address}` : ""}`;
   const contactsText = internalConfig.contacts || defaultContacts;
-  doc.fillColor("#64748B").fontSize(7.5).font("Helvetica").text(
-    contactsText,
-    textX, startY + 34, { width: textW, truncate: true }
+
+  // Mesure des textes
+  doc.fontSize(11.5).font("Helvetica-Bold");
+  const titleW = doc.widthOfString(centerTitle.toUpperCase());
+  doc.fontSize(7.8).font("Helvetica-Bold");
+  const accredW = doc.widthOfString(accredText);
+  doc.fontSize(7.2).font("Helvetica");
+  const contactsW = doc.widthOfString(contactsText);
+
+  // Largeur disponible généreuse avec marge de respiration de sécurité pour éviter tout repli
+  const maxAvailTextW = logoBuf ? customWidth - (logoSize + gap) : customWidth;
+  const naturalTextW = Math.max(titleW, accredW, contactsW) + 20;
+  const textW = Math.min(maxAvailTextW, naturalTextW);
+
+  // Centrage horizontal de l'ensemble du bloc [Logo + Marge + Texte]
+  const totalGroupW = logoBuf ? logoSize + gap + textW : textW;
+  const groupStartX = startX + Math.max(0, (customWidth - totalGroupW) / 2);
+  const textX = logoBuf ? groupStartX + logoSize + gap : groupStartX;
+
+  if (logoBuf) {
+    safeDrawImage(doc, logoBuf, groupStartX, startY, { fit: [logoSize, logoSize], align: "center", valign: "center" });
+  }
+
+  // Ligne 1 : Titre de l'établissement
+  doc.fillColor(primaryColor).fontSize(11.5).font("Helvetica-Bold").text(
+    centerTitle.toUpperCase(),
+    textX, startY + 2, { width: textW, align: "left", lineBreak: false }
   );
 
+  // Ligne 2 : Agrément Ministériel & Ville (sur une seule ligne protégée)
+  doc.fillColor("#334155").fontSize(7.8).font("Helvetica-Bold").text(
+    accredText,
+    textX, startY + 18, { width: textW, align: "left", lineBreak: false }
+  );
+
+  // Ligne 3 : Coordonnées
+  doc.fillColor("#64748B").fontSize(7.2).font("Helvetica").text(
+    contactsText,
+    textX, startY + 31, { width: textW, align: "left", lineBreak: false }
+  );
+
+  // Filet de séparation noble
   const lineY = startY + logoSize + 4;
   doc.moveTo(startX, lineY).lineTo(startX + customWidth, lineY).lineWidth(1).strokeColor(primaryColor).stroke();
 
@@ -121,7 +145,7 @@ function drawInternalSimpleHeader(doc, tmpl, center, logoBuf, startY = 25, custo
 }
 
 /**
- * 3. EN-TÊTE RÉGIONAL DÉLÉGATION MINEFOP (Calcul Dynamique Anti-Chevauchement)
+ * 3. EN-TÊTE RÉGIONAL DÉLÉGATION MINEFOP (Pour Bordereaux d'Examen Blanc Régional)
  */
 function drawRegionalMinefopHeader(doc, config, center, startY = 20, customWidth = 545, startX = 25) {
   const colSideWidth = 230;
@@ -139,24 +163,16 @@ function drawRegionalMinefopHeader(doc, config, center, startY = 20, customWidth
 
   doc.fillColor("#000000").fontSize(6.5).font("Helvetica-Bold");
 
-  // Calcul exact de la hauteur du bloc texte gauche et droit pour éviter les écrasements
   const heightLeft = doc.heightOfString(headerLeft, { width: colSideWidth, lineGap: 1.5 });
   const heightRight = doc.heightOfString(headerRight, { width: colSideWidth, lineGap: 1.5 });
 
   doc.text(headerLeft, startX, startY, { width: colSideWidth, align: "center", lineGap: 1.5 });
   doc.text(headerRight, rightColX, startY, { width: colSideWidth, align: "center", lineGap: 1.5 });
 
-  // On place les contacts 12 points en dessous du texte le plus long
   const contactsY = startY + Math.max(heightLeft, heightRight) + 12;
 
-  // Ligne de séparation fine (Optionnelle mais élégante pour la tutelle)
-  // doc.moveTo(startX + 40, contactsY - 6).lineTo(startX + colSideWidth - 40, contactsY - 6).lineWidth(0.4).strokeColor("#000000").stroke();
-  // doc.moveTo(rightColX + 40, contactsY - 6).lineTo(rightColX + colSideWidth - 40, contactsY - 6).lineWidth(0.4).strokeColor("#000000").stroke();
-
-  // Téléphone (gauche)
   doc.fillColor("#000000").fontSize(6.5).font("Helvetica-Bold").text(`Tél : ${phone}`, startX, contactsY, { width: colSideWidth, align: "center" });
 
-  // Email (droite) : "Email : " en noir et l'adresse en bleu, parfaitement centré dans la colonne droite
   const emailPrefix = "Email : ";
   const prefixW = doc.widthOfString(emailPrefix);
   const emailW = doc.widthOfString(email);
@@ -166,11 +182,9 @@ function drawRegionalMinefopHeader(doc, config, center, startY = 20, customWidth
   doc.fillColor("#000000").text(emailPrefix, emailStartX, contactsY, { continued: true });
   doc.fillColor("#1A73E8").text(email);
 
-  // Date (on réinitialise la couleur à noir)
   const dateY = contactsY + 16;
   doc.fillColor("#000000").fontSize(7).font("Helvetica").text(`${city}, le _______________________`, rightColX, dateY, { width: colSideWidth, align: "right" });
 
-  // On retourne la coordonnée Y finale exacte pour la suite du document
   return dateY + 15;
 }
 

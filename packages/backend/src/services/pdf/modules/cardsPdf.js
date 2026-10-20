@@ -9,9 +9,6 @@ const { centerStoragePath } = require("../../../storage/paths");
 
 const SUPPORTED_BG_EXTS = ["png", "jpg", "jpeg", "webp"];
 
-/**
- * Recherche et résout le buffer binaire de la texture de fond de carte
- */
 function resolveCardTextureBuffer(centerId, tmpl = {}) {
   if (tmpl.cardBgDataUrl && typeof tmpl.cardBgDataUrl === "string") {
     const buf = bufferFromDataUrl(tmpl.cardBgDataUrl);
@@ -57,9 +54,6 @@ function resolveCardTextureBuffer(centerId, tmpl = {}) {
   return null;
 }
 
-/**
- * Dessine la face RECTO de la carte avec mise à l'échelle automatique du nom
- */
 function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) {
   const { center = {}, student = {}, classe = {}, templateConfig: tmpl = {} } = snapshot;
   const logoBuf = bufferFromDataUrl(center.logoDataUrl);
@@ -68,17 +62,20 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
   const themeColor = tmpl.themeColor || "#071A2E";
   const accentColor = tmpl.accentColor || "#18527A";
 
+  // Opacité par défaut à 100% (1.0), réglable de 0 à 1.0
+  const bgOpacity = tmpl.bgTextureOpacity !== undefined ? Number(tmpl.bgTextureOpacity) : 1.0;
+
   const cardW = 243;
   const cardH = 153;
 
   doc.save();
 
-  // 1. Fond ou Texture
   doc.rect(originX, originY, cardW, cardH).fill("#FFFFFF");
-  if (bgBuf) {
+  if (bgBuf && bgOpacity > 0) {
     try {
       doc.save();
       doc.rect(originX, originY, cardW, cardH).clip();
+      doc.opacity(Math.max(0.0, Math.min(1.0, bgOpacity)));
       safeDrawImage(doc, bgBuf, originX, originY, { width: cardW, height: cardH });
       doc.restore();
     } catch {}
@@ -86,7 +83,7 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
 
   doc.rect(originX, originY, cardW, cardH).lineWidth(0.5).strokeColor("#CBD5E1").stroke();
 
-  // 2. Cartouche supérieur officiel
+  // Cartouche supérieur
   const boxX = originX + 7;
   const boxY = originY + 7;
   const boxW = cardW - 14;
@@ -112,17 +109,16 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     headerTextX, boxY + 17.5, { width: headerTextW, characterSpacing: 0.6 }
   );
 
-  // 3. Zone Centrale : Photo 4:4 à gauche
+  // Photo 4:4 à gauche
   const photoX = originX + 11;
   const photoY = originY + 46;
   const photoSize = 54;
   drawStudentAvatar(doc, photoBuf, photoX, photoY, photoSize, photoSize);
 
-  // Zone textuelle à droite de la photo
+  // Texte à droite de la photo
   const infoX = originX + 71;
-  const infoW = 118; // Espace réservé avant le cadre QR Code
+  const infoW = 118;
 
-  // Gestion des noms longs : auto-scaling pour ne jamais déborder sur la filière
   const fullName = `${(student.lastName || "").toUpperCase()} ${student.firstName || ""}`.trim();
   let nameFontSize = 8;
   if (fullName.length > 32) {
@@ -136,19 +132,16 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     infoX, photoY, { width: infoW, height: 11, truncate: true, ellipsis: true }
   );
 
-  // Filière & Spécialité
   doc.fillColor(themeColor).fontSize(6.5).font("Helvetica-Bold").text(
     classe.filiereName || "Formation Professionnelle",
     infoX, photoY + 12, { width: infoW, height: 9, truncate: true }
   );
 
-  // Niveau & Qualification
   doc.fillColor("#334155").fontSize(5.5).font("Helvetica").text(
     `Niveau ${classe.niveauOrder || 1} • Qualification ${classe.programTypeCode || "DQP"}`,
     infoX, photoY + 22, { width: infoW, truncate: true }
   );
 
-  // Date & Lieu de naissance
   const birthDateStr = student.birthDate ? new Date(student.birthDate).toLocaleDateString("fr-FR") : "—";
   const birthPlaceStr = student.birthPlace ? ` à ${student.birthPlace.toUpperCase()}` : "";
   doc.fillColor("#64748B").fontSize(5.2).font("Helvetica").text(
@@ -156,7 +149,6 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     infoX, photoY + 31, { width: infoW, truncate: true }
   );
 
-  // Genre & Téléphone
   const genreStr = student.gender === "F" ? "Féminin" : "Masculin";
   const phoneStr = student.phone ? `Tél : ${student.phone}` : "Tél : non renseigné";
   doc.fillColor("#64748B").fontSize(5.2).font("Helvetica").text(
@@ -164,7 +156,7 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     infoX, photoY + 40, { width: infoW, truncate: true }
   );
 
-  // 4. Zone Inférieure : ID Matricule (SANS CADRE)
+  // ID / Matricule
   const footerY = originY + 110;
 
   doc.fillColor("#64748B").fontSize(5.5).font("Helvetica-Bold").text(
@@ -182,7 +174,7 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     photoX, footerY + 22, { width: 130 }
   );
 
-  // 5. Code QR remonté avec cadre ornemental à bordure interne
+  // QR Code
   const qrSize = 36;
   const qrX = originX + 194;
   const qrY = originY + 92;
@@ -203,7 +195,7 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
     doc.moveTo(outerX, outerY + cornerLen).lineTo(outerX, outerY).lineTo(outerX + cornerLen, outerY).stroke();
     doc.moveTo(outerX + outerSize - cornerLen, outerY).lineTo(outerX + outerSize, outerY).lineTo(outerX + outerSize, outerY + cornerLen).stroke();
     doc.moveTo(outerX, outerY + outerSize - cornerLen).lineTo(outerX, outerY + outerSize).lineTo(outerX + cornerLen, outerY + outerSize).stroke();
-    doc.moveTo(outerX + outerSize - cornerLen, outerY + outerSize).lineTo(outerX + outerSize, outerY + outerSize).lineTo(outerX + outerSize, outerY + outerSize - cornerLen).stroke();
+    doc.moveTo(outerX + outerSize - cornerLen, outerY + outerSize).lineTo(outerX + outerSize, outerY + outerSize).lineTo(outerX + outerSize, outerY + cornerLen).stroke();
     doc.restore();
 
     safeDrawImage(doc, qrBuf, qrX, qrY, { width: qrSize, height: qrSize });
@@ -217,27 +209,25 @@ function renderCardRecto(doc, snapshot, qrBuf, bgBuf, originX = 0, originY = 0) 
   doc.restore();
 }
 
-/**
- * Dessine la face VERSO de la carte avec signature choisie
- */
 function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
   const { center = {}, classe = {}, templateConfig: tmpl = {} } = snapshot;
 
-  // Sélection dynamique du signataire
   const chosenRoleKey = tmpl.signatoryRoleKey || "directeur";
   const sigBuf = bufferFromDataUrl(center.signatures?.[chosenRoleKey] || center.signatures?.directeur);
 
   const themeColor = tmpl.themeColor || "#071A2E";
+  const bgOpacity = tmpl.bgTextureOpacity !== undefined ? Number(tmpl.bgTextureOpacity) : 1.0;
   const cardW = 243;
   const cardH = 153;
 
   doc.save();
 
   doc.rect(originX, originY, cardW, cardH).fill("#FAFAFA");
-  if (bgBuf) {
+  if (bgBuf && bgOpacity > 0) {
     try {
       doc.save();
       doc.rect(originX, originY, cardW, cardH).clip();
+      doc.opacity(Math.max(0.0, Math.min(1.0, bgOpacity)));
       safeDrawImage(doc, bgBuf, originX, originY, { width: cardW, height: cardH });
       doc.restore();
     } catch {}
@@ -247,7 +237,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
   const marginX = originX + 10;
   const contentW = cardW - 20;
 
-  // 1. Message de bienvenue
   const welcomeText = tmpl.welcomeMessage || "Bienvenue au sein de notre centre. L'excellence et la rigueur au service de votre avenir professionnel.";
   doc.fillColor(themeColor).fontSize(5.5).font("Helvetica-BoldOblique").text(
     welcomeText,
@@ -256,7 +245,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
 
   doc.moveTo(marginX, originY + 24).lineTo(marginX + contentW, originY + 24).lineWidth(0.4).strokeColor("#CBD5E1").stroke();
 
-  // 2. Règles d'utilisation
   const rulesText = tmpl.termsOfUse || "Cette carte est strictement personnelle et demeure la propriété exclusive de l'établissement. Sa présentation est obligatoire pour l'accès aux cours, ateliers et examens. En cas de perte, aviser immédiatement la direction.";
   doc.fillColor("#475569").fontSize(4.8).font("Helvetica").text(
     rulesText,
@@ -265,7 +253,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
 
   doc.moveTo(marginX, originY + 54).lineTo(marginX + contentW, originY + 54).lineWidth(0.4).strokeColor("#CBD5E1").stroke();
 
-  // 3. Contacts
   doc.fillColor(themeColor).fontSize(5.5).font("Helvetica-Bold").text("COORDONNÉES OFFICIELLES :", marginX, originY + 57);
 
   const phoneStr = center.phone ? `Tél : ${center.phone}` : "Tél : non renseigné";
@@ -283,7 +270,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
 
   doc.moveTo(marginX, originY + 85).lineTo(marginX + contentW, originY + 85).lineWidth(0.4).strokeColor("#CBD5E1").stroke();
 
-  // 4. Validation administrative
   const adminY = originY + 88;
 
   doc.fillColor("#64748B").fontSize(5).font("Helvetica").text(
@@ -311,7 +297,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
     safeDrawImage(doc, sigBuf, sigBoxX + (sigBoxW - 55) / 2, adminY + 9, { fit: [55, 22], align: "center" });
   }
 
-  // 5. Pied de page
   doc.rect(originX, originY + 138, cardW, 15).fill(themeColor);
   doc.fillColor("#FFFFFF").fontSize(4.8).font("Helvetica-Bold").text(
     "TITRE OFFICIEL D'IDENTIFICATION ACADÉMIQUE",
@@ -325,9 +310,6 @@ function renderCardVerso(doc, snapshot, bgBuf, originX = 0, originY = 0) {
   doc.restore();
 }
 
-/**
- * Génère la carte d'apprenant individuelle CR80
- */
 async function generateStudentCardPdf(snapshot, offlinePayload, outputPath) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -362,9 +344,6 @@ async function generateStudentCardPdf(snapshot, offlinePayload, outputPath) {
   });
 }
 
-/**
- * Compile une classe en planches A4 Duplex de 8 cartes
- */
 async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputPath) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -416,7 +395,7 @@ async function generateBatchCardsSheetPdf(snapshotsList, qrPayloadsList, outputP
           renderCardRecto(doc, snap, qrBuf, bgBuf, x, y);
         }
 
-        // Planche VERSO (Inversion miroir)
+        // Planche VERSO
         doc.addPage({ size: "A4", margins: { top: 20, bottom: 20, left: 20, right: 20 } });
 
         for (let i = 0; i < pageItems.length; i++) {

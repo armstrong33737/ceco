@@ -1,15 +1,16 @@
+// packages/backend/src/middleware/tenantResolver.js
 const prisma = require("../prismaClient");
-
-// ------------------------------------------------------------------
-// Principe : req.centerId est TOUJOURS peuplé par ce middleware,
-// jamais lu ailleurs à partir d'une source différente.
-// Le reste de l'application (routes, repositories) ne sait jamais
-// si elle tourne en mode local ou en mode SaaS.
-// ------------------------------------------------------------------
 
 let cachedLocalCenterId = null;
 
-// Mode local (V0 -> V7) : un seul centre, résolu une fois puis mis en cache.
+/**
+ * Réinitialise le cache en mémoire (indispensable après une restauration de base de données)
+ */
+function resetTenantCache() {
+  cachedLocalCenterId = null;
+}
+
+// Mode local : un seul centre, résolu une fois puis mis en cache
 async function tenantResolverLocal(req, res, next) {
   try {
     if (!cachedLocalCenterId) {
@@ -28,7 +29,7 @@ async function tenantResolverLocal(req, res, next) {
   }
 }
 
-// Mode SaaS (V8+) : résolution dynamique par sous-domaine.
+// Mode SaaS (V8+) : résolution dynamique par sous-domaine
 async function tenantResolverSaas(req, res, next) {
   try {
     const host = req.hostname || "";
@@ -48,4 +49,9 @@ function buildTenantResolver(mode) {
   return mode === "saas" ? tenantResolverSaas : tenantResolverLocal;
 }
 
-module.exports = { buildTenantResolver, tenantResolverLocal, tenantResolverSaas };
+module.exports = {
+  buildTenantResolver,
+  tenantResolverLocal,
+  tenantResolverSaas,
+  resetTenantCache,
+};

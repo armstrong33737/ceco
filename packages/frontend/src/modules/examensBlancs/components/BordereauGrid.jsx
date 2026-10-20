@@ -14,6 +14,7 @@ import {
 
 export default function BordereauGrid({
   currentClasseExam,
+  isSessionLocked = false,
   inputGrades,
   onScoreChange,
   onSaveGrades,
@@ -30,6 +31,8 @@ export default function BordereauGrid({
   onToggleCandidateEligibility,
 }) {
   if (!currentClasseExam) return null;
+
+  const isLocked = currentClasseExam.isLocked || isSessionLocked;
 
   const computeRow = (studentId) => {
     let sumPts = 0;
@@ -70,17 +73,19 @@ export default function BordereauGrid({
               Bordereau : {currentClasseExam.classe.label}
             </h3>
             <span className="text-caption text-ink-muted">({currentClasseExam.subjects.length} épreuves)</span>
-            {currentClasseExam.isLocked && (
-              <Badge variant="warning">🔒 Verrouillé</Badge>
+            {isLocked && (
+              <Badge variant="warning">
+                {isSessionLocked ? "🔒 Session Clôturée" : "🔒 Bordereau Verrouillé"}
+              </Badge>
             )}
           </div>
           <p className="text-caption text-ink-muted mt-0.5">
-            Notes de 0 à 20 • Tapez <strong>« M »</strong> pour absence. Utilisez les boutons d'épreuve pour l'import CSV de notes.
+            Notes de 0 à 20 • Tapez <strong>« M »</strong> pour absence. Utilisez les boutons d'épreuve pour l'import CSV.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {!currentClasseExam.isLocked && (
+          {!isLocked && (
             <Button variant="secondary" size="sm" icon="add" onClick={onAddSubject}>
               Ajouter Épreuve
             </Button>
@@ -94,9 +99,11 @@ export default function BordereauGrid({
             Pack Émargements
           </Button>
 
-          <Button variant="secondary" size="sm" icon={currentClasseExam.isLocked ? "lock_open" : "lock"} onClick={onToggleLock}>
-            {currentClasseExam.isLocked ? "Déverrouiller" : "Verrouiller"}
-          </Button>
+          {!isSessionLocked && (
+            <Button variant="secondary" size="sm" icon={currentClasseExam.isLocked ? "lock_open" : "lock"} onClick={onToggleLock}>
+              {currentClasseExam.isLocked ? "Déverrouiller" : "Verrouiller"}
+            </Button>
+          )}
 
           <Button variant="primary" size="sm" icon="print" onClick={onPrintOfficial}>
             Imprimer Bordereau MINEFOP
@@ -121,14 +128,16 @@ export default function BordereauGrid({
                       {subj.mockSubject.code} (C{subj.coefficient})
                     </span>
                     <div className="flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => onOpenImportCsvModal(subj)}
-                        className="text-ink-muted hover:text-brand-900 p-0.5"
-                        title="Importer notes CSV pour cette épreuve (Matricule;Note)"
-                      >
-                        <Icon name="upload_file" className="text-[14px]" />
-                      </button>
+                      {!isLocked && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenImportCsvModal(subj)}
+                          className="text-ink-muted hover:text-brand-900 p-0.5"
+                          title="Importer notes CSV pour cette épreuve (Matricule;Note)"
+                        >
+                          <Icon name="upload_file" className="text-[14px]" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => onPrintSingleExaminer(subj.id, subj.mockSubject.code)}
@@ -137,7 +146,7 @@ export default function BordereauGrid({
                       >
                         <Icon name="print" className="text-[14px]" />
                       </button>
-                      {!currentClasseExam.isLocked && (
+                      {!isLocked && (
                         <>
                           <button
                             type="button"
@@ -193,14 +202,14 @@ export default function BordereauGrid({
                   <TableCell align="center">
                     <button
                       type="button"
-                      disabled={currentClasseExam.isLocked}
+                      disabled={isLocked}
                       onClick={() => onToggleCandidateEligibility(st.id, isDisqualified ? "RETENU" : "DISQUALIFIE")}
                       className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${
                         isDisqualified
                           ? "bg-error-subtle text-error border-error/30"
                           : "bg-success-subtle text-success border-success/30"
                       }`}
-                      title={isDisqualified ? "Candidat exclu du bordereau officiel. Cliquer pour retenir." : "Candidat retenu. Cliquer pour disqualifier."}
+                      title={isDisqualified ? "Candidat exclu du bordereau. Cliquer pour retenir." : "Candidat retenu. Cliquer pour disqualifier."}
                     >
                       {isDisqualified ? "Disqualifié" : "Retenu"}
                     </button>
@@ -216,7 +225,7 @@ export default function BordereauGrid({
                         <div className="grid grid-cols-2 gap-1 items-center">
                           <input
                             type="text"
-                            disabled={currentClasseExam.isLocked || isDisqualified}
+                            disabled={isLocked || isDisqualified}
                             value={cell.score}
                             onChange={(e) => onScoreChange(st.id, subj.id, e.target.value)}
                             placeholder="—"
@@ -245,7 +254,7 @@ export default function BordereauGrid({
       </div>
 
       <div className="p-4 border-t border-border bg-[#FAFBFD] dark:bg-[#07111D] dark:border-border-dark flex justify-end">
-        <Button variant="primary" onClick={onSaveGrades} isLoading={savingGrades} disabled={currentClasseExam.isLocked}>
+        <Button variant="primary" onClick={onSaveGrades} isLoading={savingGrades} disabled={isLocked}>
           Enregistrer les Notes du Bordereau
         </Button>
       </div>

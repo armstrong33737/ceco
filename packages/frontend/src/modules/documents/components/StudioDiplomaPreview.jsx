@@ -8,19 +8,17 @@ export default function StudioDiplomaPreview({ config, center, logoUrl, diplomaB
 
   return (
     <div className="w-[520px] h-[368px] bg-white rounded border border-slate-300 shadow-2xl p-4 flex flex-col justify-between text-[7px] leading-tight select-none relative overflow-hidden">
-      {/* 1. Image de fond pleine page OU Ruban/Médaille vectoriel de repli */}
+      {/* 1. Image de fond pleine page : TOUJOURS 100% NETTE */}
       {diplomaBgUrl ? (
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-100">
           <img src={diplomaBgUrl} alt="Fond Attestation" className="w-full h-full object-cover" />
         </div>
       ) : (
         <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-          {/* Ruban vertical bleu nuit */}
           <div className="absolute left-[38px] top-0 bottom-0 w-[58px] bg-[#071A2E] flex flex-col justify-between items-center shadow-md">
             <div className="w-[2px] h-full bg-[#0B2742] absolute left-1.5" />
             <div className="w-[2px] h-full bg-[#0B2742] absolute right-1.5" />
           </div>
-          {/* Sceau / Médaille argentée */}
           <div className="absolute left-[30px] top-[145px] w-[74px] h-[74px] rounded-full bg-slate-200 border-2 border-slate-300 flex items-center justify-center shadow-xl">
             <div className="w-[60px] h-[60px] rounded-full bg-slate-100 border border-slate-400 flex items-center justify-center">
               <Icon name="school" className="text-3xl text-[#071A2E]" />
@@ -29,7 +27,7 @@ export default function StudioDiplomaPreview({ config, center, logoUrl, diplomaB
         </div>
       )}
 
-      {/* 2. Zone de Contenu : Décalée à droite (pl-40) pour libérer l'espace du ruban et de la médaille */}
+      {/* 2. Zone de Contenu : Décalée à droite (pl-40) */}
       <div className="relative z-10 pl-40 pr-4 h-full flex flex-col justify-between text-center">
         {/* En-tête : Logo & Nom Établissement entouré de deux filets */}
         <div className="space-y-1 pt-0.5">
@@ -61,7 +59,7 @@ export default function StudioDiplomaPreview({ config, center, logoUrl, diplomaB
           <div className="w-9 h-[2px] mx-auto rounded mt-0.5" style={{ backgroundColor: accentColor }} />
         </div>
 
-        {/* Formule Cursive & Nom du Lauréat Imposant */}
+        {/* Formule Cursive & Nom du Lauréat */}
         <div className="space-y-0.5">
           <span
             className="text-[9.5px] text-slate-700 block italic"
@@ -98,14 +96,13 @@ export default function StudioDiplomaPreview({ config, center, logoUrl, diplomaB
           </div>
         </div>
 
-        {/* Date & Signature Cursive Réaliste */}
+        {/* Date & Signature */}
         <div className="space-y-0.5">
           <span className="text-[7.5px] text-slate-600 block">
             Fait à {center?.city || "Bafoussam"}, le {new Date().toLocaleDateString("fr-FR")}
           </span>
 
           <div className="w-32 mx-auto">
-            {/* Paraphe cursif stylisé */}
             <div className="h-7 flex items-center justify-center">
               <svg width="60" height="24" viewBox="0 0 60 24" fill="none" className="text-slate-900 stroke-current">
                 <path d="M5 16C12 4 18 22 26 10C30 3 38 4 45 12C50 18 35 15 55 14" strokeWidth="1.6" strokeLinecap="round" />
@@ -118,7 +115,7 @@ export default function StudioDiplomaPreview({ config, center, logoUrl, diplomaB
           </div>
         </div>
 
-        {/* Pied de page : N° Attestation & Agrément (SANS CODE QR) */}
+        {/* Pied de page */}
         <div className="flex justify-between items-center text-[6.5px] text-slate-500 pt-0.5 border-t border-slate-200">
           <span className="font-bold text-slate-700">N° ATTESTATION : CEFOPIA-GP26-0001</span>
           <span>Agrément MINEFOP : {center?.registrationNumber || "Autorisé"}</span>

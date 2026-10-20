@@ -7,6 +7,7 @@ const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree } = require("../storage/paths");
 const { getDefaultSealFilePath, ensureDefaultSealOnDisk } = require("../storage/defaultSeal");
+const { findDefaultAssetBuffer } = require("../services/pdf/common/pdfHelpers");
 
 const router = express.Router();
 
@@ -32,36 +33,7 @@ const DEFAULT_SIGNATURE_ROLES = [
 ];
 
 function brandingDir(centerId) {
-  const primaryDir = centerStoragePath(centerId, "settings/branding");
-  if (fs.existsSync(primaryDir)) {
-    try {
-      const files = fs.readdirSync(primaryDir);
-      if (files.length > 0) return primaryDir;
-    } catch {}
-  }
-
-  const candidateAssetDirs = [
-    path.join(__dirname, "../../assets"),
-    path.join(process.cwd(), "packages/backend/assets"),
-    path.join(process.cwd(), "packages/desktop/assets"),
-    path.join(process.cwd(), "assets"),
-    ...(process.resourcesPath ? [
-      path.join(process.resourcesPath, "backend/assets"),
-      path.join(process.resourcesPath, "desktop/assets"),
-      path.join(process.resourcesPath, "assets"),
-    ] : []),
-  ];
-
-  for (const dir of candidateAssetDirs) {
-    if (fs.existsSync(dir)) {
-      try {
-        const files = fs.readdirSync(dir);
-        if (files.length > 0) return dir;
-      } catch {}
-    }
-  }
-
-  return primaryDir;
+  return centerStoragePath(centerId, "settings/branding");
 }
 
 function signaturesDir(centerId) {
@@ -178,28 +150,30 @@ router.get("/center/logo", verifyJwt, async (req, res, next) => {
   }
 });
 
-// 3. Texture de fond de la carte (Streaming)
+// 3. Texture de fond de la carte (Toujours disponible avec fallback asset)
 router.get("/center/card-bg", verifyJwt, async (req, res, next) => {
   try {
     const dir = brandingDir(req.centerId);
-    let filePath = null;
-    let ext = "png";
-
     if (fs.existsSync(dir)) {
       const file = fs.readdirSync(dir).find((f) => f.startsWith("card_bg."));
       if (file) {
-        filePath = path.join(dir, file);
-        ext = path.extname(file).replace(".", "").toLowerCase();
+        const filePath = path.join(dir, file);
+        const ext = path.extname(file).replace(".", "").toLowerCase();
+        res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/jpeg");
+        res.setHeader("Cache-Control", "no-cache");
+        return fs.createReadStream(filePath).pipe(res);
       }
     }
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "Aucune texture de carte disponible." });
+    // Repli garanti sur l'asset par défaut card_bg.jpg
+    const buffer = findDefaultAssetBuffer(["card_bg", "card_background"]);
+    if (buffer) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.end(buffer);
     }
 
-    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
-    res.setHeader("Cache-Control", "no-cache");
-    fs.createReadStream(filePath).pipe(res);
+    res.status(404).json({ error: "Aucune texture de carte disponible." });
   } catch (err) {
     next(err);
   }
@@ -233,13 +207,10 @@ router.post("/center/card-bg", verifyJwt, requirePermission("center.update"), as
   }
 });
 
-// 4. Texture de fond du Relevé Annuel (recap_bg)
+// 4. Texture de fond du Relevé Annuel (Toujours disponible avec fallback asset recap_bg.jpg)
 router.get("/center/transcript-bg", verifyJwt, async (req, res, next) => {
   try {
     const dir = brandingDir(req.centerId);
-    let filePath = null;
-    let ext = "png";
-
     if (fs.existsSync(dir)) {
       const files = fs.readdirSync(dir);
       const foundFile =
@@ -249,18 +220,23 @@ router.get("/center/transcript-bg", verifyJwt, async (req, res, next) => {
         files.find((f) => f.startsWith("card_bg."));
 
       if (foundFile) {
-        filePath = path.join(dir, foundFile);
-        ext = path.extname(foundFile).replace(".", "").toLowerCase();
+        const filePath = path.join(dir, foundFile);
+        const ext = path.extname(foundFile).replace(".", "").toLowerCase();
+        res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/jpeg");
+        res.setHeader("Cache-Control", "no-cache");
+        return fs.createReadStream(filePath).pipe(res);
       }
     }
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "Aucun fond pour relevé disponible." });
+    // Repli garanti sur recap_bg.jpg
+    const buffer = findDefaultAssetBuffer(["recap_bg", "transcript_bg", "card_bg"]);
+    if (buffer) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.end(buffer);
     }
 
-    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
-    res.setHeader("Cache-Control", "no-cache");
-    fs.createReadStream(filePath).pipe(res);
+    res.status(404).json({ error: "Aucun fond pour relevé disponible." });
   } catch (err) {
     next(err);
   }
@@ -294,13 +270,10 @@ router.post("/center/transcript-bg", verifyJwt, requirePermission("center.update
   }
 });
 
-// 5. NOUVELLE ROUTE : Texture de fond de l'Attestation de Fin de Formation (attestation_bg / diplome_bg)
+// 5. Fond de l'Attestation de Fin de Formation (Toujours disponible avec fallback asset attestation_bg.jpg)
 router.get("/center/diploma-bg", verifyJwt, async (req, res, next) => {
   try {
     const dir = brandingDir(req.centerId);
-    let filePath = null;
-    let ext = "png";
-
     if (fs.existsSync(dir)) {
       const files = fs.readdirSync(dir);
       const foundFile =
@@ -310,18 +283,23 @@ router.get("/center/diploma-bg", verifyJwt, async (req, res, next) => {
         files.find((f) => f.startsWith("card_bg."));
 
       if (foundFile) {
-        filePath = path.join(dir, foundFile);
-        ext = path.extname(foundFile).replace(".", "").toLowerCase();
+        const filePath = path.join(dir, foundFile);
+        const ext = path.extname(foundFile).replace(".", "").toLowerCase();
+        res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/jpeg");
+        res.setHeader("Cache-Control", "no-cache");
+        return fs.createReadStream(filePath).pipe(res);
       }
     }
 
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "Aucun fond pour attestation disponible." });
+    // Repli garanti sur attestation_bg.jpg
+    const buffer = findDefaultAssetBuffer(["attestation_bg", "diplome_bg", "card_bg"]);
+    if (buffer) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.end(buffer);
     }
 
-    res.setHeader("Content-Type", EXT_TO_MIME[ext] || "image/png");
-    res.setHeader("Cache-Control", "no-cache");
-    fs.createReadStream(filePath).pipe(res);
+    res.status(404).json({ error: "Aucun fond pour attestation disponible." });
   } catch (err) {
     next(err);
   }

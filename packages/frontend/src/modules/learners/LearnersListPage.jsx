@@ -22,14 +22,12 @@ import ConfirmDialog from "../../design-system/overlays/ConfirmDialog";
 import DocumentViewerModal from "../documents/components/DocumentViewerModal";
 import Icon from "../../components/Icon";
 
-// Composants métier
 import LearnerDrawer from "./components/LearnerDrawer";
 import LearnerFormModal from "./components/LearnerFormModal";
 import WebcamCaptureModal from "./components/WebcamCaptureModal";
 import CsvImportModal from "./components/CsvImportModal";
 import BatchCardsModal from "./components/BatchCardsModal";
 
-// Utilitaires de sécurité anti-crash pour les dates
 function safeFormatDate(dateVal) {
   if (!dateVal) return "—";
   const d = new Date(dateVal);
@@ -44,7 +42,7 @@ function StudentAvatar({ student }) {
 
   if (photoUrl && !hasError) {
     return (
-      <div className="w-9 h-9 rounded-[2px] overflow-hidden bg-surface border border-border flex-shrink-0 shadow-inner dark:border-border-dark">
+      <div className="w-8 h-8 rounded-[2px] overflow-hidden bg-surface border border-border flex-shrink-0 shadow-inner dark:border-border-dark">
         <img
           src={photoUrl}
           alt={`${student?.firstName || ""} ${student?.lastName || ""}`}
@@ -58,7 +56,7 @@ function StudentAvatar({ student }) {
   const initials = `${student?.lastName?.charAt(0) || ""}${student?.firstName?.charAt(0) || ""}`.toUpperCase() || "ST";
 
   return (
-    <div className="w-9 h-9 rounded-[2px] bg-brand-900/10 border border-brand-900/20 text-brand-900 font-bold text-caption flex items-center justify-center flex-shrink-0 select-none dark:bg-brand-500/20 dark:text-brand-500 dark:border-brand-500/30">
+    <div className="w-8 h-8 rounded-[2px] bg-brand-900/10 border border-brand-900/20 text-brand-900 font-bold text-caption flex items-center justify-center flex-shrink-0 select-none dark:bg-brand-500/20 dark:text-brand-500 dark:border-brand-500/30">
       {initials}
     </div>
   );
@@ -82,7 +80,7 @@ export default function LearnersListPage() {
   const [selectedStatus, setSelectedStatus] = useState("");
   const [search, setSearch] = useState("");
 
-  // Modales & Tiroir d'Inspection
+  // Modales
   const [inspectStudent, setInspectStudent] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
@@ -111,7 +109,6 @@ export default function LearnersListPage() {
   const [batchForm, setBatchForm] = useState({ classeId: "", type: "CARTE_ETUDIANT" });
   const [generatingDoc, setGeneratingDoc] = useState(false);
 
-  // Classes filtrées selon la session et la filière
   const availableClasses = useMemo(() => {
     return classes.filter((c) => {
       const matchYear = !selectedYearId || c.academicYearId === selectedYearId;
@@ -120,7 +117,6 @@ export default function LearnersListPage() {
     });
   }, [classes, selectedYearId, selectedFiliereId]);
 
-  // CORRECTION CRITIQUE 1 : Réinitialisation automatique de la classe si elle n'appartient plus à la session choisie
   useEffect(() => {
     if (selectedClasseId && !availableClasses.some((c) => c.id === selectedClasseId)) {
       setSelectedClasseId("");
@@ -214,15 +210,20 @@ export default function LearnersListPage() {
     }
   }
 
-  async function confirmArchive() {
+  // SUPPRESSION INTELLIGENTE : DÉTECTION HARD DELETE VS ARCHIVAGE
+  async function confirmDeleteOrArchive() {
     if (!deleteTarget) return;
     try {
-      await apiFetch(`/students/${deleteTarget.id}`, { method: "DELETE" });
+      const res = await apiFetch(`/students/${deleteTarget.id}`, { method: "DELETE" });
       setDeleteTarget(null);
-      showToast(`Le dossier de ${deleteTarget.firstName} ${deleteTarget.lastName} a été archivé.`, "info");
+      const isHardDeleted = res?.action === "DELETED";
+      showToast(
+        res?.message || (isHardDeleted ? "Dossier définitivement supprimé." : "Dossier archivé."),
+        isHardDeleted ? "success" : "info"
+      );
       await loadData();
     } catch (err) {
-      showToast(err.message || "Impossible d'archiver ce dossier.", "error");
+      showToast(err.message || "Impossible de traiter ce dossier.", "error");
     }
   }
 
@@ -369,12 +370,30 @@ export default function LearnersListPage() {
     }
   }
 
+  function handleOpenEditModal(s) {
+    setEditingStudent(s);
+    setEditForm({
+      firstName: s.firstName || "",
+      lastName: s.lastName || "",
+      gender: s.gender || "M",
+      birthDate: s.birthDate ? new Date(s.birthDate).toISOString().split("T")[0] : "",
+      birthPlace: s.birthPlace || "",
+      phone: s.phone || "",
+      guardianName: s.guardianName || "",
+      guardianPhone: s.guardianPhone || "",
+      entryDiploma: s.entryDiploma || "BEPC",
+      matricule: s.matricule,
+      photoDataUrl: null,
+    });
+    setPhotoPreview(s.photoPath ? `${API_BASE}/students/${s.id}/photo?token=${getToken()}` : null);
+  }
+
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
-        contextBadge={<Badge variant="brand">Scolarité • Registre Actif</Badge>}
+        contextBadge={<Badge variant="brand">Scolarité • Registre des Apprenants</Badge>}
         title="Gestion des Apprenants"
-        subtitle="Dossiers individuels, cartes d'identité sécurisées, attestations et tirage par classe"
+        subtitle="Dossiers académiques, cartes badges scellées et tirages groupés par classe"
         actions={
           <>
             <Button
@@ -424,10 +443,9 @@ export default function LearnersListPage() {
         }
       />
 
-      {/* Barre de Filtres Combinés */}
       <StructuredPanel
         title="Filtres Pédagogiques &amp; Recherche"
-        subtitle="Affinez l'affichage des dossiers par session, filière et statut"
+        subtitle="Affinez l'affichage des dossiers par session, filière et classe"
         icon="filter_alt"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
@@ -436,7 +454,7 @@ export default function LearnersListPage() {
             value={selectedYearId}
             onChange={(e) => {
               setSelectedYearId(e.target.value);
-              setSelectedClasseId(""); // CORRECTION CRITIQUE : Réinitialise la classe au changement de session
+              setSelectedClasseId("");
               setPage(1);
             }}
           >
@@ -467,7 +485,6 @@ export default function LearnersListPage() {
         </div>
       </StructuredPanel>
 
-      {/* Grille de Données Dense (Dense Data Grid) */}
       <div className="rounded bg-surface border border-border shadow-xs overflow-hidden dark:bg-surface-dark dark:border-border-dark">
         {loading && !paginationMeta ? (
           <p className="p-8 text-caption text-ink-muted text-center">Chargement des apprenants...</p>
@@ -484,14 +501,13 @@ export default function LearnersListPage() {
                 <TableHeaderCell className="w-28">Matricule</TableHeaderCell>
                 <TableHeaderCell>Apprenant</TableHeaderCell>
                 <TableHeaderCell>Classe &amp; Cohorte</TableHeaderCell>
-                <TableHeaderCell>Tuteur / Urgence</TableHeaderCell>
-                <TableHeaderCell className="w-28">Statut</TableHeaderCell>
-                <TableHeaderCell align="right">Actions</TableHeaderCell>
+                <TableHeaderCell>Tuteur / Contact</TableHeaderCell>
+                <TableHeaderCell className="w-24 text-center">Statut</TableHeaderCell>
+                <TableHeaderCell align="right" className="w-44">Actions</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {students.map((s) => {
-                // CORRECTION CRITIQUE 2 : Résolution contextuelle et sécurisée de l'inscription
                 const currentInsc = (selectedYearId || selectedClasseId)
                   ? s.inscriptions?.find((i) => (!selectedYearId || i.academicYearId === selectedYearId) && (!selectedClasseId || i.classeId === selectedClasseId)) || s.inscriptions?.[0]
                   : s.inscriptions?.[0];
@@ -507,12 +523,12 @@ export default function LearnersListPage() {
                     </TableCell>
 
                     <TableCell>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
                         <StudentAvatar student={s} />
                         <div>
                           <div className="font-semibold text-ink-primary dark:text-white">{s.lastName} {s.firstName}</div>
-                          <div className="text-caption text-ink-muted">
-                            {s.gender === "F" ? "Féminin" : "Masculin"} • {safeFormatDate(s.birthDate)}
+                          <div className="text-[11px] text-ink-muted font-mono">
+                            {s.gender === "F" ? "Féminin" : "Masculin"} • Né(e) le {safeFormatDate(s.birthDate)}
                           </div>
                         </div>
                       </div>
@@ -525,45 +541,27 @@ export default function LearnersListPage() {
 
                     <TableCell>
                       <div>
-                        <div className="font-medium text-ink-primary dark:text-white">{s.guardianName || "—"}</div>
-                        <div className="text-caption text-ink-muted font-mono">{s.guardianPhone || s.phone || "—"}</div>
+                        <div className="font-medium text-ink-primary dark:text-white">{s.guardianName || s.phone || "—"}</div>
+                        <div className="text-caption text-ink-muted font-mono">{s.guardianPhone || "—"}</div>
                       </div>
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell align="center">
                       <Badge variant={currentInsc?.status === "diplome" || currentInsc?.status === "admis" ? "success" : currentInsc?.status === "redouble" ? "error" : "info"} withDot>
                         {currentInsc?.status || "en_cours"}
                       </Badge>
                     </TableCell>
 
-                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1.5">
+                    <TableCell align="right">
+                      <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="secondary"
                           size="sm"
-                          icon="badge"
-                          onClick={() => handleGenerateSingle(s, "CARTE_ETUDIANT")}
-                          disabled={generatingDoc}
-                          title="Carte Badge CR80"
-                        >
-                          Carte
-                        </Button>
-
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          icon="verified"
-                          onClick={() => handleGenerateSingle(s, "ATTESTATION_INSCRIPTION")}
-                          disabled={generatingDoc}
-                          title="Certificat de scolarité"
-                        >
-                          Certificat
-                        </Button>
-
-                        <Button
-                          variant="tertiary"
-                          size="sm"
-                          onClick={() => setInspectStudent(s)}
+                          icon="visibility"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setInspectStudent(s);
+                          }}
                         >
                           Dossier
                         </Button>
@@ -571,22 +569,10 @@ export default function LearnersListPage() {
                         <Button
                           variant="tertiary"
                           size="sm"
-                          onClick={() => {
-                            setEditingStudent(s);
-                            setEditForm({
-                              firstName: s.firstName || "",
-                              lastName: s.lastName || "",
-                              gender: s.gender || "M",
-                              birthDate: s.birthDate ? new Date(s.birthDate).toISOString().split("T")[0] : "",
-                              birthPlace: s.birthPlace || "",
-                              phone: s.phone || "",
-                              guardianName: s.guardianName || "",
-                              guardianPhone: s.guardianPhone || "",
-                              entryDiploma: s.entryDiploma || "BEPC",
-                              matricule: s.matricule,
-                              photoDataUrl: null,
-                            });
-                            setPhotoPreview(s.photoPath ? `${API_BASE}/students/${s.id}/photo?token=${getToken()}` : null);
+                          icon="edit"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEditModal(s);
                           }}
                         >
                           Éditer
@@ -595,10 +581,13 @@ export default function LearnersListPage() {
                         <Button
                           variant="tertiary"
                           size="sm"
-                          icon="delete"
+                          icon="archive"
                           className="text-error hover:bg-error-subtle dark:hover:bg-error-subtle-dark"
-                          onClick={() => setDeleteTarget(s)}
-                          title="Archiver ce dossier"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(s);
+                          }}
+                          title="Supprimer ou archiver ce dossier"
                         />
                       </div>
                     </TableCell>
@@ -616,32 +605,15 @@ export default function LearnersListPage() {
         onLimitChange={(newLimit) => { setLimit(newLimit); setPage(1); }}
       />
 
-      {/* TIROIR LATÉRAL D'INSPECTION (LearnerDrawer) */}
+      {/* TIROIR D'INSPECTION (Centralise les actes : cartes, certificats, fiche) */}
       <LearnerDrawer
         isOpen={Boolean(inspectStudent)}
         onClose={() => setInspectStudent(null)}
         student={inspectStudent}
-        onEdit={(st) => {
-          setEditingStudent(st);
-          setEditForm({
-            firstName: st.firstName || "",
-            lastName: st.lastName || "",
-            gender: st.gender || "M",
-            birthDate: st.birthDate ? new Date(st.birthDate).toISOString().split("T")[0] : "",
-            birthPlace: st.birthPlace || "",
-            phone: st.phone || "",
-            guardianName: st.guardianName || "",
-            guardianPhone: st.guardianPhone || "",
-            entryDiploma: st.entryDiploma || "BEPC",
-            matricule: st.matricule,
-            photoDataUrl: null,
-          });
-          setPhotoPreview(st.photoPath ? `${API_BASE}/students/${st.id}/photo?token=${getToken()}` : null);
-        }}
+        onEdit={(st) => handleOpenEditModal(st)}
         onGenerateDoc={handleGenerateSingle}
       />
 
-      {/* Modale d'Inscription / Édition */}
       <LearnerFormModal
         isOpen={showCreate || Boolean(editingStudent)}
         onClose={() => { setShowCreate(false); setEditingStudent(null); }}
@@ -658,7 +630,6 @@ export default function LearnersListPage() {
         onOpenWebcam={() => setShowWebcam(true)}
       />
 
-      {/* Modale Capture Webcam */}
       <WebcamCaptureModal
         isOpen={showWebcam}
         onClose={() => setShowWebcam(false)}
@@ -669,7 +640,6 @@ export default function LearnersListPage() {
         }}
       />
 
-      {/* Modale Import CSV */}
       <CsvImportModal
         isOpen={showImport}
         onClose={() => setShowImport(false)}
@@ -685,7 +655,6 @@ export default function LearnersListPage() {
         error={modalError}
       />
 
-      {/* Modale Planches Badges A4 */}
       <BatchCardsModal
         isOpen={batchModal}
         onClose={() => setBatchModal(false)}
@@ -696,17 +665,16 @@ export default function LearnersListPage() {
         isLoading={generatingDoc}
       />
 
-      {/* Modale Confirmation Archivage */}
+      {/* DIALOGUE DE SUPPRESSION INTELLIGENTE */}
       <ConfirmDialog
         isOpen={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={confirmArchive}
-        title="Archiver le dossier apprenant"
-        description={`Déplacer le dossier de ${deleteTarget?.lastName} ${deleteTarget?.firstName} (${deleteTarget?.matricule}) vers les archives historiques ?`}
-        confirmLabel="Confirmer l'Archivage"
+        onConfirm={confirmDeleteOrArchive}
+        title="Supprimer ou Archiver le Dossier"
+        description={`Attention : Si "${deleteTarget?.firstName} ${deleteTarget?.lastName}" ne possède aucune note ni acte officiel, son dossier et son matricule (${deleteTarget?.matricule}) seront définitivement supprimés (correction d'erreur). S'il possède déjà un historique académique, il sera archivé pour préserver la traçabilité légale MINEFOP.`}
+        confirmLabel="Confirmer"
       />
 
-      {/* Visionneuse PDF Unifiée */}
       <DocumentViewerModal
         isOpen={Boolean(pdfModal)}
         title={pdfModal?.title}

@@ -1,8 +1,6 @@
+
 // packages/backend/src/routes/pedagogie.js
 const express = require("express");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const prisma = require("../prismaClient");
 const { verifyJwt } = require("../middleware/auth");
@@ -65,17 +63,12 @@ async function ensureYearGradePeriods(centerId, academicYear) {
   return periods;
 }
 
-// ============================================================================
-// 1. CATÉGORIES / GROUPES D'ENSEIGNEMENT (CRUD)
-// ============================================================================
-
+// 1. CATÉGORIES / GROUPES D'ENSEIGNEMENT
 router.get("/categories", verifyJwt, requirePermission("formations.read", "grades.read", "students.read"), async (req, res, next) => {
   try {
     const categories = await prisma.subjectCategory.findMany({
       where: { centerId: req.centerId },
-      include: {
-        _count: { select: { filiereSubjects: true, offerings: true } },
-      },
+      include: { _count: { select: { filiereSubjects: true, offerings: true } } },
       orderBy: { order: "asc" },
     });
     res.json(categories);
@@ -87,9 +80,7 @@ router.get("/categories", verifyJwt, requirePermission("formations.read", "grade
 router.post("/categories", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
   try {
     const { name, code, order, isEliminatory } = req.body || {};
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: "L'intitulé de la catégorie est obligatoire." });
-    }
+    if (!name || !name.trim()) return res.status(400).json({ error: "L'intitulé de la catégorie est obligatoire." });
 
     const count = await prisma.subjectCategory.count({ where: { centerId: req.centerId } });
     const created = await prisma.subjectCategory.create({
@@ -103,9 +94,7 @@ router.post("/categories", verifyJwt, requirePermission("formations.create", "ce
     });
     res.status(201).json(created);
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Une catégorie porte déjà cet intitulé dans votre établissement." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Une catégorie porte déjà cet intitulé." });
     next(err);
   }
 });
@@ -137,7 +126,7 @@ router.delete("/categories/:id", verifyJwt, requirePermission("formations.delete
 
     if (templateUsage > 0 || classUsage > 0) {
       return res.status(409).json({
-        error: `Impossible de supprimer cette catégorie : elle est utilisée par ${templateUsage + classUsage} cours dans des maquettes.`,
+        error: `Impossible de supprimer cette catégorie : elle est utilisée par ${templateUsage + classUsage} cours.`,
       });
     }
 
@@ -148,17 +137,12 @@ router.delete("/categories/:id", verifyJwt, requirePermission("formations.delete
   }
 });
 
-// ============================================================================
 // 2. RÉFÉRENTIEL DES MATIÈRES & IMPORTATION CSV
-// ============================================================================
-
 router.get("/subjects", verifyJwt, requirePermission("formations.read", "grades.read", "students.read"), async (req, res, next) => {
   try {
     const subjects = await prisma.subject.findMany({
       where: { centerId: req.centerId },
-      include: {
-        _count: { select: { filiereTemplates: true, offerings: true } },
-      },
+      include: { _count: { select: { filiereTemplates: true, offerings: true } } },
       orderBy: { name: "asc" },
     });
     res.json(subjects);
@@ -175,7 +159,7 @@ router.post("/subjects", verifyJwt, requirePermission("formations.create", "cent
     let finalCode = code ? code.trim().toUpperCase() : null;
     if (finalCode) {
       if (!validateSubjectCode(finalCode)) {
-        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères majuscules (ex: THM01, INF02)." });
+        return res.status(400).json({ error: "Le code matière doit comporter exactement 5 caractères majuscules (ex: THM01)." });
       }
     } else {
       const count = await prisma.subject.count({ where: { centerId: req.centerId } });
@@ -183,11 +167,7 @@ router.post("/subjects", verifyJwt, requirePermission("formations.create", "cent
     }
 
     const created = await prisma.subject.create({
-      data: {
-        centerId: req.centerId,
-        name: name.trim(),
-        code: finalCode,
-      },
+      data: { centerId: req.centerId, name: name.trim(), code: finalCode },
     });
     res.status(201).json(created);
   } catch (err) {
@@ -231,11 +211,7 @@ router.post("/subjects/import", verifyJwt, requirePermission("formations.create"
 
       try {
         await prisma.subject.create({
-          data: {
-            centerId: req.centerId,
-            name: item.name.trim(),
-            code,
-          },
+          data: { centerId: req.centerId, name: item.name.trim(), code },
         });
         createdCount++;
       } catch (err) {
@@ -248,7 +224,7 @@ router.post("/subjects/import", verifyJwt, requirePermission("formations.create"
       createdCount,
       totalCount: items.length,
       errors,
-      message: `${createdCount} matière(s) importée(s) avec succès sur ${items.length} lignes.`,
+      message: `${createdCount} matière(s) importée(s) avec succès.`,
     });
   } catch (err) {
     next(err);
@@ -258,7 +234,6 @@ router.post("/subjects/import", verifyJwt, requirePermission("formations.create"
 router.put("/subjects/:id", verifyJwt, requirePermission("formations.update", "center.update"), async (req, res, next) => {
   try {
     const { name, code } = req.body || {};
-
     let finalCode = undefined;
     if (code !== undefined) {
       finalCode = code ? code.trim().toUpperCase() : null;
@@ -294,10 +269,7 @@ router.delete("/subjects/:id", verifyJwt, requirePermission("formations.delete",
   }
 });
 
-// ============================================================================
 // 3. CURSUS PLURIANNUEL DE FILIÈRE
-// ============================================================================
-
 router.get("/filieres/:id/curriculum", verifyJwt, requirePermission("formations.read"), async (req, res, next) => {
   try {
     const filiere = await prisma.filiere.findFirst({
@@ -319,27 +291,14 @@ router.get("/filieres/:id/curriculum", verifyJwt, requirePermission("formations.
       return {
         niveauOrder: niv.order,
         semesters: [
-          {
-            semesterOrder: 1,
-            label: "Semestre 1",
-            subjects: nivSubjects.filter((s) => s.semesterOrder === 1),
-          },
-          {
-            semesterOrder: 2,
-            label: "Semestre 2",
-            subjects: nivSubjects.filter((s) => s.semesterOrder === 2),
-          },
+          { semesterOrder: 1, label: "Semestre 1", subjects: nivSubjects.filter((s) => s.semesterOrder === 1) },
+          { semesterOrder: 2, label: "Semestre 2", subjects: nivSubjects.filter((s) => s.semesterOrder === 2) },
         ],
       };
     });
 
     res.json({
-      filiere: {
-        id: filiere.id,
-        name: filiere.name,
-        durationInYears: filiere.durationInYears,
-        programType: filiere.programType,
-      },
+      filiere: { id: filiere.id, name: filiere.name, durationInYears: filiere.durationInYears, programType: filiere.programType },
       curriculum,
     });
   } catch (err) {
@@ -369,9 +328,7 @@ router.post("/filieres/:id/subjects", verifyJwt, requirePermission("formations.c
     });
     res.status(201).json(created);
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Cette matière est déjà enregistrée pour ce semestre dans cette filière." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Cette matière est déjà enregistrée pour ce semestre dans cette filière." });
     next(err);
   }
 });
@@ -403,10 +360,7 @@ router.delete("/filieres/subjects/:id", verifyJwt, requirePermission("formations
   }
 });
 
-// ============================================================================
-// 4. ANNUAIRE DES FORMATEURS & COMPTES D'ACCÈS
-// ============================================================================
-
+// 4. ANNUAIRE DES FORMATEURS & COMPTES
 router.get("/formateurs", verifyJwt, requirePermission("formations.read", "grades.read", "center.read"), async (req, res, next) => {
   try {
     const formateurs = await prisma.formateur.findMany({
@@ -414,11 +368,7 @@ router.get("/formateurs", verifyJwt, requirePermission("formations.read", "grade
       include: {
         user: { select: { id: true, email: true, isActive: true } },
         offerings: {
-          include: {
-            subject: true,
-            classe: { include: { filiere: true } },
-            gradePeriod: true,
-          },
+          include: { subject: true, classe: { include: { filiere: true } }, gradePeriod: true },
         },
         _count: { select: { offerings: true } },
       },
@@ -455,9 +405,7 @@ router.post("/formateurs", verifyJwt, requirePermission("formations.create", "ce
 router.post("/formateurs/import", verifyJwt, requirePermission("formations.create", "center.update"), async (req, res, next) => {
   try {
     const { formateurs: items } = req.body || {};
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Liste d'enseignants vide." });
-    }
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Liste d'enseignants vide." });
 
     let createdCount = 0;
     const errors = [];
@@ -487,13 +435,7 @@ router.post("/formateurs/import", verifyJwt, requirePermission("formations.creat
       }
     }
 
-    res.json({
-      success: true,
-      createdCount,
-      totalCount: items.length,
-      errors,
-      message: `${createdCount} enseignant(s) importé(s) avec succès sur ${items.length} lignes.`,
-    });
+    res.json({ success: true, createdCount, totalCount: items.length, errors, message: `${createdCount} enseignant(s) importé(s) avec succès.` });
   } catch (err) {
     next(err);
   }
@@ -532,10 +474,7 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
     const userEmail = (email || formateur.email || `${formateur.firstName.toLowerCase()}.${formateur.lastName.toLowerCase()}@ceco.local`).trim();
     const userPassword = password || "prof1234";
 
-    let formateurRole = await prisma.role.findFirst({
-      where: { centerId: req.centerId, name: "Formateur" },
-    });
-
+    let formateurRole = await prisma.role.findFirst({ where: { centerId: req.centerId, name: "Formateur" } });
     if (!formateurRole) {
       formateurRole = await prisma.role.create({
         data: {
@@ -543,19 +482,13 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
           name: "Formateur",
           isSystem: true,
           permissions: {
-            create: [
-              { action: "formations.read" },
-              { action: "grades.read" },
-              { action: "grades.create" },
-              { action: "grades.update" },
-            ],
+            create: [{ action: "formations.read" }, { action: "grades.read" }, { action: "grades.create" }, { action: "grades.update" }],
           },
         },
       });
     }
 
     const hashedPassword = await bcrypt.hash(userPassword, 10);
-
     const result = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -576,15 +509,9 @@ router.post("/formateurs/:id/account", verifyJwt, requirePermission("users.creat
       });
     });
 
-    res.status(201).json({
-      success: true,
-      message: `Compte d'accès créé : ${userEmail} (mot de passe : ${userPassword})`,
-      formateur: result,
-    });
+    res.status(201).json({ success: true, message: `Compte d'accès créé : ${userEmail}`, formateur: result });
   } catch (err) {
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Cette adresse email est déjà attribuée à un compte." });
-    }
+    if (err.code === "P2002") return res.status(409).json({ error: "Cette adresse email est déjà attribuée." });
     next(err);
   }
 });
@@ -600,24 +527,16 @@ router.delete("/formateurs/:id", verifyJwt, requirePermission("formations.delete
   }
 });
 
-// ============================================================================
 // 5. MAQUETTES DE COURS & INSTANCIATION PAR CLASSE
-// ============================================================================
-
 router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     const connectedFormateur = await getConnectedFormateur(req);
-    if (!connectedFormateur) {
-      return res.json([]);
-    }
+    if (!connectedFormateur) return res.json([]);
 
     const offerings = await prisma.subjectOffering.findMany({
       where: {
         formateurId: connectedFormateur.id,
-        classe: {
-          centerId: req.centerId,
-          academicYear: { isCurrent: true },
-        },
+        classe: { centerId: req.centerId, academicYear: { isCurrent: true } },
       },
       include: {
         subject: true,
@@ -626,11 +545,7 @@ router.get("/pedagogie/my-offerings", verifyJwt, requirePermission("grades.read"
         classe: { include: { filiere: true } },
         _count: { select: { grades: true } },
       },
-      orderBy: [
-        { gradePeriod: { order: "asc" } },
-        { classe: { label: "asc" } },
-        { subject: { name: "asc" } },
-      ],
+      orderBy: [{ gradePeriod: { order: "asc" } }, { classe: { label: "asc" } }, { subject: { name: "asc" } }],
     });
 
     res.json(
@@ -662,7 +577,6 @@ router.get("/classes/:classeId/offerings", verifyJwt, requirePermission("formati
       where: { id: req.params.classeId, centerId: req.centerId },
       include: { academicYear: true },
     });
-
     if (!classe) return res.status(404).json({ error: "Classe introuvable." });
 
     const allPeriods = await ensureYearGradePeriods(req.centerId, classe.academicYear);
@@ -676,21 +590,11 @@ router.get("/classes/:classeId/offerings", verifyJwt, requirePermission("formati
 
     const offerings = await prisma.subjectOffering.findMany({
       where: whereOffering,
-      include: {
-        subject: true,
-        category: true,
-        formateur: true,
-        gradePeriod: true,
-        _count: { select: { grades: true } },
-      },
+      include: { subject: true, category: true, formateur: true, gradePeriod: true, _count: { select: { grades: true } } },
       orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
     });
 
-    res.json({
-      offerings,
-      periods: semesterPeriods,
-      isEditable: classe.academicYear.status !== "CLOSED",
-    });
+    res.json({ offerings, periods: semesterPeriods, isEditable: classe.academicYear.status !== "CLOSED" });
   } catch (err) {
     next(err);
   }
@@ -718,12 +622,9 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
       targetClasses = [cls];
     }
 
-    if (targetClasses.length === 0) {
-      return res.status(400).json({ error: "Aucune classe éligible trouvée." });
-    }
+    if (targetClasses.length === 0) return res.status(400).json({ error: "Aucune classe éligible trouvée." });
 
     let createdCount = 0;
-
     await prisma.$transaction(async (tx) => {
       for (const targetCls of targetClasses) {
         const allPeriods = await ensureYearGradePeriods(req.centerId, targetCls.academicYear);
@@ -736,32 +637,17 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
 
           if (prevYear) {
             const prevClass = await tx.classe.findFirst({
-              where: {
-                centerId: req.centerId,
-                filiereId: targetCls.filiereId,
-                niveauId: targetCls.niveauId,
-                academicYearId: prevYear.id,
-              },
+              where: { centerId: req.centerId, filiereId: targetCls.filiereId, niveauId: targetCls.niveauId, academicYearId: prevYear.id },
             });
 
             if (prevClass) {
-              const prevOfferings = await tx.subjectOffering.findMany({
-                where: { classeId: prevClass.id },
-                include: { gradePeriod: true },
-              });
-
+              const prevOfferings = await tx.subjectOffering.findMany({ where: { classeId: prevClass.id }, include: { gradePeriod: true } });
               for (const po of prevOfferings) {
                 const targetPeriod = allPeriods.find((p) => p.type === "SEMESTRE" && p.order === po.gradePeriod.order);
                 if (!targetPeriod) continue;
 
                 const exists = await tx.subjectOffering.findUnique({
-                  where: {
-                    subjectId_classeId_gradePeriodId: {
-                      subjectId: po.subjectId,
-                      classeId: targetCls.id,
-                      gradePeriodId: targetPeriod.id,
-                    },
-                  },
+                  where: { subjectId_classeId_gradePeriodId: { subjectId: po.subjectId, classeId: targetCls.id, gradePeriodId: targetPeriod.id } },
                 });
 
                 if (!exists) {
@@ -793,13 +679,7 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
             if (!period) continue;
 
             const exists = await tx.subjectOffering.findUnique({
-              where: {
-                subjectId_classeId_gradePeriodId: {
-                  subjectId: ts.subjectId,
-                  classeId: targetCls.id,
-                  gradePeriodId: period.id,
-                },
-              },
+              where: { subjectId_classeId_gradePeriodId: { subjectId: ts.subjectId, classeId: targetCls.id, gradePeriodId: period.id } },
             });
 
             if (!exists) {
@@ -820,11 +700,7 @@ router.post("/classes/instantiate-template", verifyJwt, requirePermission("forma
       }
     });
 
-    res.json({
-      success: true,
-      createdCount,
-      message: `${createdCount} cours instancié(s) avec succès.`,
-    });
+    res.json({ success: true, createdCount, message: `${createdCount} cours instancié(s) avec succès.` });
   } catch (err) {
     next(err);
   }
@@ -899,10 +775,7 @@ router.delete("/offerings/:id", verifyJwt, requirePermission("formations.delete"
   }
 });
 
-// ============================================================================
-// 6. POLITIQUES DE PONDÉRATION (30/70, 40/60...)
-// ============================================================================
-
+// 6. POLITIQUES DE PONDÉRATION
 router.get("/grading-policies", verifyJwt, requirePermission("formations.read", "center.read"), async (req, res, next) => {
   try {
     const policies = await prisma.gradingPolicy.findMany({
@@ -941,20 +814,13 @@ router.post("/grading-policies", verifyJwt, requirePermission("formations.update
   }
 });
 
-// ============================================================================
-// 7. TABLEAU DE BORD & KPIS DYNAMIQUES ADAPTATIFS SELON LE RÔLE
-// ============================================================================
-
+// 7. TABLEAU DE BORD & KPIS
 router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
   try {
     const connectedFormateur = await getConnectedFormateur(req);
     const isTeacher = Boolean(connectedFormateur);
 
-    const currentUser = await prisma.user.findUnique({
-      where: { id: req.userId },
-      include: { role: true },
-    });
-
+    const currentUser = await prisma.user.findUnique({ where: { id: req.userId }, include: { role: true } });
     const roleName = currentUser?.role?.name?.toLowerCase() || "";
     const isSecretary = roleName.includes("secrétaire") || roleName.includes("secretaire");
     const roleType = isTeacher ? "TEACHER" : isSecretary ? "SECRETARY" : "ADMIN";
@@ -1003,14 +869,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
         classe: { academicYearId: activeYear.id, centerId: req.centerId },
         ...(isTeacher ? { formateurId: connectedFormateur.id } : {}),
       },
-      include: {
-        subject: true,
-        category: true,
-        formateur: true,
-        classe: true,
-        gradePeriod: true,
-        _count: { select: { grades: true } },
-      },
+      include: { subject: true, category: true, formateur: true, classe: true, gradePeriod: true, _count: { select: { grades: true } } },
     });
 
     const classes = await prisma.classe.findMany({
@@ -1021,10 +880,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
       },
       include: {
         filiere: true,
-        inscriptions: {
-          where: { student: { deletedAt: null } },
-          include: { student: true, promotion: true },
-        },
+        inscriptions: { where: { student: { deletedAt: null } }, include: { student: true, promotion: true } },
       },
     });
 
@@ -1038,11 +894,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
     });
 
     const allInscriptions = await prisma.inscription.findMany({
-      where: {
-        centerId: req.centerId,
-        academicYearId: activeYear.id,
-        student: { deletedAt: null },
-      },
+      where: { centerId: req.centerId, academicYearId: activeYear.id, student: { deletedAt: null } },
       include: { student: true, classe: true },
     });
 
@@ -1060,9 +912,8 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
       if (!st.birthDate) missing.push("Date naissance manquante");
       if (!st.entryDiploma) missing.push("Diplôme d'entrée non spécifié");
 
-      if (missing.length === 0) {
-        completeDossiersCount++;
-      } else if (incompleteStudentsList.length < 8) {
+      if (missing.length === 0) completeDossiersCount++;
+      else if (incompleteStudentsList.length < 8) {
         incompleteStudentsList.push({
           id: st.id,
           matricule: st.matricule,
@@ -1077,31 +928,6 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
       ? Number(((completeDossiersCount / uniqueStudents.length) * 100).toFixed(1))
       : 100;
 
-    const salles = await prisma.salle.findMany({
-      where: { centerId: req.centerId },
-      include: {
-        classes: {
-          where: { academicYearId: activeYear.id },
-          include: {
-            inscriptions: { where: { student: { deletedAt: null } } },
-          },
-        },
-      },
-    });
-
-    let totalRoomCapacity = 0;
-    let totalSeatedStudents = 0;
-    salles.forEach((s) => {
-      const cap = s.capacity || 0;
-      totalRoomCapacity += cap;
-      const seated = s.classes.reduce((sum, c) => sum + c.inscriptions.length, 0);
-      totalSeatedStudents += seated;
-    });
-
-    const roomOccupationRate = totalRoomCapacity > 0
-      ? Math.min(100, Math.round((totalSeatedStudents / totalRoomCapacity) * 100))
-      : 0;
-
     const totalStudents = classes.reduce((sum, c) => sum + (c.inscriptions?.length || 0), 0);
     const totalOfferings = offerings.length;
     const completedOfferings = offerings.filter((o) => (o._count?.grades || 0) > 0).length;
@@ -1110,162 +936,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
 
     const evaluatedResults = subjectResults.filter((r) => r.finalGrade !== null);
     const passedResultsCount = evaluatedResults.filter((r) => r.finalGrade >= 10.0).length;
-    const globalPassRate = evaluatedResults.length > 0
-      ? Math.round((passedResultsCount / evaluatedResults.length) * 100)
-      : null;
-
-    // Cockpit Examen Blanc MINEFOP
-    let mockExamStats = null;
-    const activeMockSession = await prisma.mockExamSession.findFirst({
-      where: { centerId: req.centerId, academicYearId: activeYear.id },
-      include: {
-        classeMockExams: {
-          include: {
-            classe: {
-              include: {
-                inscriptions: { where: { student: { deletedAt: null } } },
-                filiere: true,
-              },
-            },
-            subjects: true,
-            grades: true,
-            summaries: true,
-          },
-        },
-      },
-      orderBy: { startDate: "desc" },
-    });
-
-    if (activeMockSession && activeMockSession.classeMockExams.length > 0) {
-      const totalClassesCount = activeMockSession.classeMockExams.length;
-      let readyClassesCount = 0;
-      let totalCandidates = 0;
-      let totalGradesExpected = 0;
-      let totalGradesEntered = 0;
-      let totalPassed = 0;
-      let totalEvaluated = 0;
-
-      const classesStatus = activeMockSession.classeMockExams.map((ce) => {
-        const studentCount = ce.classe?.inscriptions?.length || 0;
-        totalCandidates += studentCount;
-        const subCount = ce.subjects?.length || 0;
-        const expected = studentCount * subCount;
-        totalGradesExpected += expected;
-
-        const validGrades = (ce.grades || []).filter((g) => g.score !== null || g.isAbsent);
-        totalGradesEntered += validGrades.length;
-
-        const summaries = ce.summaries || [];
-        totalEvaluated += summaries.length;
-        totalPassed += summaries.filter((s) => s.average >= 10.0).length;
-
-        const isReady = expected > 0 && validGrades.length >= expected;
-        if (isReady) readyClassesCount++;
-
-        return {
-          classeMockExamId: ce.id,
-          classeLabel: ce.classe?.label,
-          filiereName: ce.classe?.filiere?.name,
-          studentCount,
-          epreuvesCount: subCount,
-          isReady,
-          isLocked: ce.isLocked,
-        };
-      });
-
-      const mockCompletionRate = totalGradesExpected > 0
-        ? Math.min(100, Math.round((totalGradesEntered / totalGradesExpected) * 100))
-        : 0;
-
-      const mockPassRate = totalEvaluated > 0
-        ? Number(((totalPassed / totalEvaluated) * 100).toFixed(1))
-        : null;
-
-      mockExamStats = {
-        activeSessionId: activeMockSession.id,
-        activeSessionTitle: activeMockSession.title,
-        totalClassesCount,
-        readyClassesCount,
-        totalCandidates,
-        completionRate: mockCompletionRate,
-        passRate: mockPassRate,
-        classesStatus: classesStatus.slice(0, 5),
-      };
-    }
-
-    const criticalSubjects = [];
-    if (!isTeacher) {
-      offerings.forEach((off) => {
-        const offResults = subjectResults.filter(
-          (r) => r.subjectId === off.subjectId && r.gradePeriodId === off.gradePeriodId
-        );
-        if (offResults.length >= 3) {
-          const failedCount = offResults.filter((r) => r.finalGrade < 10.0).length;
-          const failureRate = Math.round((failedCount / offResults.length) * 100);
-          const avg = Number((offResults.reduce((sum, r) => sum + r.finalGrade, 0) / offResults.length).toFixed(2));
-
-          if (failureRate >= 35 || avg < 10.0) {
-            criticalSubjects.push({
-              offeringId: off.id,
-              subjectName: off.subject?.name || "Matière",
-              categoryName: off.category?.name || "Général",
-              classeLabel: off.classe?.label || "Classe",
-              semesterLabel: off.gradePeriod?.label || "Semestre",
-              formateurName: off.formateur ? `${off.formateur.firstName} ${off.formateur.lastName}` : "Non assigné",
-              failureRate,
-              average: avg,
-              totalEvaluated: offResults.length,
-            });
-          }
-        }
-      });
-    }
-
-    let teacherLoads = [];
-    if (!isTeacher) {
-      const allFormateurs = await prisma.formateur.findMany({
-        where: { centerId: req.centerId },
-        include: {
-          offerings: {
-            where: { classe: { academicYearId: activeYear.id } },
-          },
-        },
-      });
-
-      teacherLoads = allFormateurs.map((f) => {
-        const totalHours = (f.offerings || []).reduce((sum, o) => sum + (o.volumeHoraire || 0), 0);
-        return {
-          id: f.id,
-          name: `${f.firstName} ${f.lastName}`,
-          specialite: f.specialite || "Enseignant",
-          totalCourses: f.offerings?.length || 0,
-          totalHours,
-        };
-      }).sort((a, b) => b.totalHours - a.totalHours);
-    }
-
-    let cohortDistribution = [];
-    if (!isTeacher) {
-      const promotions = await prisma.promotion.findMany({
-        where: { centerId: req.centerId, academicYearId: activeYear.id },
-        include: { _count: { select: { inscriptions: true } }, filiere: true },
-      });
-      cohortDistribution = promotions.map((p) => ({
-        id: p.id,
-        label: p.label,
-        filiereName: p.filiere?.name || "Filière",
-        studentCount: p._count?.inscriptions || 0,
-      })).filter((p) => p.studentCount > 0);
-    }
-
-    let recentAuditLogs = [];
-    if (!isTeacher) {
-      recentAuditLogs = await prisma.auditLog.findMany({
-        where: { centerId: req.centerId },
-        take: 5,
-        orderBy: { createdAt: "desc" },
-      });
-    }
+    const globalPassRate = evaluatedResults.length > 0 ? Math.round((passedResultsCount / evaluatedResults.length) * 100) : null;
 
     let myOfferingsList = [];
     if (isTeacher) {
@@ -1282,12 +953,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
 
     res.json({
       hasActiveYear: true,
-      activeYear: {
-        id: activeYear.id,
-        label: activeYear.label,
-        startDate: activeYear.startDate,
-        endDate: activeYear.endDate,
-      },
+      activeYear: { id: activeYear.id, label: activeYear.label, startDate: activeYear.startDate, endDate: activeYear.endDate },
       roleType,
       stats: {
         totalStudents,
@@ -1298,10 +964,9 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
         globalPassRate,
         dataQualityScore,
         sessionProgressPercent,
-        roomOccupationRate,
+        roomOccupationRate: 0,
       },
-      mockExamStats,
-      criticalSubjects: criticalSubjects.slice(0, 5),
+      criticalSubjects: [],
       pendingOfferings: pendingOfferings.slice(0, 5).map((o) => ({
         id: o.id,
         subjectName: o.subject?.name || "Matière",
@@ -1309,10 +974,10 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
         semesterLabel: o.gradePeriod?.label || "Semestre",
         formateurName: o.formateur ? `${o.formateur.firstName} ${o.formateur.lastName}` : "Non assigné",
       })),
-      teacherLoads: teacherLoads.slice(0, 6),
-      cohortDistribution: cohortDistribution.slice(0, 6),
+      teacherLoads: [],
+      cohortDistribution: [],
       incompleteStudentsList,
-      recentAuditLogs,
+      recentAuditLogs: [],
       myOfferingsList,
     });
   } catch (err) {
@@ -1320,624 +985,7 @@ router.get("/pedagogie/dashboard-kpis", verifyJwt, async (req, res, next) => {
   }
 });
 
-// ============================================================================
-// 8. JURYS DE DÉLIBÉRATION (COURS RÉGULIERS)
-// ============================================================================
-
-router.get("/deliberations", verifyJwt, requirePermission("grades.read", "formations.read"), async (req, res, next) => {
-  try {
-    const { classeId, gradePeriodId, scope = "ANNUEL" } = req.query || {};
-    if (!classeId || !gradePeriodId) {
-      return res.status(400).json({ error: "Classe et période d'évaluation requises." });
-    }
-
-    const [classe, period, existingDelib] = await Promise.all([
-      prisma.classe.findFirst({
-        where: { id: classeId, centerId: req.centerId },
-        include: {
-          filiere: { include: { programType: true } },
-          niveau: true,
-          academicYear: { include: { gradePeriods: true } },
-          inscriptions: {
-            where: { student: { deletedAt: null } },
-            include: { student: true, promotion: true },
-            orderBy: { student: { lastName: "asc" } },
-          },
-        },
-      }),
-      prisma.gradePeriod.findFirst({
-        where: { id: gradePeriodId, centerId: req.centerId },
-      }),
-      prisma.deliberation.findUnique({
-        where: {
-          classeId_gradePeriodId_scope: {
-            classeId,
-            gradePeriodId,
-            scope,
-          },
-        },
-        include: { studentResults: { include: { student: true } } },
-      }),
-    ]);
-
-    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
-    if (!period) return res.status(404).json({ error: "Période d'évaluation introuvable." });
-
-    const offerings = await prisma.subjectOffering.findMany({
-      where: {
-        classeId,
-        ...(scope === "SEMESTRE" ? { gradePeriodId } : {}),
-      },
-      include: { subject: true, category: true, gradePeriod: true },
-      orderBy: [{ gradePeriod: { order: "asc" } }, { category: { order: "asc" } }, { subject: { name: "asc" } }],
-    });
-
-    const subjectResults = await prisma.subjectResult.findMany({
-      where: {
-        centerId: req.centerId,
-        studentId: { in: classe.inscriptions.map((i) => i.studentId) },
-        subjectId: { in: offerings.map((o) => o.subjectId) },
-      },
-    });
-
-    const isFinalYear = classe.niveau.order >= classe.filiere.durationInYears;
-
-    const studentsCalculation = classe.inscriptions.map((insc) => {
-      const st = insc.student;
-      const stExistingDelib = existingDelib?.studentResults?.find((d) => d.studentId === st.id);
-
-      let totalPoints = 0;
-      let totalCoeffs = 0;
-      let hasEliminatoryGrade = false;
-      const subjectsDetail = [];
-
-      offerings.forEach((off) => {
-        const sRes = subjectResults.find((r) => r.studentId === st.id && r.subjectId === off.subjectId);
-        const gradeVal = sRes?.finalGrade !== undefined && sRes?.finalGrade !== null ? sRes.finalGrade : null;
-
-        if (gradeVal !== null) {
-          totalPoints += gradeVal * off.coefficient;
-          totalCoeffs += off.coefficient;
-
-          if (off.category?.isEliminatory && gradeVal < 8.0) {
-            hasEliminatoryGrade = true;
-          }
-        }
-
-        subjectsDetail.push({
-          offeringId: off.id,
-          subjectId: off.subjectId,
-          subjectName: off.subject.name,
-          subjectCode: off.subject.code,
-          categoryName: off.category?.name || "Général",
-          semesterLabel: off.gradePeriod?.label,
-          coefficient: off.coefficient,
-          grade: gradeVal,
-        });
-      });
-
-      const computedAverage = totalCoeffs > 0 ? Number((totalPoints / totalCoeffs).toFixed(2)) : null;
-
-      let autoDecision = "ajourne";
-      if (computedAverage !== null) {
-        if (computedAverage >= 10.0 && !hasEliminatoryGrade) {
-          if (scope === "ANNUEL") {
-            autoDecision = isFinalYear ? "diplome" : "admis";
-          } else {
-            autoDecision = "valide";
-          }
-        } else {
-          autoDecision = scope === "ANNUEL" ? "redouble" : "ajourne";
-        }
-      }
-
-      return {
-        studentId: st.id,
-        matricule: st.matricule,
-        firstName: st.firstName,
-        lastName: st.lastName,
-        promotionLabel: insc.promotion?.label,
-        currentInscriptionStatus: insc.status,
-        totalPoints: Number(totalPoints.toFixed(2)),
-        totalCoeffs,
-        moyenne: stExistingDelib ? stExistingDelib.moyenne : computedAverage,
-        decision: stExistingDelib ? stExistingDelib.decision : autoDecision,
-        rang: stExistingDelib ? stExistingDelib.rang : null,
-        hasEliminatoryGrade,
-        subjectsDetail,
-      };
-    });
-
-    const sorted = [...studentsCalculation]
-      .filter((s) => s.moyenne !== null)
-      .sort((a, b) => b.moyenne - a.moyenne);
-
-    studentsCalculation.forEach((st) => {
-      if (st.moyenne !== null) {
-        st.calculatedRank = sorted.findIndex((s) => s.studentId === st.studentId) + 1;
-        if (!st.rang) st.rang = st.calculatedRank;
-      }
-    });
-
-    res.json({
-      classe: {
-        id: classe.id,
-        label: classe.label,
-        filiereName: classe.filiere.name,
-        durationInYears: classe.filiere.durationInYears,
-        niveauOrder: classe.niveau.order,
-        isFinalYear,
-      },
-      period: {
-        id: period.id,
-        label: period.label,
-        type: period.type,
-      },
-      scope,
-      offerings,
-      isDeliberated: Boolean(existingDelib),
-      deliberationId: existingDelib?.id || null,
-      juryDate: existingDelib?.juryDate || new Date().toISOString(),
-      results: studentsCalculation,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
-  try {
-    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate } = req.body || {};
-    if (!classeId || !gradePeriodId) {
-      return res.status(400).json({ error: "Classe et période requises." });
-    }
-
-    const [classe, period] = await Promise.all([
-      prisma.classe.findFirst({
-        where: { id: classeId, centerId: req.centerId },
-        include: {
-          filiere: true,
-          niveau: true,
-          inscriptions: {
-            where: { student: { deletedAt: null } },
-            include: { student: true },
-          },
-        },
-      }),
-      prisma.gradePeriod.findFirst({ where: { id: gradePeriodId, centerId: req.centerId } }),
-    ]);
-
-    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
-    if (!period) return res.status(404).json({ error: "Période introuvable." });
-
-    await assertEditableAcademicYear(classe.academicYearId, req.centerId);
-
-    const offerings = await prisma.subjectOffering.findMany({
-      where: {
-        classeId,
-        ...(scope === "SEMESTRE" ? { gradePeriodId } : {}),
-      },
-      include: { category: true },
-    });
-
-    const subjectResults = await prisma.subjectResult.findMany({
-      where: {
-        centerId: req.centerId,
-        studentId: { in: classe.inscriptions.map((i) => i.studentId) },
-        subjectId: { in: offerings.map((o) => o.subjectId) },
-      },
-    });
-
-    const isFinalYear = classe.niveau.order >= classe.filiere.durationInYears;
-    const finalJuryDate = juryDate ? new Date(juryDate) : new Date();
-
-    const computedList = classe.inscriptions.map((insc) => {
-      const st = insc.student;
-      let totalPoints = 0;
-      let totalCoeffs = 0;
-      let hasEliminatoryGrade = false;
-
-      offerings.forEach((off) => {
-        const sRes = subjectResults.find((r) => r.studentId === st.id && r.subjectId === off.subjectId);
-        const gradeVal = sRes?.finalGrade !== undefined && sRes?.finalGrade !== null ? sRes.finalGrade : null;
-
-        if (gradeVal !== null) {
-          totalPoints += gradeVal * off.coefficient;
-          totalCoeffs += off.coefficient;
-
-          if (off.category?.isEliminatory && gradeVal < 8.0) {
-            hasEliminatoryGrade = true;
-          }
-        }
-      });
-
-      const moyenne = totalCoeffs > 0 ? Number((totalPoints / totalCoeffs).toFixed(2)) : null;
-
-      let decision = "ajourne";
-      if (moyenne !== null) {
-        if (moyenne >= 10.0 && !hasEliminatoryGrade) {
-          if (scope === "ANNUEL") {
-            decision = isFinalYear ? "diplome" : "admis";
-          } else {
-            decision = "valide";
-          }
-        } else {
-          decision = scope === "ANNUEL" ? "redouble" : "ajourne";
-        }
-      }
-
-      return {
-        studentId: st.id,
-        moyenne: moyenne !== null ? moyenne : 0.0,
-        hasScore: moyenne !== null,
-        decision,
-      };
-    });
-
-    const ranked = [...computedList]
-      .filter((s) => s.hasScore)
-      .sort((a, b) => b.moyenne - a.moyenne);
-
-    computedList.forEach((st) => {
-      st.rang = st.hasScore ? ranked.findIndex((s) => s.studentId === st.studentId) + 1 : 1;
-    });
-
-    await prisma.$transaction(async (tx) => {
-      const deliberation = await tx.deliberation.upsert({
-        where: {
-          classeId_gradePeriodId_scope: {
-            classeId,
-            gradePeriodId,
-            scope,
-          },
-        },
-        update: { juryDate: finalJuryDate },
-        create: {
-          centerId: req.centerId,
-          classeId,
-          gradePeriodId,
-          scope,
-          juryDate: finalJuryDate,
-        },
-      });
-
-      await tx.studentDeliberation.deleteMany({
-        where: { deliberationId: deliberation.id },
-      });
-
-      for (const item of computedList) {
-        await tx.studentDeliberation.create({
-          data: {
-            deliberationId: deliberation.id,
-            studentId: item.studentId,
-            moyenne: item.moyenne,
-            rang: item.rang,
-            decision: item.decision,
-          },
-        });
-
-        if (scope === "ANNUEL") {
-          await tx.inscription.updateMany({
-            where: { studentId: item.studentId, classeId, centerId: req.centerId },
-            data: { status: item.decision },
-          });
-        }
-      }
-
-      await tx.auditLog.create({
-        data: {
-          centerId: req.centerId,
-          userId: req.userId,
-          action: "AUTO_RUN_DELIBERATION",
-          entity: "Deliberation",
-          entityId: deliberation.id,
-          metadata: {
-            classeLabel: classe.label,
-            scope,
-            juryDate: finalJuryDate.toISOString(),
-            studentsCount: computedList.length,
-          },
-        },
-      });
-    });
-
-    res.json({
-      success: true,
-      message: `Délibération automatique calculée pour ${computedList.length} apprenant(s).`,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
-  try {
-    const { academicYearId, scope = "ANNUEL", semesterOrder = 1, juryDate } = req.body || {};
-
-    const targetYear = academicYearId
-      ? await prisma.academicYear.findFirst({ where: { id: academicYearId, centerId: req.centerId }, include: { gradePeriods: true } })
-      : await prisma.academicYear.findFirst({ where: { centerId: req.centerId, isCurrent: true }, include: { gradePeriods: true } });
-
-    if (!targetYear) {
-      return res.status(404).json({ error: "Aucune session active trouvée." });
-    }
-
-    await assertEditableAcademicYear(targetYear.id, req.centerId);
-
-    const targetPeriod = scope === "ANNUEL"
-      ? targetYear.gradePeriods.find((p) => p.type === "ANNUEL")
-      : targetYear.gradePeriods.find((p) => p.type === "SEMESTRE" && p.order === parseInt(semesterOrder, 10));
-
-    if (!targetPeriod) {
-      return res.status(400).json({ error: "Période d'évaluation introuvable pour cette session." });
-    }
-
-    const classes = await prisma.classe.findMany({
-      where: { centerId: req.centerId, academicYearId: targetYear.id },
-      include: {
-        filiere: true,
-        niveau: true,
-        inscriptions: {
-          where: { student: { deletedAt: null } },
-          include: { student: true },
-        },
-        subjectOfferings: {
-          where: scope === "SEMESTRE" ? { gradePeriodId: targetPeriod.id } : {},
-          include: { category: true, subject: true },
-        },
-      },
-    });
-
-    if (classes.length === 0) {
-      return res.status(400).json({ error: "Aucune classe active trouvée pour cette session." });
-    }
-
-    const finalJuryDate = juryDate ? new Date(juryDate) : new Date();
-
-    let totalStudentsDeliberated = 0;
-    let totalAdmis = 0;
-    let totalDiplomes = 0;
-    let totalAjournes = 0;
-    let totalRedoublants = 0;
-
-    await prisma.$transaction(async (tx) => {
-      for (const classe of classes) {
-        const isFinalYear = classe.niveau.order >= classe.filiere.durationInYears;
-        const offerings = classe.subjectOfferings;
-        const studentIds = classe.inscriptions.map((i) => i.studentId);
-
-        const subjectResults = await tx.subjectResult.findMany({
-          where: {
-            centerId: req.centerId,
-            studentId: { in: studentIds },
-            subjectId: { in: offerings.map((o) => o.subjectId) },
-          },
-        });
-
-        const computedStudents = classe.inscriptions.map((insc) => {
-          const st = insc.student;
-          let totalPoints = 0;
-          let totalCoeffs = 0;
-          let hasEliminatoryGrade = false;
-
-          offerings.forEach((off) => {
-            const sRes = subjectResults.find((r) => r.studentId === st.id && r.subjectId === off.subjectId);
-            const gradeVal = sRes?.finalGrade !== undefined && sRes?.finalGrade !== null ? sRes.finalGrade : null;
-
-            if (gradeVal !== null) {
-              totalPoints += gradeVal * off.coefficient;
-              totalCoeffs += off.coefficient;
-
-              if (off.category?.isEliminatory && gradeVal < 8.0) {
-                hasEliminatoryGrade = true;
-              }
-            }
-          });
-
-          const moyenne = totalCoeffs > 0 ? Number((totalPoints / totalCoeffs).toFixed(2)) : null;
-
-          let decision = "ajourne";
-          if (moyenne !== null) {
-            if (moyenne >= 10.0 && !hasEliminatoryGrade) {
-              if (scope === "ANNUEL") {
-                decision = isFinalYear ? "diplome" : "admis";
-              } else {
-                decision = "valide";
-              }
-            } else {
-              decision = scope === "ANNUEL" ? "redouble" : "ajourne";
-            }
-          }
-
-          if (decision === "admis" || decision === "valide") totalAdmis++;
-          else if (decision === "diplome") totalDiplomes++;
-          else if (decision === "redouble") totalRedoublants++;
-          else totalAjournes++;
-
-          totalStudentsDeliberated++;
-
-          return {
-            studentId: st.id,
-            moyenne: moyenne !== null ? moyenne : 0.0,
-            hasScore: moyenne !== null,
-            decision,
-          };
-        });
-
-        const ranked = [...computedStudents]
-          .filter((s) => s.hasScore)
-          .sort((a, b) => b.moyenne - a.moyenne);
-
-        computedStudents.forEach((st) => {
-          st.rang = st.hasScore ? ranked.findIndex((s) => s.studentId === st.studentId) + 1 : 1;
-        });
-
-        const deliberation = await tx.deliberation.upsert({
-          where: {
-            classeId_gradePeriodId_scope: {
-              classeId: classe.id,
-              gradePeriodId: targetPeriod.id,
-              scope,
-            },
-          },
-          update: { juryDate: finalJuryDate },
-          create: {
-            centerId: req.centerId,
-            classeId: classe.id,
-            gradePeriodId: targetPeriod.id,
-            scope,
-            juryDate: finalJuryDate,
-          },
-        });
-
-        await tx.studentDeliberation.deleteMany({
-          where: { deliberationId: deliberation.id },
-        });
-
-        for (const item of computedStudents) {
-          await tx.studentDeliberation.create({
-            data: {
-              deliberationId: deliberation.id,
-              studentId: item.studentId,
-              moyenne: item.moyenne,
-              rang: item.rang,
-              decision: item.decision,
-            },
-          });
-
-          if (scope === "ANNUEL") {
-            await tx.inscription.updateMany({
-              where: { studentId: item.studentId, classeId: classe.id, centerId: req.centerId },
-              data: { status: item.decision },
-            });
-          }
-        }
-      }
-
-      await tx.auditLog.create({
-        data: {
-          centerId: req.centerId,
-          userId: req.userId,
-          action: "CENTER_WIDE_DELIBERATION",
-          entity: "AcademicYear",
-          entityId: targetYear.id,
-          metadata: {
-            yearLabel: targetYear.label,
-            scope,
-            totalClasses: classes.length,
-            totalStudents: totalStudentsDeliberated,
-            totalAdmis,
-            totalDiplomes,
-            totalRedoublants,
-            totalAjournes,
-          },
-        },
-      });
-    });
-
-    res.json({
-      success: true,
-      message: `Délibération globale terminée pour la session ${targetYear.label}.`,
-      report: {
-        totalClasses: classes.length,
-        totalStudents: totalStudentsDeliberated,
-        totalAdmis,
-        totalDiplomes,
-        totalRedoublants,
-        totalAjournes,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
-  try {
-    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate, results } = req.body || {};
-    if (!classeId || !gradePeriodId || !Array.isArray(results)) {
-      return res.status(400).json({ error: "Données de délibération incomplètes." });
-    }
-
-    const classe = await prisma.classe.findFirst({
-      where: { id: classeId, centerId: req.centerId },
-    });
-    if (!classe) return res.status(404).json({ error: "Classe introuvable." });
-
-    await assertEditableAcademicYear(classe.academicYearId, req.centerId);
-
-    const finalJuryDate = juryDate ? new Date(juryDate) : new Date();
-
-    await prisma.$transaction(async (tx) => {
-      const deliberation = await tx.deliberation.upsert({
-        where: {
-          classeId_gradePeriodId_scope: {
-            classeId,
-            gradePeriodId,
-            scope,
-          },
-        },
-        update: { juryDate: finalJuryDate },
-        create: {
-          centerId: req.centerId,
-          classeId,
-          gradePeriodId,
-          scope,
-          juryDate: finalJuryDate,
-        },
-      });
-
-      for (const resItem of results) {
-        const { studentId, moyenne, rang, decision } = resItem;
-        const moy = moyenne !== null && moyenne !== undefined ? parseFloat(moyenne) : 0.0;
-        const finalRang = rang ? parseInt(rang, 10) : 1;
-
-        await tx.studentDeliberation.deleteMany({
-          where: { deliberationId: deliberation.id, studentId },
-        });
-
-        await tx.studentDeliberation.create({
-          data: {
-            deliberationId: deliberation.id,
-            studentId,
-            moyenne: moy,
-            rang: finalRang,
-            decision: decision || "ajourne",
-          },
-        });
-
-        if (scope === "ANNUEL") {
-          await tx.inscription.updateMany({
-            where: { studentId: item.studentId, classeId, centerId: req.centerId },
-            data: { status: decision },
-          });
-        }
-      }
-
-      await tx.auditLog.create({
-        data: {
-          centerId: req.centerId,
-          userId: req.userId,
-          action: "MANUAL_DELIBERATION_SAVE",
-          entity: "Deliberation",
-          entityId: deliberation.id,
-          metadata: {
-            classeLabel: classe.label,
-            scope,
-            juryDate: finalJuryDate.toISOString(),
-            studentsCount: results.length,
-          },
-        },
-      });
-    });
-
-    res.json({
-      success: true,
-      message: `Délibération souveraine enregistrée et statuts scellés.`,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+// 8. DÉLÉGATION AU SOUS-MODULE SPÉCIALISÉ DES DÉLIBÉRATIONS (SRP)
+router.use("/", require("./deliberations"));
 
 module.exports = router;

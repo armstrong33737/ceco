@@ -5,13 +5,10 @@ import { apiFetch, apiFetchImageUrl } from "../../lib/apiClient";
 import { showToast } from "../../store/toastStore";
 import PageHeader from "../../design-system/layout/PageHeader";
 import Button from "../../design-system/primitives/Button";
-import Input from "../../design-system/primitives/Input";
-import Textarea from "../../design-system/primitives/Textarea";
 import Badge from "../../design-system/primitives/Badge";
 import Icon from "../../components/Icon";
-import useAuthStore from "../../store/authStore";
 
-// Sous-composants modulaires spécialisés par document
+// Composants de configuration et prévisualisation spécialisés
 import StudioCommonHeaderConfig from "./components/StudioCommonHeaderConfig";
 import StudioCommonHeaderPreview from "./components/StudioCommonHeaderPreview";
 import StudioCardConfig from "./components/StudioCardConfig";
@@ -30,47 +27,50 @@ import StudioDiplomaConfig from "./components/StudioDiplomaConfig";
 import StudioDiplomaPreview from "./components/StudioDiplomaPreview";
 import StudioMockExamConfig from "./components/StudioMockExamConfig";
 import StudioMockExamPreview from "./components/StudioMockExamPreview";
+import StudioInternalPvConfig from "./components/StudioInternalPvConfig";
+import StudioInternalPvPreview from "./components/StudioInternalPvPreview";
 
 const DOCUMENT_SECTIONS = [
   {
     id: "socle",
-    title: "1. En-tête Républicain & Socle Commun",
+    title: "1. En-têtes & Socle Commun",
     icon: "flag",
     items: [
-      { key: "GENERAL_CONFIG", label: "Charte & En-tête Bilingue", icon: "tune" },
+      { key: "GENERAL_CONFIG", label: "Charte & En-têtes (National & Interne)", icon: "tune" },
     ],
   },
   {
     id: "internes",
-    title: "2. Actes Internes & Scolarité",
-    icon: "folder_shared",
+    title: "2. Actes Internes & Procès-Verbaux",
+    icon: "assignment",
     items: [
-      { key: "CARTE_ETUDIANT", label: "Carte d'Apprenant (CR80)", icon: "badge" },
-      { key: "FICHE_INSCRIPTION", label: "Fiche d'Inscription", icon: "description" },
-      { key: "BORDEREAU_VIERGE", label: "Bordereau Vierge", icon: "edit_document" },
-      { key: "PV_MATIERE", label: "Procès-Verbal Matière", icon: "assignment_turned_in" },
-      { key: "PV_SEMESTRE", label: "PV Délibération Semestre", icon: "table_chart" },
-      { key: "PV_CC", label: "PV Contrôle Continu (CC)", icon: "fact_check" },
+      { key: "PV_SEMESTRE", label: "PV Délibération Semestre (A4 Paysage)", icon: "table_chart" },
+      { key: "PV_ANNUEL", label: "PV Délibération Annuelle (A4 Paysage)", icon: "gavel" },
+      { key: "PV_CC", label: "PV Contrôle Continu (CC & TP)", icon: "fact_check" },
+      { key: "PV_MATIERE", label: "PV de Notes par Matière", icon: "assignment_turned_in" },
+      { key: "BORDEREAU_VIERGE", label: "Bordereau Manuscrit Vierge", icon: "edit_document" },
+      { key: "FICHE_INSCRIPTION", label: "Fiche d'Inscription Individuelle", icon: "description" },
     ],
   },
   {
     id: "externes",
-    title: "3. Actes Certifiés & Relevés",
+    title: "3. Actes Certifiés & Diplômes",
     icon: "verified",
     items: [
+      { key: "CARTE_ETUDIANT", label: "Carte d'Apprenant (CR80)", icon: "badge" },
       { key: "ATTESTATION_INSCRIPTION", label: "Certificat de Scolarité", icon: "verified" },
-      { key: "BULLETIN_CC", label: "Bulletin CC & TP", icon: "fact_check" },
-      { key: "BULLETIN_SEMESTRE", label: "Bulletin Semestriel", icon: "receipt_long" },
+      { key: "BULLETIN_CC", label: "Bulletin Contrôle Continu (CC)", icon: "fact_check" },
+      { key: "BULLETIN_SEMESTRE", label: "Bulletin Semestriel Bilingue", icon: "receipt_long" },
       { key: "RELEVE_ANNUEL", label: "Relevé Annuel (Transcript)", icon: "history_edu" },
-      { key: "DIPLOME_FIN_FORMATION", label: "Attestation Fin Formation", icon: "workspace_premium" },
+      { key: "DIPLOME_FIN_FORMATION", label: "Attestation Fin Formation (Paysage)", icon: "workspace_premium" },
     ],
   },
   {
     id: "examens_blancs",
-    title: "4. Examens Blancs (MINEFOP)",
+    title: "4. Examens Blancs MINEFOP",
     icon: "school",
     items: [
-      { key: "PV_EXAMEN_BLANC", label: "Bordereau Notes MINEFOP", icon: "assignment" },
+      { key: "PV_EXAMEN_BLANC", label: "Bordereau Notes MINEFOP (Délégation)", icon: "assignment" },
     ],
   },
 ];
@@ -82,7 +82,7 @@ const DEFAULT_CONFIGS = {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE\n----\nDÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING\n----\nREGIONAL DELEGATION FOR THE WEST\nDIVISIONAL DELEGATION FOR MENOUA",
     watermarkOpacity: 0.05,
-    bgTextureOpacity: 0.22,
+    bgTextureOpacity: 0.15,
     footerLegal: "Document officiel certifié conforme • Toute surcharge ou altération annule la validité du présent acte.",
     internalHeader: {
       title: "",
@@ -105,9 +105,8 @@ const DEFAULT_CONFIGS = {
 };
 
 export default function DocumentStudioPage() {
-  const user = useAuthStore((s) => s.user);
-  const [selectedType, setSelectedType] = useState("PV_EXAMEN_BLANC");
-  const [config, setConfig] = useState(DEFAULT_CONFIGS.PV_EXAMEN_BLANC);
+  const [selectedType, setSelectedType] = useState("PV_SEMESTRE");
+  const [config, setConfig] = useState({});
   const [availableSignatureRoles, setAvailableSignatureRoles] = useState([
     { key: "directeur", title: "Directeur Général" },
     { key: "promoteur", title: "Promoteur / Fondateur" },
@@ -163,7 +162,7 @@ export default function DocumentStudioPage() {
 
   function handleSelectType(newType) {
     setSelectedType(newType);
-    const fallback = DEFAULT_CONFIGS[newType] || DEFAULT_CONFIGS.PV_EXAMEN_BLANC;
+    const fallback = DEFAULT_CONFIGS[newType] || DEFAULT_CONFIGS.GENERAL_CONFIG;
     setConfig(fallback);
 
     apiFetch(`/documents/templates/${newType}`)
@@ -179,7 +178,7 @@ export default function DocumentStudioPage() {
   }
 
   useEffect(() => {
-    handleSelectType("PV_EXAMEN_BLANC");
+    handleSelectType("PV_SEMESTRE");
   }, []);
 
   function handleConfigFieldChange(field, val) {
@@ -197,7 +196,7 @@ export default function DocumentStudioPage() {
         method: "PUT",
         body: JSON.stringify({ config }),
       });
-      showToast("Gabarit d'examen blanc enregistré avec succès.", "success");
+      showToast("Gabarit d'acte enregistré avec succès.", "success");
     } catch (err) {
       showToast(err.message || "Erreur d'enregistrement.", "error");
     } finally {
@@ -205,12 +204,14 @@ export default function DocumentStudioPage() {
     }
   }
 
+  const isInternalPv = ["PV_SEMESTRE", "PV_ANNUEL", "PV_CC", "PV_MATIERE", "BORDEREAU_VIERGE"].includes(selectedType);
+
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
         contextBadge={<Badge variant="brand">Administration • Studio Vectoriel</Badge>}
         title="Studio des Gabarits d'Actes &amp; Documents"
-        subtitle="Personnalisation des maquettes : bordereaux officiels MINEFOP, certificats, bulletins et relevés"
+        subtitle="Personnalisation fine des maquettes : procès-verbaux internes centrés, relevés, bordereaux MINEFOP et diplômes"
         actions={
           <Button variant="primary" icon="save" onClick={handleSubmit} isLoading={saving}>
             Enregistrer le Gabarit
@@ -218,7 +219,7 @@ export default function DocumentStudioPage() {
         }
       />
 
-      {/* Sélecteur de Documents Épuré */}
+      {/* Sélecteur de Documents Épuré par Catégorie */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {DOCUMENT_SECTIONS.map((sec) => (
           <div key={sec.id} className="p-3.5 rounded bg-surface border border-border shadow-xs space-y-2 dark:bg-surface-dark dark:border-border-dark">
@@ -262,20 +263,24 @@ export default function DocumentStudioPage() {
           <div className="flex items-center justify-between border-b border-border pb-3 dark:border-border-dark">
             <h3 className="text-body-md font-semibold text-ink-primary dark:text-white font-sans truncate">
               {selectedType === "GENERAL_CONFIG" ? "Socle Commun & En-têtes" :
-               selectedType === "CARTE_ETUDIANT" ? "Configuration de la Carte" :
+               selectedType === "CARTE_ETUDIANT" ? "Configuration Carte CR80" :
                selectedType === "FICHE_INSCRIPTION" ? "Fiche d'Inscription" :
                selectedType === "ATTESTATION_INSCRIPTION" ? "Certificat de Scolarité" :
                selectedType === "BULLETIN_CC" ? "Bulletin Contrôle Continu" :
-               selectedType === "BULLETIN_SEMESTRE" ? "Bulletin Semestriel" :
+               selectedType === "BULLETIN_SEMESTRE" ? "Bulletin Semestriel Bilingue" :
                selectedType === "RELEVE_ANNUEL" ? "Relevé Annuel (Transcript)" :
                selectedType === "DIPLOME_FIN_FORMATION" ? "Attestation Fin Formation" :
-               selectedType === "PV_EXAMEN_BLANC" ? "Bordereau Notes MINEFOP" : `Gabarit : ${selectedType}`}
+               selectedType === "PV_EXAMEN_BLANC" ? "Bordereau Notes MINEFOP" : `Procès-Verbal Interne (${selectedType})`}
             </h3>
             <Badge variant="brand">Actif</Badge>
           </div>
 
           {selectedType === "GENERAL_CONFIG" && (
             <StudioCommonHeaderConfig config={config} onChange={handleConfigFieldChange} centerData={centerData} />
+          )}
+
+          {isInternalPv && (
+            <StudioInternalPvConfig config={config} onChange={handleConfigFieldChange} centerData={centerData} />
           )}
 
           {selectedType === "CARTE_ETUDIANT" && (
@@ -315,13 +320,15 @@ export default function DocumentStudioPage() {
           </Button>
         </form>
 
-        {/* Panneau de prévisualisation (Droite 7 cols) */}
+        {/* Panneau de prévisualisation en direct (Droite 7 cols) */}
         <div className="lg:col-span-7 p-6 rounded bg-surface border border-border shadow-xs space-y-4 flex flex-col justify-between dark:bg-surface-dark dark:border-border-dark">
           <div className="flex items-center justify-between border-b border-border pb-3 dark:border-border-dark">
             <h3 className="text-body-md font-semibold text-ink-primary dark:text-white font-sans">
               Aperçu Vectoriel en Direct
             </h3>
-            {selectedType === "PV_EXAMEN_BLANC" ? (
+            {isInternalPv ? (
+              <Badge variant="brand">EN-TÊTE CENTRÉ &amp; LÉGENDE CODES</Badge>
+            ) : selectedType === "PV_EXAMEN_BLANC" ? (
               <Badge variant="brand">SANS CODE QR (CONFORME DÉLÉGATION)</Badge>
             ) : (
               <Badge variant="brand">Rendu Temps Réel</Badge>
@@ -331,6 +338,10 @@ export default function DocumentStudioPage() {
           <div className="p-4 bg-[#CBD5E1]/30 rounded border border-border flex items-center justify-center min-h-[460px] overflow-auto dark:bg-[#07111D] dark:border-border-dark">
             {selectedType === "GENERAL_CONFIG" && (
               <StudioCommonHeaderPreview config={config} center={centerData} logoUrl={centerLogoUrl} sealUrl={centerSealUrl} />
+            )}
+
+            {isInternalPv && (
+              <StudioInternalPvPreview config={config} center={centerData} logoUrl={centerLogoUrl} docType={selectedType} />
             )}
 
             {selectedType === "CARTE_ETUDIANT" && (

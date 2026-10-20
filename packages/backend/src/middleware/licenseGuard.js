@@ -2,11 +2,11 @@
 const { evaluateCenterLicense } = require("../services/licenseService");
 
 /**
- * Middleware de protection de licence (V4/Prod) :
+ * Middleware de protection de licence :
  * - Autorise en permanence l'authentification, les licences, les healthchecks et la vérification QR.
  * - En période ACTIVE ou GRACE_PERIOD : autorise 100 % des opérations.
- * - En mode READ_ONLY ou TAMPERED : autorise la lecture/impression (GET/HEAD),
- *   mais bloque les écritures (POST, PUT, PATCH, DELETE).
+ * - En mode READ_ONLY ou TAMPERED : autorise la consultation (GET/HEAD),
+ *   ainsi que la consultation des actes déjà scellés (POST /documents/generate avec forceRegenerate=false).
  */
 async function checkLicense(req, res, next) {
   // 1. Routes système et d'activation toujours ouvertes
@@ -36,15 +36,21 @@ async function checkLicense(req, res, next) {
     }
 
     // 3. Mode Lecture Seule / Expiration / Horloge manipulée :
-    // Les requêtes de consultation (GET, HEAD, OPTIONS) sont toujours autorisées
     const isSafeReadMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method);
 
-    if (isSafeReadMethod) {
+    // RÈGLE SOUVERAINE : Même en mode READ_ONLY, la consultation d'un acte déjà généré via POST /documents/generate
+    // avec forceRegenerate=false est une lecture d'archive permise à vie !
+    const isHistoricalDocumentRead =
+      req.method === "POST" &&
+      req.path === "/documents/generate" &&
+      req.body?.forceRegenerate !== true;
+
+    if (isSafeReadMethod || isHistoricalDocumentRead) {
       res.setHeader("X-CECO-License-Status", evaluation.status);
       return next();
     }
 
-    // 4. Blocage strict des modifications (POST, PUT, DELETE, PATCH) en mode Lecture Seule
+    // 4. Blocage strict des modifications réelles en mode Lecture Seule
     return res.status(402).json({
       error: "LICENSE_READ_ONLY",
       code: evaluation.status === "TAMPERED" ? "CLOCK_TAMPERED" : "LICENSE_EXPIRED_READ_ONLY",
@@ -59,6 +65,5 @@ async function checkLicense(req, res, next) {
   }
 }
 
-// Double export pour parer à tout type d'import (destructuré ou direct)
 module.exports = checkLicense;
 module.exports.checkLicense = checkLicense;

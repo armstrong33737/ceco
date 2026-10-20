@@ -8,6 +8,7 @@ const { verifyJwt } = require("../middleware/auth");
 const { requirePermission } = require("../middleware/permissions");
 const { centerStoragePath, ensureStorageTree, cleanTempStorage } = require("../storage/paths");
 const { getDefaultSealBase64 } = require("../storage/defaultSeal");
+const { resolveDocumentTextureBuffer } = require("../services/pdf/common/pdfHelpers");
 const {
   generateStudentCardPdf,
   generateBatchCardsSheetPdf,
@@ -25,6 +26,14 @@ const {
 } = require("../services/documentPdfService");
 
 const router = express.Router();
+
+const PERMANENT_LEGAL_DOC_TYPES = [
+  "BULLETIN_SEMESTRE",
+  "RELEVE_ANNUEL",
+  "DIPLOME_FIN_FORMATION",
+  "ATTESTATION_INSCRIPTION",
+  "CARTE_ETUDIANT",
+];
 
 function getCenterLogoBase64(centerId, logoExt) {
   if (!logoExt) return null;
@@ -52,48 +61,12 @@ function getCenterSealBase64(centerId) {
 }
 
 /**
- * Récupère le motif de fond du document (Recherche prioritaire recap_bg, transcript_bg, puis card_bg)
+ * Résout le buffer de texture et le convertit en Data URL Base64 avec fallback automatique sur les assets
  */
-function getCenterDocumentBgBase64(centerId, docCategory = "card") {
-  const brandingDir = centerStoragePath(centerId, "settings/branding");
-  const exts = ["png", "jpg", "jpeg", "webp"];
-
-  const prefixes = docCategory === "transcript" || docCategory === "recap"
-    ? ["recap_bg", "transcript_bg", "releve_bg", "card_bg"]
-    : ["card_bg", "card_background"];
-
-  if (fs.existsSync(brandingDir)) {
-    for (const pref of prefixes) {
-      for (const ext of exts) {
-        const p = path.join(brandingDir, `${pref}.${ext}`);
-        if (fs.existsSync(p)) {
-          const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-          return `data:${mime};base64,${fs.readFileSync(p).toString("base64")}`;
-        }
-      }
-    }
-  }
-
-  // Repli par défaut
-  const candidateDirs = [
-    path.join(__dirname, "../../assets"),
-    path.join(process.cwd(), "packages/backend/assets"),
-    path.join(process.cwd(), "packages/desktop/assets"),
-  ];
-  for (const dir of candidateDirs) {
-    if (fs.existsSync(dir)) {
-      for (const pref of prefixes) {
-        for (const ext of exts) {
-          const p = path.join(dir, `${pref}.${ext}`);
-          if (fs.existsSync(p)) {
-            const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-            return `data:${mime};base64,${fs.readFileSync(p).toString("base64")}`;
-          }
-        }
-      }
-    }
-  }
-  return null;
+function getCenterDocumentBgDataUrl(centerId, docCategory = "card") {
+  const buf = resolveDocumentTextureBuffer(centerId, docCategory, {});
+  if (!buf) return null;
+  return `data:image/jpeg;base64,${buf.toString("base64")}`;
 }
 
 function getAllCenterSignaturesBase64(centerId) {
@@ -188,7 +161,7 @@ const DEFAULT_FAMILY_CONFIGS = {
     headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI\nET DE LA FORMATION PROFESSIONNELLE\n----\nDÉLÉGATION RÉGIONALE DE L'OUEST\nDÉLÉGATION DÉPARTEMENTALE DE LA MENOUA",
     headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT\nAND VOCATIONAL TRAINING\n----\nREGIONAL DELEGATION FOR THE WEST\nDIVISIONAL DELEGATION FOR MENOUA",
     watermarkOpacity: 0.05,
-    bgTextureOpacity: 0.22,
+    bgTextureOpacity: 1.0,
     footerLegal: "Document officiel certifié conforme • Toute surcharge ou altération annule la validité du présent acte.",
     internalHeader: {
       title: "",
@@ -205,13 +178,12 @@ const DEFAULT_FAMILY_CONFIGS = {
     showWatermark: true,
     watermarkType: "logo",
     watermarkOpacity: 0.08,
+    bgTextureOpacity: 1.0,
     termsOfUse: "Cette carte est strictement personnelle et demeure la propriété exclusive du centre. Sa présentation est obligatoire pour l'accès aux cours, ateliers et examens.",
     signatoryRoleKey: "directeur",
     signatoryTitle: "Le Directeur Général",
   },
   INTERNE: {
-    headerLeft: "RÉPUBLIQUE DU CAMEROUN\nPaix - Travail - Patrie\n----\nMINISTÈRE DE L'EMPLOI ET DE LA FORMATION PROFESSIONNELLE",
-    headerRight: "REPUBLIC OF CAMEROON\nPeace - Work - Fatherland\n----\nMINISTRY OF EMPLOYMENT AND VOCATIONAL TRAINING",
     primaryColor: "#071A2E",
     showLogo: true,
     showSeal: false,
@@ -234,13 +206,33 @@ const DEFAULT_FAMILY_CONFIGS = {
     showWatermark: true,
     watermarkType: "logo",
     watermarkOpacity: 0.05,
-    bgTextureOpacity: 0.22,
+    bgTextureOpacity: 1.0,
     signatories: [
       { title: "Le Directeur Général", roleKey: "directeur" },
     ],
     footerLegal: "Toute falsification ou altération du présent document expose son auteur aux poursuites prévues par le Code Pénal.",
   },
 };
+
+async function renderPdfDocumentFromSnapshot(type, snapshot, offlinePayload, fullPdfPath) {
+  if (type === "CARTE_ETUDIANT") {
+    await generateStudentCardPdf(snapshot, offlinePayload, fullPdfPath);
+  } else if (type === "FICHE_INSCRIPTION") {
+    await generateFicheInscriptionPdf(snapshot, fullPdfPath);
+  } else if (type === "ATTESTATION_INSCRIPTION") {
+    await generateAttestationPdf(snapshot, offlinePayload, fullPdfPath);
+  } else if (type === "BULLETIN_CC") {
+    await generateContinuousAssessmentBulletinPdf(snapshot, offlinePayload, fullPdfPath);
+  } else if (type === "BULLETIN_SEMESTRE") {
+    await generateSemesterBulletinPdf(snapshot, offlinePayload, fullPdfPath);
+  } else if (type === "RELEVE_ANNUEL") {
+    await generateAnnualTranscriptPdf(snapshot, offlinePayload, fullPdfPath);
+  } else if (type === "DIPLOME_FIN_FORMATION") {
+    await generateGraduationDiplomaPdf(snapshot, offlinePayload, fullPdfPath);
+  } else {
+    await generateAttestationPdf(snapshot, offlinePayload, fullPdfPath);
+  }
+}
 
 // 1. Registre Centralisé des Documents
 router.get("/documents", verifyJwt, requirePermission("students.read", "grades.read"), async (req, res, next) => {
@@ -356,7 +348,11 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
   }
 });
 
-// 3. Snapshot Académique Tolérant avec résolution dynamique de recap_bg et card_bg
+/**
+ * 3. SNAPSHOT ACADÉMIQUE AVEC ALIGNEMENT INTÈGRE SUR LES DÉLIBÉRATIONS DU JURY
+ * Applique la division par les coefficients prescrits de la classe ($TotalPoints / TotalPrescribedCoeffs$)
+ * et se synchronise sur la moyenne officielle scellée par le jury.
+ */
 async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetClasseId, gradePeriodId) {
   const student = await prisma.student.findFirst({
     where: {
@@ -458,6 +454,10 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     }),
   ]);
 
+  // RÈGLE MÉTIER STRICTE : Total des coefficients prescrits de la classe
+  const totalPrescribedCoeffs = offerings.reduce((sum, off) => sum + (off.coefficient || 0), 0);
+
+  // Calcul des statistiques de classe unifiées avec division par totalPrescribedCoeffs
   const classAverages = [];
   const allResults = await prisma.subjectResult.findMany({
     where: {
@@ -470,24 +470,22 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
   allStudentsInscs.forEach((inscItem) => {
     const stResults = allResults.filter((r) => r.studentId === inscItem.studentId && offerings.some((o) => o.subjectId === r.subjectId));
     let pts = 0;
-    let coeffs = 0;
     let stHasElim = false;
 
     offerings.forEach((off) => {
       const res = stResults.find((r) => r.subjectId === off.subjectId);
       if (res && res.finalGrade !== null) {
         pts += res.finalGrade * off.coefficient;
-        coeffs += off.coefficient;
         if (off.category?.isEliminatory && res.finalGrade < 8.0) {
           stHasElim = true;
         }
       }
     });
 
-    if (coeffs > 0) {
+    if (totalPrescribedCoeffs > 0) {
       classAverages.push({
         studentId: inscItem.studentId,
-        avg: Number((pts / coeffs).toFixed(2)),
+        avg: Number((pts / totalPrescribedCoeffs).toFixed(2)),
         hasElim: stHasElim,
       });
     }
@@ -508,7 +506,7 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
 
   const categoriesMap = new Map();
   let grandTotalPoints = 0;
-  let grandTotalCoeff = 0;
+  let evaluatedTotalCoeff = 0;
   let hasEliminatory = false;
 
   offerings.forEach((off) => {
@@ -562,7 +560,7 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     if (finalGradeVal !== null) {
       group.totalCoeff += off.coefficient;
       group.totalPoints += points;
-      grandTotalCoeff += off.coefficient;
+      evaluatedTotalCoeff += off.coefficient;
       grandTotalPoints += points;
 
       if (isElim && finalGradeVal < 8.0) {
@@ -601,13 +599,25 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     cat.groupAverage = cat.totalCoeff > 0 ? Number((cat.totalPoints / cat.totalCoeff).toFixed(2)) : null;
   });
 
-  const studentOverallAverage = grandTotalCoeff > 0 ? Number((grandTotalPoints / grandTotalCoeff).toFixed(2)) : null;
-  const studentRank = studentOverallAverage !== null ? classAverages.findIndex((c) => c.studentId === student.id) + 1 : null;
+  // Moyenne générale mathématique divisée par le total des coefficients prescrits
+  const computedAverage = totalPrescribedCoeffs > 0
+    ? Number((grandTotalPoints / totalPrescribedCoeffs).toFixed(2))
+    : null;
 
+  // SYNCHRONISATION ABSOLUE AVEC LA DÉLIBÉRATION OFFICIELLE DU JURY
   let juryDecision = currentInsc.status || "en_cours";
+  let finalOverallAverage = computedAverage;
+
   const activeDelib = delibs[0];
   const stDelib = activeDelib?.studentResults?.find((d) => d.studentId === student.id);
-  if (stDelib) juryDecision = stDelib.decision;
+  if (stDelib) {
+    if (stDelib.moyenne !== null && stDelib.moyenne !== undefined) {
+      finalOverallAverage = stDelib.moyenne;
+    }
+    juryDecision = stDelib.decision;
+  }
+
+  const studentRank = finalOverallAverage !== null ? classAverages.findIndex((c) => c.studentId === student.id) + 1 : null;
 
   return {
     center: {
@@ -623,8 +633,9 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
       directorTitle: center.directorTitle || "Le Directeur Général",
       logoDataUrl: getCenterLogoBase64(centerId, center.logo),
       sealDataUrl: getCenterSealBase64(centerId),
-      cardBgDataUrl: getCenterDocumentBgBase64(centerId, "card"),
-      transcriptBgDataUrl: getCenterDocumentBgBase64(centerId, "transcript"), // <-- Résolution automatique de recap_bg.*
+      cardBgDataUrl: getCenterDocumentBgDataUrl(centerId, "card"),
+      transcriptBgDataUrl: getCenterDocumentBgDataUrl(centerId, "transcript"),
+      diplomaBgDataUrl: getCenterDocumentBgDataUrl(centerId, "diploma"),
       signatures: getAllCenterSignaturesBase64(centerId),
     },
     commonDefaults: globalTmpl?.config || DEFAULT_FAMILY_CONFIGS.GENERAL_CONFIG,
@@ -661,9 +672,10 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     } : { label: `Année ${classe.academicYear?.label || "2026-2027"}`, type: "ANNUEL" },
     categories,
     totals: {
-      totalCoefficients: grandTotalCoeff,
+      totalCoefficients: totalPrescribedCoeffs,
+      evaluatedCoefficients: evaluatedTotalCoeff,
       totalPoints: Number(grandTotalPoints.toFixed(2)),
-      overallAverage: studentOverallAverage,
+      overallAverage: finalOverallAverage,
       rank: studentRank,
       totalStudents: allStudentsInscs.length,
       classAverage: classMean,
@@ -674,13 +686,15 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
       classSuccessRate: realSuccessRate,
       hasEliminatory,
       decision: juryDecision,
-      mention: getDiplomaMention(studentOverallAverage),
-      generalObservation: getGeneralObservation(studentOverallAverage, hasEliminatory),
+      mention: getDiplomaMention(finalOverallAverage),
+      generalObservation: getGeneralObservation(finalOverallAverage, hasEliminatory),
     },
   };
 }
 
-// 4. Génération d'un document individuel
+/**
+ * 4. GÉNÉRATION DE DOCUMENT INDIVIDUEL AVEC PÉRENNITÉ PAR SNAPSHOT
+ */
 router.post("/documents/generate", verifyJwt, requirePermission("students.read", "grades.read", "bulletins.generate"), async (req, res, next) => {
   try {
     const { studentId, type = "CARTE_ETUDIANT", classeId, gradePeriodId, forceRegenerate = false } = req.body || {};
@@ -689,39 +703,78 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     await ensureStorageTree(req.centerId);
     cleanTempStorage(req.centerId);
 
+    const isPermanentLegalDoc = PERMANENT_LEGAL_DOC_TYPES.includes(type);
+
+    const existingDoc = await prisma.document.findFirst({
+      where: {
+        centerId: req.centerId,
+        studentId,
+        type,
+        ...(classeId ? { classeId } : {}),
+        ...(gradePeriodId ? { gradePeriodId } : {}),
+      },
+      orderBy: { generatedAt: "desc" },
+    });
+
+    // Cas 1 : Document pérenne existant et aucune régénération forcée demandée
+    if (isPermanentLegalDoc && existingDoc && !forceRegenerate) {
+      if (fs.existsSync(existingDoc.filePath)) {
+        return res.json({
+          success: true,
+          reused: true,
+          document: {
+            id: existingDoc.id,
+            qrToken: existingDoc.qrToken,
+            fileHash: existingDoc.fileHash,
+            renderSnapshot: existingDoc.renderSnapshot,
+            downloadUrl: `/documents/${existingDoc.id}/download`,
+            previewUrl: `/documents/${existingDoc.id}/preview`,
+          },
+        });
+      }
+
+      // Reconstitution physique déterministe à partir du snapshot d'origine
+      const historicalSnapshot = existingDoc.renderSnapshot;
+      if (historicalSnapshot) {
+        const yearFolder = (historicalSnapshot.classe?.academicYearLabel || "archive").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const docFolder = centerStoragePath(req.centerId, "documents", "archive", yearFolder);
+        if (!fs.existsSync(docFolder)) fs.mkdirSync(docFolder, { recursive: true });
+
+        const cleanMatricule = (historicalSnapshot.student?.matricule || "STU").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const pdfFileName = `${cleanMatricule}_${type}_${existingDoc.id.substring(0, 8)}.pdf`;
+        const fullPdfPath = path.join(docFolder, pdfFileName);
+
+        await renderPdfDocumentFromSnapshot(type, historicalSnapshot, historicalSnapshot.offlineQrPayload, fullPdfPath);
+
+        const newHash = crypto.createHash("sha256").update(fs.readFileSync(fullPdfPath)).digest("hex");
+        await prisma.document.update({
+          where: { id: existingDoc.id },
+          data: { filePath: fullPdfPath, fileHash: newHash },
+        });
+
+        return res.json({
+          success: true,
+          reused: true,
+          reconstructedFromSnapshot: true,
+          document: {
+            id: existingDoc.id,
+            qrToken: existingDoc.qrToken,
+            fileHash: newHash,
+            renderSnapshot: historicalSnapshot,
+            downloadUrl: `/documents/${existingDoc.id}/download`,
+            previewUrl: `/documents/${existingDoc.id}/preview`,
+          },
+        });
+      }
+    }
+
+    // Cas 2 : Première génération ou ré-émission forcée avec recalcul des notes
     const snapshot = await buildStudentAcademicSnapshot(req.centerId, studentId, classeId, gradePeriodId);
     if (!snapshot) {
       return res.status(404).json({ error: "Données académiques introuvables pour cet apprenant." });
     }
 
     const targetClasseId = snapshot.classe.id;
-    const isPermanentLegalDoc = ["BULLETIN_SEMESTRE", "RELEVE_ANNUEL", "DIPLOME_FIN_FORMATION", "ATTESTATION_INSCRIPTION"].includes(type);
-
-    const existingDoc = await prisma.document.findFirst({
-      where: {
-        centerId: req.centerId,
-        studentId: snapshot.student.id,
-        type,
-        classeId: targetClasseId,
-        ...(snapshot.period?.id ? { gradePeriodId: snapshot.period.id } : {}),
-      },
-      orderBy: { generatedAt: "desc" },
-    });
-
-    if (!forceRegenerate && existingDoc && fs.existsSync(existingDoc.filePath)) {
-      return res.json({
-        success: true,
-        reused: true,
-        document: {
-          id: existingDoc.id,
-          qrToken: existingDoc.qrToken,
-          fileHash: existingDoc.fileHash,
-          renderSnapshot: existingDoc.renderSnapshot,
-          downloadUrl: `/documents/${existingDoc.id}/download`,
-          previewUrl: `/documents/${existingDoc.id}/preview`,
-        },
-      });
-    }
 
     const template = await prisma.documentTemplate.findUnique({
       where: { centerId_type: { centerId: req.centerId, type } },
@@ -759,23 +812,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
     const pdfFileName = `${cleanMatricule}_${type}_${snapshot.period?.id ? snapshot.period.id.substring(0, 6) : "ANNUEL"}_${Date.now()}.pdf`;
     const fullPdfPath = path.join(docFolder, pdfFileName);
 
-    if (type === "CARTE_ETUDIANT") {
-      await generateStudentCardPdf(snapshot, offlinePayload, fullPdfPath);
-    } else if (type === "FICHE_INSCRIPTION") {
-      await generateFicheInscriptionPdf(snapshot, fullPdfPath);
-    } else if (type === "ATTESTATION_INSCRIPTION") {
-      await generateAttestationPdf(snapshot, offlinePayload, fullPdfPath);
-    } else if (type === "BULLETIN_CC") {
-      await generateContinuousAssessmentBulletinPdf(snapshot, offlinePayload, fullPdfPath);
-    } else if (type === "BULLETIN_SEMESTRE") {
-      await generateSemesterBulletinPdf(snapshot, offlinePayload, fullPdfPath);
-    } else if (type === "RELEVE_ANNUEL") {
-      await generateAnnualTranscriptPdf(snapshot, offlinePayload, fullPdfPath);
-    } else if (type === "DIPLOME_FIN_FORMATION") {
-      await generateGraduationDiplomaPdf(snapshot, offlinePayload, fullPdfPath);
-    } else {
-      await generateAttestationPdf(snapshot, offlinePayload, fullPdfPath);
-    }
+    await renderPdfDocumentFromSnapshot(type, snapshot, offlinePayload, fullPdfPath);
 
     const pdfBuffer = fs.readFileSync(fullPdfPath);
     const fileHash = crypto.createHash("sha256").update(pdfBuffer).digest("hex");
@@ -796,6 +833,7 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
 
     res.json({
       success: true,
+      reused: false,
       document: {
         id: document.id,
         qrToken,

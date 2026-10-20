@@ -5,7 +5,9 @@ import Icon from "../../../components/Icon";
 export default function StudioTranscriptPreview({ config, center, logoUrl, sealUrl, transcriptBgUrl }) {
   const primaryColor = config.primaryColor || "#071A2E";
   const headerMode = config.headerMode || "logo";
-  const textureOpacity = config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 0.22;
+
+  // Opacité par défaut à 100% (1.0)
+  const textureOpacity = config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 1.0;
 
   const signatories = config.signatories && config.signatories.length > 0 ? config.signatories : [
     { title: "Le Directeur des Études", roleKey: "directeur" },
@@ -14,8 +16,8 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
 
   return (
     <div className="w-[420px] min-h-[610px] bg-white rounded border border-slate-300 shadow-xl p-5 flex flex-col justify-between text-[7px] leading-tight select-none relative overflow-hidden">
-      {/* 1. Texture de Fond recap_bg Active et Visible */}
-      {transcriptBgUrl && (
+      {/* 1. Texture de Fond recap_bg à l'opacité paramétrée (défaut 100%) */}
+      {transcriptBgUrl && textureOpacity > 0 && (
         <div
           className="absolute inset-0 z-0 overflow-hidden pointer-events-none"
           style={{ opacity: textureOpacity }}
@@ -24,7 +26,7 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
         </div>
       )}
 
-      {/* Filigrane Logo */}
+      {/* Filigrane Logo centré si configuré */}
       {logoUrl && config.showWatermark !== false && (
         <div
           className="pointer-events-none absolute inset-0 flex items-center justify-center z-0"
@@ -34,9 +36,9 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
         </div>
       )}
 
-      {/* Contenu principal z-10 (translucide pour révéler le motif recap_bg) */}
+      {/* Contenu principal z-10 */}
       <div className="relative z-10 space-y-2">
-        {/* 2. En-tête Bilingue Officiel Allongé */}
+        {/* En-tête Bilingue Officiel Allongé */}
         <div className="border-b-2 pb-2 space-y-1.5" style={{ borderColor: primaryColor }}>
           <div className="flex justify-between items-start text-[5.5px] font-bold">
             <div className="w-[34%] text-center whitespace-pre-line leading-tight text-slate-800">
@@ -66,17 +68,17 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
               {center?.name || "CENTRE DE FORMATION PROFESSIONNELLE"}
             </div>
             <div className="text-[6.8px] text-slate-600 font-semibold truncate">
-              ARRÊTÉ D'AGRÉMENT MINEFOP : {center?.registrationNumber || "Autorisé / En cours"} • VILLE : {(center?.city || "Cameroun").toUpperCase()}
+              ARRÊTÉ D'AGRÉMENT MINEFOP : {center?.registrationNumber || "Autorisé / En cours"} • VILLE : ${(center?.city || "Cameroun").toUpperCase()}
             </div>
           </div>
         </div>
 
-        {/* 3. Titre du Relevé Annuel */}
+        {/* Titre du Relevé Annuel */}
         <div className="py-1 px-2 rounded text-center text-white font-bold text-[8.5px] uppercase tracking-wide shadow-xs" style={{ backgroundColor: primaryColor }}>
           {config.documentTitle || "RELEVÉ DE NOTES ANNUEL OFFICIEL / ACADEMIC TRANSCRIPT"}
         </div>
 
-        {/* 4. Cartouche Élève Individuel (Translucide) */}
+        {/* Cartouche Étudiant */}
         <div className="p-2 rounded bg-white/80 border border-slate-300 flex items-center justify-between shadow-xs">
           <div className="space-y-0.5 text-[6.8px] flex-1">
             <div><span className="text-slate-500">NOM &amp; PRÉNOM(S) :</span> <strong className="text-slate-900 text-[8.2px]">NGALEU ARMSTRONG EUCLADOR</strong></div>
@@ -89,7 +91,7 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
           </div>
         </div>
 
-        {/* 5. Tableau des Unités d'Enseignement (Translucide révélant recap_bg) */}
+        {/* Tableau des Modules */}
         <div className="border border-slate-300 rounded overflow-hidden text-[6.2px] bg-white/70">
           <div className="flex text-white font-bold py-1 px-1.5" style={{ backgroundColor: primaryColor }}>
             <span className="w-14">CODE UE</span>
@@ -124,49 +126,6 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
             <span className="flex-1 text-center font-bold text-emerald-700">VALIDÉ</span>
           </div>
 
-          <div className="flex py-1.5 px-1.5 border-t border-slate-200 bg-white/75 items-center">
-            <span className="w-14 font-mono font-bold text-slate-900">GRA03</span>
-            <span className="w-36 truncate font-semibold text-slate-900">Traitement Numérique d'Images</span>
-            <span className="w-12 text-center">2</span>
-            <span className="w-14 text-center font-bold text-slate-900 text-[7px]">16.50</span>
-            <span className="w-14 text-center">33.00</span>
-            <span className="w-10 text-center font-bold text-slate-900">A</span>
-            <span className="flex-1 text-center font-bold text-emerald-700">VALIDÉ</span>
-          </div>
-
-          <div className="bg-slate-200/90 font-bold px-2 py-0.5 text-slate-800 text-[6px]">
-            ENSEIGNEMENT GÉNÉRAL &amp; TRANSVERSAL (CRÉDITS : 4)
-          </div>
-          <div className="flex py-1.5 px-1.5 border-t border-slate-200 bg-white/75 items-center">
-            <span className="w-14 font-mono font-bold text-slate-900">ENG01</span>
-            <span className="w-36 truncate font-semibold text-slate-900">Anglais Technique Appliqué</span>
-            <span className="w-12 text-center">2</span>
-            <span className="w-14 text-center font-bold text-slate-900 text-[7px]">13.50</span>
-            <span className="w-14 text-center">27.00</span>
-            <span className="w-10 text-center font-bold text-slate-900">C</span>
-            <span className="flex-1 text-center font-bold text-emerald-700">VALIDÉ</span>
-          </div>
-
-          <div className="flex py-1.5 px-1.5 border-t border-slate-200 bg-white/60 items-center">
-            <span className="w-14 font-mono font-bold text-slate-900">ENT01</span>
-            <span className="w-36 truncate font-semibold text-slate-900">Législation Professionnelle</span>
-            <span className="w-12 text-center">1</span>
-            <span className="w-14 text-center font-bold text-slate-900 text-[7px]">15.00</span>
-            <span className="w-14 text-center">15.00</span>
-            <span className="w-10 text-center font-bold text-slate-900">B</span>
-            <span className="flex-1 text-center font-bold text-emerald-700">VALIDÉ</span>
-          </div>
-
-          <div className="flex py-1.5 px-1.5 border-t border-slate-200 bg-white/75 items-center">
-            <span className="w-14 font-mono font-bold text-slate-900">EPS01</span>
-            <span className="w-36 truncate font-semibold text-slate-900">Éducation Physique &amp; Sportive</span>
-            <span className="w-12 text-center">1</span>
-            <span className="w-14 text-center font-bold text-slate-900 text-[7px]">14.50</span>
-            <span className="w-14 text-center">14.50</span>
-            <span className="w-10 text-center font-bold text-slate-900">B</span>
-            <span className="flex-1 text-center font-bold text-emerald-700">VALIDÉ</span>
-          </div>
-
           <div className="flex py-1.5 px-1.5 border-t-2 border-slate-300 bg-slate-100/90 font-bold items-center text-[6.8px]">
             <span className="w-50">TOTAL DES UNITÉS ENSEIGNÉES</span>
             <span className="w-12 text-center font-mono">13</span>
@@ -176,7 +135,7 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
           </div>
         </div>
 
-        {/* 6. Bilan Académique & Décision Individuelle */}
+        {/* Bilan Académique */}
         <div className="grid grid-cols-2 gap-2 text-[6.5px] pt-1">
           <div className="p-2 rounded border border-slate-300 bg-white/80 space-y-1 shadow-xs">
             <span className="font-bold text-slate-900 block text-[7px] border-b border-slate-200 pb-0.5">
@@ -193,7 +152,7 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
 
           <div className="p-2 rounded border border-slate-300 bg-white/80 space-y-1 shadow-xs">
             <span className="font-bold text-slate-900 block text-[7px] border-b border-slate-200 pb-0.5">
-              DÉCISION DU JURY DE DÉLIBÉRATION
+              DÉCISION DU JURY DE FIN D'ANNÉE
             </span>
             <div className="py-1 px-1 rounded bg-emerald-100 text-emerald-800 font-bold text-center text-[7.5px]">
               ADMIS(E) EN NIVEAU SUPÉRIEUR
@@ -203,29 +162,9 @@ export default function StudioTranscriptPreview({ config, center, logoUrl, sealU
             </p>
           </div>
         </div>
-
-        {/* 7. Signatures Officielles & QR Code Compact */}
-        <div className="flex justify-between items-end pt-2 border-t border-slate-200 text-[6.5px]">
-          <div className="p-1 border border-slate-300 rounded text-center bg-white/85">
-            <Icon name="qr_code_2" className="text-2xl text-slate-800 mx-auto block" />
-            <span className="text-[4.5px] font-mono text-slate-500 font-bold">QR SCELLÉ</span>
-          </div>
-
-          <div className="flex justify-end gap-3 flex-1 pl-4">
-            {signatories.map((sig, idx) => (
-              <div key={idx} className="text-center space-y-0.5 flex-1 min-w-[80px] max-w-[130px]">
-                <span className="font-bold block text-slate-900 truncate">{sig.title}</span>
-                <span className="text-slate-400 italic text-[5.5px] block">(Cachet et visa)</span>
-                <div className="h-10 border border-slate-300 rounded flex items-center justify-center text-[5.5px] text-slate-400 bg-white/80 truncate px-1 shadow-inner">
-                  [Visa : {sig.roleKey || "directeur"}]
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* 8. Pied de page STRICTEMENT ANCRÉ en bas de page */}
+      {/* Pied de page */}
       <div className="relative z-10 flex justify-between items-center text-[5.5px] text-slate-500 pt-1.5 border-t border-slate-200 mt-2 font-mono">
         <span>{config.footerLegal || "Document académique officiel certifié conforme • Toute surcharge ou altération annule le présent acte."}</span>
         <span className="font-bold tracking-wider" style={{ color: primaryColor }}>CECO SUITE ERP</span>

@@ -52,6 +52,19 @@ function saveStudentPhoto(centerId, studentId, dataUrl) {
   return fileName;
 }
 
+/**
+ * Normalisation de la date de naissance en UTC midi pour éliminer tout glissement de journée
+ */
+function parseBirthDateSafe(birthDateStr) {
+  if (!birthDateStr) return null;
+  const cleanStr = String(birthDateStr).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+    return new Date(`${cleanStr}T12:00:00.000Z`);
+  }
+  const d = new Date(birthDateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 function deriveFiliereCode(filiereName) {
   if (!filiereName) return "GEN";
   const clean = filiereName
@@ -66,9 +79,6 @@ function deriveFiliereCode(filiereName) {
   return clean.substring(0, 3).toUpperCase();
 }
 
-/**
- * Moteur atomique de matricule dynamique avec résolution de collision transactionnelle
- */
 async function generateDynamicMatricule(centerId, targetClass, targetYear, offset = 0) {
   const [center, matriculeSetting] = await Promise.all([
     prisma.center.findUnique({ where: { id: centerId }, select: { slug: true, name: true } }),
@@ -107,7 +117,6 @@ async function generateDynamicMatricule(centerId, targetClass, targetYear, offse
 
   let finalMatricule = replaceTokens(seq);
 
-  // Résolution atomique anti-collision en base
   let exists = await prisma.student.findFirst({ where: { centerId, matricule: finalMatricule } });
   while (exists) {
     seq++;
@@ -252,7 +261,7 @@ router.get("/students/:id", verifyJwt, requirePermission("students.read"), async
   }
 });
 
-// 3. Création transactionnelle avec matricule paramétré sécurisé
+// 3. Création transactionnelle
 router.post("/students", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const {
@@ -324,7 +333,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           gender: gender || "M",
-          birthDate: birthDate ? new Date(birthDate) : null,
+          birthDate: parseBirthDateSafe(birthDate),
           birthPlace: birthPlace ? birthPlace.trim() : null,
           phone: phone ? phone.trim() : null,
           guardianName: guardianName ? guardianName.trim() : null,
@@ -375,7 +384,7 @@ router.post("/students", verifyJwt, requirePermission("students.create"), async 
   }
 });
 
-// 4. Modification (avec scellement juridique du matricule existant)
+// 4. Modification
 router.put("/students/:id", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const {
@@ -397,7 +406,7 @@ router.put("/students/:id", verifyJwt, requirePermission("students.update"), asy
       ...(guardianName !== undefined && { guardianName: guardianName ? guardianName.trim() : null }),
       ...(guardianPhone !== undefined && { guardianPhone: guardianPhone ? guardianPhone.trim() : null }),
       ...(entryDiploma !== undefined && { entryDiploma: entryDiploma ? entryDiploma.trim() : null }),
-      ...(birthDate !== undefined && { birthDate: birthDate ? new Date(birthDate) : null }),
+      ...(birthDate !== undefined && { birthDate: parseBirthDateSafe(birthDate) }),
     };
 
     if (photoDataUrl === "") {
@@ -451,7 +460,11 @@ router.get("/students/:id/photo", verifyJwt, requirePermission("students.read"),
   }
 });
 
-// 6. Suppression douce
+/**
+ * 6. SUPPRESSION INTELLIGENTE À DOUBLE NIVEAU :
+ * - Si antécédents académiques / notes présents -> Archivage Légal (Soft Delete)
+ * - Si zéro historique (erreur de saisie) -> Suppression Définitive Réelle (Hard Delete + libération matricule)
+ */
 router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -459,18 +472,109 @@ router.delete("/students/:id", verifyJwt, requirePermission("students.delete"), 
     });
     if (!student) return res.status(404).json({ error: "Apprenant introuvable." });
 
-    await prisma.student.update({
-      where: { id: req.params.id },
-      data: { deletedAt: new Date() },
+    // Contrôle d'antécédents académiques réels
+    const [
+      gradesCount,
+      subjectResultsCount,
+      studentDeliberationsCount,
+      mockExamGradesCount,
+      mockExamSummariesCount,
+      presencesCount,
+      stagesCount,
+      documentsCount,
+    ] = await Promise.all([
+      prisma.grade.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.subjectResult.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.studentDeliberation.count({ where: { studentId: student.id } }),
+      prisma.mockExamGrade.count({ where: { studentId: student.id } }),
+      prisma.mockExamSummary.count({ where: { studentId: student.id } }),
+      prisma.presence.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.stage.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.document.count({ where: { studentId: student.id, centerId: req.centerId } }),
+    ]);
+
+    const hasAcademicHistory =
+      gradesCount > 0 ||
+      subjectResultsCount > 0 ||
+      studentDeliberationsCount > 0 ||
+      mockExamGradesCount > 0 ||
+      mockExamSummariesCount > 0 ||
+      presencesCount > 0 ||
+      stagesCount > 0 ||
+      documentsCount > 0;
+
+    if (hasAcademicHistory) {
+      // CAS A : Archivage légal avec scellement de traçabilité
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { deletedAt: new Date() },
+      });
+      return res.json({
+        action: "ARCHIVED",
+        message: `L'apprenant "${student.lastName} ${student.firstName}" possède un historique académique/des notes. Son dossier a été archivé pour préserver l'intégrité légale du registre.`,
+      });
+    }
+
+    // CAS B : Erreur de manipulation sans antécédents -> Suppression Définitive Réelle (Hard Delete)
+    await prisma.$transaction(async (tx) => {
+      await tx.inscription.deleteMany({ where: { studentId: student.id, centerId: req.centerId } });
+      await tx.student.delete({ where: { id: student.id } });
     });
 
-    res.status(204).send();
+    removeExistingPhoto(req.centerId, student.id);
+
+    return res.json({
+      action: "DELETED",
+      message: `L'apprenant "${student.lastName} ${student.firstName}" n'ayant aucune note ni acte officiel, son dossier et son matricule (${student.matricule}) ont été définitivement supprimés.`,
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// 7. Restauration
+/**
+ * 7. PURGE DÉFINITIVE DEPUIS LES ARCHIVES
+ */
+router.delete("/students/:id/purge", verifyJwt, requirePermission("students.delete"), async (req, res, next) => {
+  try {
+    const student = await prisma.student.findFirst({
+      where: { id: req.params.id, centerId: req.centerId, deletedAt: { not: null } },
+    });
+    if (!student) return res.status(404).json({ error: "Dossier archivé introuvable." });
+
+    const [gradesCount, subjectResultsCount, studentDeliberationsCount, mockExamGradesCount, documentsCount] = await Promise.all([
+      prisma.grade.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.subjectResult.count({ where: { studentId: student.id, centerId: req.centerId } }),
+      prisma.studentDeliberation.count({ where: { studentId: student.id } }),
+      prisma.mockExamGrade.count({ where: { studentId: student.id } }),
+      prisma.document.count({ where: { studentId: student.id, centerId: req.centerId } }),
+    ]);
+
+    const hasHistory = gradesCount > 0 || subjectResultsCount > 0 || studentDeliberationsCount > 0 || mockExamGradesCount > 0 || documentsCount > 0;
+
+    if (hasHistory) {
+      return res.status(409).json({
+        error: `Impossible de purger définitivement ce dossier : il est rattaché à ${gradesCount + mockExamGradesCount} note(s), des délibérations ou des actes officiels délivrés.`,
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.inscription.deleteMany({ where: { studentId: student.id, centerId: req.centerId } });
+      await tx.student.delete({ where: { id: student.id } });
+    });
+
+    removeExistingPhoto(req.centerId, student.id);
+
+    res.json({
+      success: true,
+      message: `Dossier et matricule (${student.matricule}) définitivement purgés du système.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 8. Restauration
 router.put("/students/:id/restore", verifyJwt, requirePermission("students.update"), async (req, res, next) => {
   try {
     const student = await prisma.student.findFirst({
@@ -498,7 +602,7 @@ router.put("/students/:id/restore", verifyJwt, requirePermission("students.updat
   }
 });
 
-// 8. Export CSV
+// 9. Export CSV
 router.get("/students-export", verifyJwt, requirePermission("students.read"), async (req, res, next) => {
   try {
     const where = buildStudentWhereClause(req.centerId, req.query);
@@ -555,7 +659,7 @@ router.get("/students-export", verifyJwt, requirePermission("students.read"), as
   }
 });
 
-// 9. Import CSV avec auto-génération sécurisée
+// 10. Import CSV
 router.post("/students/import", verifyJwt, requirePermission("students.create"), async (req, res, next) => {
   try {
     const { students: items, classeId, academicYearId } = req.body || {};
@@ -622,7 +726,7 @@ router.post("/students/import", verifyJwt, requirePermission("students.create"),
               firstName: item.firstName.trim(),
               lastName: item.lastName.trim(),
               gender: item.gender ? item.gender.trim().toUpperCase().charAt(0) : "M",
-              birthDate: item.birthDate ? new Date(item.birthDate) : null,
+              birthDate: parseBirthDateSafe(item.birthDate),
               birthPlace: item.birthPlace ? item.birthPlace.trim() : null,
               phone: item.phone ? item.phone.trim() : null,
               guardianName: item.guardianName ? item.guardianName.trim() : null,

@@ -77,7 +77,7 @@ export default function DeliberationsPage() {
         const decisionsMap = {};
         data.results?.forEach((st) => {
           decisionsMap[st.studentId] = {
-            decision: st.decision || (scope === "ANNUEL" ? "redouble" : "ajourne"),
+            decision: st.decision,
             moyenne: st.moyenne,
             rang: st.rang || st.calculatedRank,
           };
@@ -119,17 +119,17 @@ export default function DeliberationsPage() {
     }
   }
 
+  // VALIDATION & SCELLEMENT AVEC SYNCHRONISATION INSTANTANÉE
   async function handleSaveManualDeliberation() {
     setSaving(true);
     try {
       const payloadResults = Object.entries(studentDecisions).map(([studentId, d]) => ({
         studentId,
-        moyenne: d.moyenne,
-        rang: d.rang,
         decision: d.decision,
+        rang: d.rang,
       }));
 
-      await apiFetch("/deliberations/run", {
+      const res = await apiFetch("/deliberations/run", {
         method: "POST",
         body: JSON.stringify({
           classeId: selectedClassId,
@@ -140,7 +140,7 @@ export default function DeliberationsPage() {
         }),
       });
 
-      showToast("Délibération souveraine enregistrée et statuts officiellement scellés.", "success");
+      showToast(res.message, "success");
       loadDeliberation();
     } catch (err) {
       showToast(err.message, "error");
@@ -149,7 +149,6 @@ export default function DeliberationsPage() {
     }
   }
 
-  // Impression des PVs de Délibération (Semestrielle ou Annuelle)
   async function handlePrintPvDeliberation(forceRegenerate = false) {
     try {
       const res = await apiFetch(`/grades/classes/${selectedClassId}/semester-sheet`, {
@@ -170,7 +169,6 @@ export default function DeliberationsPage() {
     }
   }
 
-  // Impression du PV du Contrôle Continu (PV_CC)
   async function handlePrintPvContinuousAssessment(forceRegenerate = false) {
     try {
       const res = await apiFetch(`/grades/classes/${selectedClassId}/cc-sheet`, {
@@ -213,13 +211,15 @@ export default function DeliberationsPage() {
         const failedSubjects = (st.subjectsDetail || []).filter(
           (sub) => sub.grade !== null && (sub.grade < 10.0 || (sub.isEliminatory && sub.grade < 8.0))
         );
+        const missingSubjects = (st.subjectsDetail || []).filter((sub) => sub.grade === null);
         return {
           ...st,
           currentDecision: studentDecisions[st.studentId]?.decision || st.decision,
           failedSubjects,
+          missingSubjects,
         };
       })
-      .filter((st) => st.failedSubjects.length > 0 || st.currentDecision === "ajourne" || st.currentDecision === "redouble");
+      .filter((st) => st.failedSubjects.length > 0 || st.missingSubjects.length > 0 || st.currentDecision === "ajourne" || st.currentDecision === "redouble");
   }, [delibData, studentDecisions]);
 
   return (
@@ -229,9 +229,20 @@ export default function DeliberationsPage() {
         title="Délibérations &amp; Arbitrage Pédagogique"
         subtitle="Arrêtez souverainement les décisions d'admission, de redoublement et d'ajournement de chaque promotion"
         actions={
-          <Button variant="primary" icon="bolt" onClick={() => { setCenterWideReport(null); setCenterWideModal(true); }}>
-            Délibérer Tout le Centre
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              icon="sync"
+              onClick={loadDeliberation}
+              disabled={loading}
+              title="Recalculer les moyennes d'après les dernières saisies de notes"
+            >
+              Recalculer les Moyennes
+            </Button>
+            <Button variant="primary" icon="bolt" onClick={() => { setCenterWideReport(null); setCenterWideModal(true); }}>
+              Délibérer Tout le Centre
+            </Button>
+          </div>
         }
       />
 
@@ -295,7 +306,7 @@ export default function DeliberationsPage() {
         </div>
       </StructuredPanel>
 
-      {/* Badges Synthétiques du Jury */}
+      {/* Badges Synthétiques */}
       {delibData && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {scope === "ANNUEL" ? (
@@ -353,7 +364,7 @@ export default function DeliberationsPage() {
           }`}
         >
           <Icon name="rule" className="text-[18px]" />
-          <span>Relevé des Ajournements &amp; Rattrapages ({failedStudentsDetails.length})</span>
+          <span>Relevé des Ajournements &amp; Matières Manquantes ({failedStudentsDetails.length})</span>
         </button>
       </div>
 
@@ -374,11 +385,10 @@ export default function DeliberationsPage() {
                     </Badge>
                   </div>
                   <p className="text-caption text-ink-muted mt-0.5">
-                    {delibData.results?.length || 0} apprenant(s) évalué(s) • Seuil d'admission : 10.00 / 20
+                    {delibData.results?.length || 0} apprenant(s) évalué(s) • Total Coefs Prescrits : <strong>{delibData.totalPrescribedCoeffs}</strong> • Seuil d'admission : 10.00 / 20
                   </p>
                 </div>
 
-                {/* BOUTONS D'IMPRESSION DÉDIÉS AUX DIFFÉRENTS PVS DE CLASSE */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <Button variant="secondary" size="sm" icon="print" onClick={() => handlePrintPvContinuousAssessment(false)}>
                     PV Contrôle Continu (CC)
@@ -402,7 +412,7 @@ export default function DeliberationsPage() {
                     <TableHeaderCell>Apprenant</TableHeaderCell>
                     <TableHeaderCell className="w-32 text-center">Total Points</TableHeaderCell>
                     <TableHeaderCell className="w-28 text-center">Moyenne /20</TableHeaderCell>
-                    <TableHeaderCell className="w-40 text-center">Éliminatoire (&lt;08)</TableHeaderCell>
+                    <TableHeaderCell className="w-48 text-center">Alertes &amp; Éliminatoires</TableHeaderCell>
                     <TableHeaderCell className="w-48">Décision du Jury</TableHeaderCell>
                   </TableRow>
                 </TableHead>
@@ -418,18 +428,31 @@ export default function DeliberationsPage() {
                         <TableCell className="font-mono font-bold text-brand-900 dark:text-brand-500">{st.matricule}</TableCell>
                         <TableCell className="font-semibold text-ink-primary dark:text-white">{st.lastName} {st.firstName}</TableCell>
                         <TableCell align="center" className="font-mono text-caption text-ink-secondary">
-                          {st.totalPoints} / {st.totalCoeffs * 20} pts
+                          {st.totalPoints} / {delibData.totalPrescribedCoeffs * 20} pts
                         </TableCell>
                         <TableCell align="center" className="font-mono font-bold text-body-md text-brand-900 bg-brand-500/5 dark:text-brand-500">
                           {st.moyenne !== null ? `${st.moyenne}` : "—"}
                         </TableCell>
+
+                        {/* ALERTES PÉDAGOGIQUES : DÉTECTION DES NOTES MANQUANTES ET ÉLIMINATOIRES */}
                         <TableCell align="center">
-                          {st.hasEliminatoryGrade ? (
-                            <Badge variant="error">Note &lt; 08 (Spécialité)</Badge>
-                          ) : (
-                            <span className="text-caption text-success font-semibold">Conforme</span>
-                          )}
+                          <div className="flex flex-col items-center gap-1">
+                            {st.hasMissingGrades && (
+                              <Badge variant="warning" className="text-[10px]">
+                                {st.missingGradesCount} matière(s) non notée(s)
+                              </Badge>
+                            )}
+                            {st.hasEliminatoryGrade && (
+                              <Badge variant="error" className="text-[10px]">
+                                Note &lt; 08 (Spécialité)
+                              </Badge>
+                            )}
+                            {!st.hasMissingGrades && !st.hasEliminatoryGrade && (
+                              <span className="text-caption text-success font-semibold">Conforme</span>
+                            )}
+                          </div>
                         </TableCell>
+
                         <TableCell>
                           {scope === "ANNUEL" ? (
                             <select
@@ -437,8 +460,8 @@ export default function DeliberationsPage() {
                               onChange={(e) => handleDecisionChange(st.studentId, e.target.value)}
                               className="h-[32px] rounded bg-surface px-2 text-caption font-semibold border border-border outline-none dark:bg-surface-dark dark:border-border-dark"
                             >
-                              <option value="admis">Admis (Niveau Supérieur)</option>
-                              <option value="diplome">Diplômé (Fin de cycle)</option>
+                              <option value="admis" disabled={st.hasMissingGrades}>Admis (Niveau Supérieur)</option>
+                              <option value="diplome" disabled={st.hasMissingGrades}>Diplômé (Fin de cycle)</option>
                               <option value="ajourne">Ajourné (Rattrapage)</option>
                               <option value="redouble">Redouble (Même niveau)</option>
                               <option value="exclu">Exclu (Disciplinaire)</option>
@@ -449,7 +472,7 @@ export default function DeliberationsPage() {
                               onChange={(e) => handleDecisionChange(st.studentId, e.target.value)}
                               className="h-[32px] rounded bg-surface px-2 text-caption font-semibold border border-border outline-none dark:bg-surface-dark dark:border-border-dark"
                             >
-                              <option value="valide">Semestre Validé (≥ 10.00)</option>
+                              <option value="valide" disabled={st.hasMissingGrades}>Semestre Validé (≥ 10.00)</option>
                               <option value="ajourne">Semestre Ajourné (&lt; 10.00)</option>
                             </select>
                           )}
@@ -465,8 +488,8 @@ export default function DeliberationsPage() {
           {delibTab === "ajournes" && (
             <div className="space-y-4">
               <StructuredPanel
-                title="Apprenants Ajournés &amp; Matières à Rattraper"
-                subtitle="Disciplines sous le seuil d'admission (< 10.00) ou éliminatoires (< 08.00)"
+                title="Apprenants Ajournés, Matières Insuffisantes &amp; Modules Manquants"
+                subtitle="Modules sous le seuil d'admission (< 10.00), éliminatoires (< 08.00) ou non encore évalués"
                 icon="rule"
                 headerAction={<Badge variant="warning">{failedStudentsDetails.length} apprenant(s) concerné(s)</Badge>}
               >
@@ -489,27 +512,44 @@ export default function DeliberationsPage() {
                           </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <span className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block">
-                            Disciplines sous le seuil requis :
-                          </span>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
-                            {st.failedSubjects.map((sub, sidx) => (
-                              <div key={sidx} className="p-2.5 rounded bg-surface border border-border flex items-center justify-between text-body-sm dark:bg-surface-dark dark:border-border-dark">
-                                <div>
-                                  <div className="font-semibold text-ink-primary dark:text-white">{sub.subjectName}</div>
-                                  <div className="text-caption text-ink-muted font-mono">{sub.categoryName} • Coef {sub.coefficient}</div>
-                                </div>
-                                <div className="text-right">
-                                  <span className={`font-mono font-bold ${sub.grade < 8.0 ? "text-error" : "text-warning"}`}>
-                                    {sub.grade !== null ? `${sub.grade} / 20` : "—"}
-                                  </span>
-                                  {sub.grade < 8.0 && <Badge variant="error" className="mt-0.5 block">Éliminatoire</Badge>}
-                                </div>
-                              </div>
-                            ))}
+                        {st.missingSubjects?.length > 0 && (
+                          <div className="space-y-1">
+                            <span className="text-caption font-semibold uppercase tracking-wider text-warning-dark block">
+                              ⚠️ Modules sans note enregistrée ({st.missingSubjects.length}) :
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {st.missingSubjects.map((sub, i) => (
+                                <span key={i} className="text-[11px] px-2 py-0.5 rounded bg-warning-subtle text-warning-dark border border-warning/30 font-medium">
+                                  [{sub.subjectCode}] {sub.subjectName} (Coef {sub.coefficient})
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
+
+                        {st.failedSubjects?.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            <span className="text-caption font-semibold uppercase tracking-wider text-ink-secondary block">
+                              Modules sous la moyenne (&lt; 10.00 / 20) :
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+                              {st.failedSubjects.map((sub, sidx) => (
+                                <div key={sidx} className="p-2.5 rounded bg-surface border border-border flex items-center justify-between text-body-sm dark:bg-surface-dark dark:border-border-dark">
+                                  <div>
+                                    <div className="font-semibold text-ink-primary dark:text-white">{sub.subjectName}</div>
+                                    <div className="text-caption text-ink-muted font-mono">{sub.categoryName} • Coef {sub.coefficient}</div>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className={`font-mono font-bold ${sub.grade < 8.0 ? "text-error" : "text-warning"}`}>
+                                      {sub.grade !== null ? `${sub.grade} / 20` : "—"}
+                                    </span>
+                                    {sub.grade < 8.0 && <Badge variant="error" className="mt-0.5 block">Éliminatoire</Badge>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -569,7 +609,6 @@ export default function DeliberationsPage() {
         )}
       </Modal>
 
-      {/* Visionneuse PDF Unifiée */}
       <DocumentViewerModal
         isOpen={Boolean(pdfModal)}
         title={pdfModal?.title}

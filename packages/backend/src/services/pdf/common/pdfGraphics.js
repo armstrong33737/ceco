@@ -38,15 +38,18 @@ function drawStudentAvatar(doc, photoBuf, x, y, width = 60, height = 60) {
 }
 
 /**
- * Dessine un filigrane translucide de haute définition (Logo ou Sceau)
+ * Dessine un filigrane translucide haute définition.
+ * RÈGLE D'OR : Le filigrane est UNIQUEMENT le logo de l'établissement (jamais le Sceau d'État).
  */
 function drawWatermark(doc, tmpl, logoBuf, sealBuf, x, y, size = 260) {
   if (tmpl?.showWatermark === false) return;
-  const wmBuf = tmpl?.watermarkType === "seal" && sealBuf ? sealBuf : (logoBuf || sealBuf);
+  // Uniquement le logo du centre
+  const wmBuf = logoBuf;
   if (!wmBuf) return;
 
   doc.save();
-  doc.opacity(Number(tmpl?.watermarkOpacity) || 0.08);
+  const opacity = tmpl?.watermarkOpacity !== undefined ? Number(tmpl.watermarkOpacity) : 0.05;
+  doc.opacity(Math.max(0.01, Math.min(0.25, opacity)));
   safeDrawImage(doc, wmBuf, x, y, { width: size, fit: [size, size] });
   doc.restore();
   doc.opacity(1.0);
@@ -70,7 +73,7 @@ function drawCropMarks(doc, x, y, w, h) {
   doc.moveTo(x, y + h).lineTo(x, y + h + markLen).stroke();
 
   doc.moveTo(x + w + markLen, y + h).lineTo(x + w, y + h).stroke();
-  doc.moveTo(x + w, y + h).lineTo(x + w + markLen, y + h).stroke();
+  doc.moveTo(x + w, y + h).lineTo(x + w, y + h + markLen).stroke();
 
   doc.restore();
 }

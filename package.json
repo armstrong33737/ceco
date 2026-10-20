@@ -1,9 +1,11 @@
 {
   "name": "ceco",
   "private": true,
-  "version": "0.0.1-v0",
+  "version": "4.0.0",
   "description": "CECO - ERP de gestion des centres de formation professionnelle",
   "scripts": {
+    "postinstall": "pnpm prisma:generate",
+    "dev": "pnpm --filter @ceco/desktop dev",
     "dev:backend": "pnpm --filter @ceco/backend dev",
     "dev:frontend": "pnpm --filter @ceco/frontend dev",
     "dev:desktop": "pnpm --filter @ceco/desktop dev",

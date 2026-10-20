@@ -1,5 +1,5 @@
 // packages/frontend/src/modules/learners/LearnersArchivesPage.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { apiFetch, API_BASE, getToken } from "../../lib/apiClient";
 import { showToast } from "../../store/toastStore";
@@ -43,6 +43,8 @@ export default function LearnersArchivesPage() {
   const [inspectStudent, setInspectStudent] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  const [purgeTarget, setPurgeTarget] = useState(null);
+  const [purging, setPurging] = useState(false);
   const [pdfModal, setPdfModal] = useState(null);
 
   async function loadData() {
@@ -65,8 +67,8 @@ export default function LearnersArchivesPage() {
         apiFetch("/academic-years").catch(() => []),
       ]);
 
-      setStudents(studentsRes.data || []);
-      setPaginationMeta(studentsRes.pagination || null);
+      setStudents(studentsRes?.data || []);
+      setPaginationMeta(studentsRes?.pagination || null);
       setClasses(classesData || []);
       setFilieres(filieresData || []);
       setAcademicYears(yearsData || []);
@@ -93,6 +95,21 @@ export default function LearnersArchivesPage() {
       showToast(err.message || "Impossible de restaurer ce dossier.", "error");
     } finally {
       setRestoring(false);
+    }
+  }
+
+  async function confirmPurge() {
+    if (!purgeTarget) return;
+    setPurging(true);
+    try {
+      const res = await apiFetch(`/students/${purgeTarget.id}/purge`, { method: "DELETE" });
+      showToast(res.message, "success");
+      setPurgeTarget(null);
+      await loadData();
+    } catch (err) {
+      showToast(err.message || "Impossible de purger ce dossier.", "error");
+    } finally {
+      setPurging(false);
     }
   }
 
@@ -154,7 +171,7 @@ export default function LearnersArchivesPage() {
       <PageHeader
         contextBadge={<Badge variant="error">Scolarité • Registre des Archives</Badge>}
         title="Archives des Apprenants"
-        subtitle="Historique immuable des anciens dossiers archivés avec possibilité de réintégration au registre actif"
+        subtitle="Historique des dossiers archivés avec réintégration possible ou purge définitive des erreurs de saisie"
         actions={
           <Button variant="secondary" icon="download" onClick={handleExportCsv}>
             Exporter CSV Archives
@@ -164,7 +181,7 @@ export default function LearnersArchivesPage() {
 
       <StructuredPanel
         title="Filtres des Archives"
-        subtitle="Recherche ciblée dans les registres historiques scellés"
+        subtitle="Recherche ciblée dans les registres scellés"
         icon="history"
       >
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -222,7 +239,7 @@ export default function LearnersArchivesPage() {
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <Button variant="tertiary" size="sm" onClick={() => setInspectStudent(s)}>
-                        Dossier Historique
+                        Dossier
                       </Button>
                       <Button
                         variant="secondary"
@@ -231,6 +248,16 @@ export default function LearnersArchivesPage() {
                         onClick={() => setRestoreTarget(s)}
                       >
                         Restaurer
+                      </Button>
+                      <Button
+                        variant="tertiary"
+                        size="sm"
+                        icon="delete_forever"
+                        className="text-error"
+                        onClick={() => setPurgeTarget(s)}
+                        title="Purger définitivement si aucune note"
+                      >
+                        Purger
                       </Button>
                     </div>
                   </TableCell>
@@ -264,6 +291,17 @@ export default function LearnersArchivesPage() {
         confirmLabel="Confirmer la Restauration"
         variant="primary"
         isLoading={restoring}
+      />
+
+      <ConfirmDialog
+        isOpen={Boolean(purgeTarget)}
+        onClose={() => setPurgeTarget(null)}
+        onConfirm={confirmPurge}
+        title="Purger définitivement ce dossier"
+        description={`Attention : cette action va supprimer irrémédiablement le dossier et libérer le matricule "${purgeTarget?.matricule}". Elle ne fonctionnera que si l'apprenant ne possède aucune note ni acte officiel.`}
+        confirmLabel="Purger Définitivement"
+        variant="danger"
+        isLoading={purging}
       />
 
       <DocumentViewerModal

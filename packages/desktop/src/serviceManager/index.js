@@ -1,3 +1,4 @@
+// packages/desktop/src/serviceManager/index.js
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -5,13 +6,6 @@ const http = require("http");
 const { execFile, spawn } = require("child_process");
 const { app } = require("electron");
 const PostgresManager = require("./postgresManager");
-
-// ------------------------------------------------------------------
-// Electron joue le rôle de gestionnaire de services (section 06 du
-// document technique). Bascule individuelle prévue pour :
-// API, DATABASE, BACKUP, DOCUMENTS, LICENSE.
-// Séquence d'arrêt : Backup -> API -> PostgreSQL -> fermeture Electron.
-// ------------------------------------------------------------------
 
 const PRISMA_SCHEMA_PATH = app.isPackaged
   ? path.join(process.resourcesPath, "backend/prisma/schema.prisma")
@@ -27,7 +21,6 @@ const SEED_ENTRY = app.isPackaged
 
 const API_PORT = Number(process.env.CECO_API_PORT) || 4000;
 
-// Résolution déterministe des chemins CLI et binaire Prisma décompressés dans app.asar.unpacked
 function getUnpackedPrismaPaths() {
   if (!app.isPackaged) {
     let cliPath = null;
@@ -57,9 +50,6 @@ function getUnpackedPrismaPaths() {
   return { cliPath, engineBinary };
 }
 
-// `migrate deploy` (jamais `migrate dev`) : applique uniquement les
-// migrations déjà commitées, sans poser de question, sans en générer de
-// nouvelles. Sûr à exécuter à CHAQUE démarrage — no-op si déjà à jour.
 function runMigrations(databaseUrl) {
   return new Promise((resolve, reject) => {
     const { cliPath, engineBinary } = getUnpackedPrismaPaths();
@@ -107,14 +97,13 @@ function runMigrations(databaseUrl) {
   });
 }
 
-// Idempotent (seed.js vérifie déjà si un centre existe) — sûr à exécuter
-// à CHAQUE démarrage, comme les migrations.
 function runSeed(databaseUrl, storageRoot) {
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
       [SEED_ENTRY],
       {
+        cwd: path.dirname(SEED_ENTRY), // Résout toujours depuis packages/backend/prisma
         env: {
           ...process.env,
           DATABASE_URL: databaseUrl,
@@ -134,8 +123,6 @@ function runSeed(databaseUrl, storageRoot) {
   });
 }
 
-// Le secret JWT ne doit JAMAIS être une valeur fixe en dur : généré une
-// seule fois par installation, persisté dans userData, réutilisé ensuite.
 function getOrCreateJwtSecret() {
   const secretDir = path.join(app.getPath("userData"), "secrets");
   const secretPath = path.join(secretDir, "jwt.key");
@@ -146,8 +133,6 @@ function getOrCreateJwtSecret() {
   return fs.readFileSync(secretPath, "utf-8").trim();
 }
 
-// Attend que l'API réponde réellement sur /health avant de considérer le
-// service comme prêt — plutôt que de supposer un démarrage instantané.
 function waitForApiReady(port, timeoutMs = 15000) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -161,7 +146,7 @@ function waitForApiReady(port, timeoutMs = 15000) {
     };
     const retry = () => {
       if (Date.now() - start > timeoutMs) {
-        return reject(new Error("L'API n'a pas répondu à temps au démarrage."));
+        return reject(new Error("L'API Express locale n'a pas répondu dans le délai imparti (15s)."));
       }
       setTimeout(check, 300);
     };
@@ -187,7 +172,7 @@ function startApiProcess({ databaseUrl, storageRoot, jwtSecret }) {
   child.stderr.on("data", (d) => console.error(`[API] ${d.toString().trim()}`));
   child.once("exit", (code) => {
     if (code !== 0 && code !== null) {
-      console.error(`L'API s'est arrêtée de façon inattendue (code ${code}).`);
+      console.error(`L'API Express s'est arrêtée avec le code ${code}.`);
     }
   });
 
@@ -207,35 +192,50 @@ class ServiceManager {
     };
   }
 
+  /**
+   * Séquence atomique de démarrage "Tout ou Rien".
+   * En cas d'échec sur une seule sous-étape, arrêt d'urgence immédiat de tous les composants
+   * pour éviter tout processus orphelin ou verrouillage de port.
+   */
   async startServer() {
-    this.status.database = "starting";
-    const { port: pgPort } = await this.postgres.start();
-    this.status.database = "running";
+    let pgPort = 5433;
+    try {
+      this.status.database = "starting";
+      const pgRes = await this.postgres.start();
+      pgPort = pgRes.port;
+      this.status.database = "running";
 
-    const storageRoot = path.join(app.getPath("userData"), "storage");
+      const storageRoot = path.join(app.getPath("userData"), "storage");
 
-    this.status.migrations = "running";
-    await runMigrations(this.postgres.getConnectionUrl());
-    this.status.migrations = "done";
+      this.status.migrations = "running";
+      await runMigrations(this.postgres.getConnectionUrl());
+      this.status.migrations = "done";
 
-    this.status.seed = "running";
-    await runSeed(this.postgres.getConnectionUrl(), storageRoot);
-    this.status.seed = "done";
+      this.status.seed = "running";
+      await runSeed(this.postgres.getConnectionUrl(), storageRoot);
+      this.status.seed = "done";
 
-    this.status.api = "starting";
-    const jwtSecret = getOrCreateJwtSecret();
+      this.status.api = "starting";
+      const jwtSecret = getOrCreateJwtSecret();
 
-    this.apiProcess = startApiProcess({
-      databaseUrl: this.postgres.getConnectionUrl(),
-      storageRoot,
-      jwtSecret,
-    });
+      this.apiProcess = startApiProcess({
+        databaseUrl: this.postgres.getConnectionUrl(),
+        storageRoot,
+        jwtSecret,
+      });
 
-    await waitForApiReady(API_PORT);
-    this.status.api = "running";
+      await waitForApiReady(API_PORT);
+      this.status.api = "running";
 
-    console.log(`Mode Serveur actif — PostgreSQL:${pgPort}, API:${API_PORT}.`);
-    return { ...this.status, pgPort, apiPort: API_PORT };
+      console.log(`✓ Mode Serveur initialisé avec succès — PostgreSQL:${pgPort}, API:${API_PORT}.`);
+      return { ...this.status, pgPort, apiPort: API_PORT };
+    } catch (err) {
+      console.error("❌ Échec critique lors du démarrage des services. Déclenchement de l'arrêt d'urgence 'Tout ou Rien' :", err.message);
+      await this.stopServer().catch((cleanupErr) => {
+        console.warn("Avertissement lors du nettoyage d'urgence des services :", cleanupErr.message);
+      });
+      throw err;
+    }
   }
 
   async stopServer() {
@@ -245,17 +245,44 @@ class ServiceManager {
     this.status.api = "stopping";
     if (this.apiProcess) {
       await new Promise((resolve) => {
-        this.apiProcess.once("exit", resolve);
-        this.apiProcess.kill("SIGTERM");
-        setTimeout(resolve, 5000);
+        const proc = this.apiProcess;
+        let isResolved = false;
+
+        const onExit = () => {
+          if (!isResolved) {
+            isResolved = true;
+            resolve();
+          }
+        };
+
+        proc.once("exit", onExit);
+        try {
+          proc.kill("SIGTERM");
+        } catch {}
+
+        // Forçage SIGKILL si le processus ne s'arrête pas sous 2.5s
+        setTimeout(() => {
+          if (!isResolved) {
+            try {
+              proc.kill("SIGKILL");
+            } catch {}
+            onExit();
+          }
+        }, 2500);
       });
       this.apiProcess = null;
     }
     this.status.api = "stopped";
 
     this.status.database = "stopping";
-    await this.postgres.stop();
+    try {
+      await this.postgres.stop();
+    } catch (e) {
+      console.warn("Avertissement arrêt PostgreSQL :", e.message);
+    }
     this.status.database = "stopped";
+    this.status.migrations = "stopped";
+    this.status.seed = "stopped";
   }
 
   getStatus() {

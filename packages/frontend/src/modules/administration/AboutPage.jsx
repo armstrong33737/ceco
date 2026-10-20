@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import PageHeader from "../../design-system/layout/PageHeader";
 import { StructuredPanel } from "../../design-system/layout/Card";
 import Badge from "../../design-system/primitives/Badge";
-import Icon from "../../components/Icon";
 import logo from "../../../assets/logo2.png";
 
 const TECHNICAL_SPECIFICATIONS = [
@@ -53,7 +52,7 @@ const TECHNICAL_SPECIFICATIONS = [
       { label: "Budgetting Vertical des Pages", value: "Contrôle strict des hauteurs pour éliminer les pages orphelines" },
       { label: "Format Cartes d'Apprenant", value: "Norme CR80 (85.6 x 53.98 mm) & Planches A4 Duplex" },
       { label: "Ségrégation du Stockage", value: "Documents légaux pérennes (/archive) vs Fichiers temporaires (/temp)" },
-      { label: "Filigrane & Armoiries", value: "Sceau de la République & Logo à opacité calibrée (8%)" },
+      { label: "Filigrane & Armoiries", value: "Sceau de la République & Logo à opacité calibrée" },
     ],
   },
   {
@@ -63,9 +62,9 @@ const TECHNICAL_SPECIFICATIONS = [
       { label: "Format des Sauvegardes", value: "Archive Hybride Universelle Compressée (.zip zlib 9)" },
       { label: "Périmètre de l'Archive", value: "Base relationnelle JSON + Arborescence médias (/storage)" },
       { label: "Contrôle d'Intégrité", value: "Validation de structure (db_dump.json) avant toute importation" },
-      { label: "Procédure de Restauration", value: "Purge atomique (TRUNCATE CASCADE) et réinjection ordonnée" },
+      { label: "Procédure de Restauration", value: "Transplantation d'identité relationnelle multi-machine" },
       { label: "Externalisation Recommandée", value: "Support physique externe (Clé USB, Disque externe)" },
-      { label: "Garantie de Déploiement", value: "Migration à chaud sur nouvelle machine sans perte" },
+      { label: "Garantie de Déploiement", value: "Migration à chaud sur nouvelle machine avec maintien de licence" },
     ],
   },
 ];
@@ -75,11 +74,11 @@ export default function AboutPage() {
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="space-y-6">
       <PageHeader
         contextBadge={<Badge variant="brand">Système • Fiche Technique Industrielle</Badge>}
-        title="Spécifications & Architecture de CECO Suite ERP"
+        title="Spécifications &amp; Architecture de CECO Suite ERP"
         subtitle="Dossier technique de conformité ministérielle, infrastructure locale PostgreSQL et sécurité cryptographique"
       />
 
-      {/* Cartouche d'Identification Officiel */}
+      {/* Cartouche d'Identification Officiel : VERSION 4.0.0 */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-6 p-6 rounded bg-surface border border-border shadow-xs dark:bg-surface-dark dark:border-border-dark">
         <div className="w-24 h-24 rounded bg-white border border-border p-2 flex items-center justify-center flex-shrink-0 shadow-xs">
           <img src={logo} alt="Logo CECO" className="h-full w-full object-contain" />
@@ -87,7 +86,7 @@ export default function AboutPage() {
         <div className="space-y-1.5 flex-1">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-h3 font-heading font-semibold text-ink-primary dark:text-white">CECO Suite ERP</h2>
-            <Badge variant="success">Version 1.0.0 Stable</Badge>
+            <Badge variant="success">Version 4.0.0 Stable</Badge>
             <Badge variant="brand">Architecture On-Premise &amp; Réseau</Badge>
           </div>
           <p className="text-body text-ink-secondary leading-relaxed dark:text-ink-secondary-dark">
@@ -98,18 +97,17 @@ export default function AboutPage() {
             <span>•</span>
             <span>Contact : armstrongngaleu3@gmail.com</span>
             <span>•</span>
-            <span>Édition Professionnelle Certifiée</span>
+            <span>Édition Professionnelle Certifiée v4.0.0</span>
           </div>
         </div>
       </div>
 
-      {/* Piliers d'Architecture & Spécifications Utiles */}
       <div className="space-y-6">
         {TECHNICAL_SPECIFICATIONS.map((spec, idx) => (
           <StructuredPanel
             key={idx}
             title={spec.category}
-            subtitle={`Spécifications techniques et normes d'ingénierie associées`}
+            subtitle="Spécifications techniques et normes d'ingénierie associées"
             icon={spec.icon}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 -mx-2">
@@ -131,9 +129,8 @@ export default function AboutPage() {
         ))}
       </div>
 
-      {/* Mentions Légales & Droits Réservés */}
       <div className="p-4 rounded bg-surface border border-border text-caption text-ink-muted flex flex-col sm:flex-row items-center justify-between gap-2 dark:bg-surface-dark dark:border-border-dark font-mono">
-        <span>© 2026 Armstrong Euclador NGALEU. Tous droits réservés.</span>
+        <span>© 2026 Armstrong Euclador NGALEU. Tous droits réservés. Version 4.0.0</span>
         <span>Conforme aux normes MINEFOP et à l'Acte Uniforme OHADA.</span>
       </div>
     </motion.div>

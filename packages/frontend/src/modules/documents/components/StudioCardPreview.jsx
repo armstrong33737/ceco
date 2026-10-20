@@ -13,6 +13,9 @@ export default function StudioCardPreview({ config, center, logoUrl, cardBgUrl }
     nameFontSize = "text-[7.5px]";
   }
 
+  // Opacité par défaut à 100% (1.0)
+  const textureOpacity = config.bgTextureOpacity !== undefined ? config.bgTextureOpacity : 1.0;
+
   return (
     <div className="space-y-4">
       <div className="flex justify-center">
@@ -44,9 +47,12 @@ export default function StudioCardPreview({ config, center, logoUrl, cardBgUrl }
           <div
             className="w-[340px] h-[215px] rounded border border-slate-300 shadow-lg p-3 flex flex-col justify-between relative overflow-hidden select-none bg-white"
           >
-            {/* Texture de fond si présente */}
-            {cardBgUrl && (
-              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            {/* Texture de fond avec opacité paramétrable (défaut 100%) */}
+            {cardBgUrl && textureOpacity > 0 && (
+              <div
+                className="absolute inset-0 z-0 overflow-hidden pointer-events-none"
+                style={{ opacity: textureOpacity }}
+              >
                 <img src={cardBgUrl} alt="Fond" className="w-full h-full object-cover" />
               </div>
             )}
@@ -97,7 +103,7 @@ export default function StudioCardPreview({ config, center, logoUrl, cardBgUrl }
               </div>
             </div>
 
-            {/* Zone Inférieure : ID à gauche (SANS CADRE) & QR Code remonté */}
+            {/* Zone Inférieure : ID & QR Code */}
             <div className="flex items-end justify-between border-t border-slate-200 pt-1 px-1 relative z-10">
               <div className="space-y-0.5 pb-0.5">
                 <span className="text-[6px] text-slate-400 uppercase font-bold block">ID / MATRICULE OFFICIEL</span>
@@ -112,7 +118,6 @@ export default function StudioCardPreview({ config, center, logoUrl, cardBgUrl }
                 </span>
               </div>
 
-              {/* Cadre ornemental autour du QR Code */}
               <div className="flex flex-col items-center mb-0.5">
                 <div
                   className="p-1 rounded bg-white shadow-xs relative border"
@@ -132,9 +137,11 @@ export default function StudioCardPreview({ config, center, logoUrl, cardBgUrl }
         ) : (
           /* VERSO */
           <div className="w-[340px] h-[215px] rounded bg-[#FAFAFA] border border-slate-300 shadow-lg p-3 flex flex-col justify-between select-none relative overflow-hidden">
-            {/* Texture de fond si présente */}
-            {cardBgUrl && (
-              <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            {cardBgUrl && textureOpacity > 0 && (
+              <div
+                className="absolute inset-0 z-0 overflow-hidden pointer-events-none"
+                style={{ opacity: textureOpacity }}
+              >
                 <img src={cardBgUrl} alt="Fond" className="w-full h-full object-cover" />
               </div>
             )}

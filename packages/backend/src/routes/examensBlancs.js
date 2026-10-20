@@ -196,7 +196,7 @@ router.delete("/filieres/mock-subjects/:id", verifyJwt, requirePermission("forma
 });
 
 // ============================================================================
-// 3. SESSIONS D'EXAMEN BLANC & ENRÔLEMENT DES CLASSES SORTANTES
+// 3. SESSIONS D'EXAMEN BLANC, CLÔTURE & ENRÔLEMENT DYNAMIQUE STRICT DES SORTANTS
 // ============================================================================
 
 router.get("/mock-exam-sessions", verifyJwt, requirePermission("grades.read", "formations.read"), async (req, res, next) => {
@@ -214,7 +214,7 @@ router.get("/mock-exam-sessions", verifyJwt, requirePermission("grades.read", "f
         academicYear: true,
         classeMockExams: {
           include: {
-            classe: { include: { filiere: { include: { programType: true } } } },
+            classe: { include: { filiere: { include: { programType: true } }, niveau: true } },
             _count: { select: { subjects: true, summaries: true } },
           },
         },
@@ -250,10 +250,13 @@ router.post("/mock-exam-sessions", verifyJwt, requirePermission("formations.crea
 
     let targetClasses = [];
     if (targetScope === "MANUAL") {
-      targetClasses = await prisma.classe.findMany({
+      const manualClasses = await prisma.classe.findMany({
         where: { id: { in: manualClasseIds }, centerId: req.centerId },
         include: { niveau: true, filiere: { include: { programType: true } } },
       });
+
+      // Règle d'or : Même en sélection manuelle, seules les classes terminales sont admises
+      targetClasses = manualClasses.filter((c) => c.niveau.order >= c.filiere.durationInYears);
     } else {
       const allClasses = await prisma.classe.findMany({
         where: { centerId: req.centerId, academicYearId: targetYear.id },
@@ -261,11 +264,21 @@ router.post("/mock-exam-sessions", verifyJwt, requirePermission("formations.crea
       });
 
       targetClasses = allClasses.filter((c) => {
+        // Filtrage strict : classe sortante/terminale uniquement
         const isTerminal = c.niveau.order >= c.filiere.durationInYears;
         if (!isTerminal) return false;
-        if (targetScope === "DQP") return c.filiere.programType?.code === "DQP";
-        if (targetScope === "CQP") return c.filiere.programType?.code === "CQP";
+
+        // Portée dynamique basée sur n'importe quel code de cycle du centre
+        if (targetScope !== "ALL") {
+          return (c.filiere.programType?.code || "").toUpperCase() === targetScope.trim().toUpperCase();
+        }
         return true;
+      });
+    }
+
+    if (targetClasses.length === 0) {
+      return res.status(400).json({
+        error: "Aucune classe sortante terminale éligible trouvée pour la portée sélectionnée.",
       });
     }
 
@@ -281,6 +294,7 @@ router.post("/mock-exam-sessions", verifyJwt, requirePermission("formations.crea
           title: sessionTitle,
           startDate: start,
           endDate: end,
+          isLocked: false,
         },
       });
 
@@ -290,6 +304,7 @@ router.post("/mock-exam-sessions", verifyJwt, requirePermission("formations.crea
             centerId: req.centerId,
             mockExamSessionId: session.id,
             classeId: cls.id,
+            isLocked: false,
           },
         });
         enrolledClassesCount++;
@@ -331,8 +346,43 @@ router.post("/mock-exam-sessions", verifyJwt, requirePermission("formations.crea
         totalEnrolledCandidates,
         targetScope,
         alerts: diagnosticAlerts,
-        message: `${enrolledClassesCount} classe(s) sortante(s) enrôlée(s) automatiquement (${totalEnrolledCandidates} candidats inscrits).`,
+        message: `${enrolledClassesCount} classe(s) sortante(s) terminale(s) enrôlée(s) avec succès (${totalEnrolledCandidates} candidats).`,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Clôture formelle ou réouverture de session d'examen blanc
+router.post("/mock-exam-sessions/:id/lock", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
+  try {
+    const { lock = true } = req.body || {};
+    const session = await prisma.mockExamSession.findFirst({
+      where: { id: req.params.id, centerId: req.centerId },
+    });
+
+    if (!session) return res.status(404).json({ error: "Session d'examen blanc introuvable." });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.mockExamSession.update({
+        where: { id: session.id },
+        data: { isLocked: Boolean(lock) },
+      });
+
+      // Verrouillage en cascade de toutes les classes de la session
+      await tx.classeMockExam.updateMany({
+        where: { mockExamSessionId: session.id },
+        data: { isLocked: Boolean(lock) },
+      });
+    });
+
+    res.json({
+      success: true,
+      isLocked: Boolean(lock),
+      message: lock
+        ? "Session d'examen blanc officiellement clôturée et scellée."
+        : "Session d'examen blanc réouverte aux modifications.",
     });
   } catch (err) {
     next(err);
@@ -343,7 +393,7 @@ router.delete("/mock-exam-sessions/:id", verifyJwt, requirePermission("formation
   try {
     const session = await prisma.mockExamSession.findFirst({ where: { id: req.params.id, centerId: req.centerId } });
     if (!session) return res.status(404).json({ error: "Session introuvable." });
-    if (session.isLocked) return res.status(403).json({ error: "Impossible de supprimer une session verrouillée." });
+    if (session.isLocked) return res.status(403).json({ error: "Impossible de supprimer une session clôturée et scellée." });
 
     await prisma.mockExamSession.delete({ where: { id: req.params.id } });
     res.status(204).send();
@@ -353,19 +403,22 @@ router.delete("/mock-exam-sessions/:id", verifyJwt, requirePermission("formation
 });
 
 // ============================================================================
-// 4. GESTION DES CANDIDATS (COMMUTATEUR ÉLIGIBILITÉ RETENU / DISQUALIFIÉ)
+// 4. CANDIDATS (COMMUTATEUR ÉLIGIBILITÉ RETENU / DISQUALIFIÉ)
 // ============================================================================
 
 router.put("/mock-exams/classes/:classeMockExamId/candidates/:studentId/status", verifyJwt, requirePermission("grades.update"), async (req, res, next) => {
   try {
     const { classeMockExamId, studentId } = req.params;
-    const { status = "RETENU" } = req.body || {}; // "RETENU" | "DISQUALIFIE" | "ABANDON"
+    const { status = "RETENU" } = req.body || {};
 
     const classeExam = await prisma.classeMockExam.findFirst({
       where: { id: classeMockExamId, centerId: req.centerId },
+      include: { mockExamSession: true },
     });
     if (!classeExam) return res.status(404).json({ error: "Examen de classe introuvable." });
-    if (classeExam.isLocked) return res.status(403).json({ error: "Bordereau verrouillé." });
+    if (classeExam.isLocked || classeExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Bordereau verrouillé ou session clôturée." });
+    }
 
     const summary = await prisma.mockExamSummary.findUnique({
       where: { classeMockExamId_studentId: { classeMockExamId, studentId } },
@@ -387,7 +440,7 @@ router.put("/mock-exams/classes/:classeMockExamId/candidates/:studentId/status",
 });
 
 // ============================================================================
-// 5. FLEXIBILITÉ POST-INSTANCIATION DES ÉPREUVES DE CLASSE
+// 5. FLEXIBILITÉ DES ÉPREUVES DE CLASSE
 // ============================================================================
 
 router.post("/mock-exams/classes/:classeMockExamId/subjects", verifyJwt, requirePermission("formations.update"), async (req, res, next) => {
@@ -397,9 +450,12 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects", verifyJwt, require
 
     const classeExam = await prisma.classeMockExam.findFirst({
       where: { id: req.params.classeMockExamId, centerId: req.centerId },
+      include: { mockExamSession: true },
     });
     if (!classeExam) return res.status(404).json({ error: "Examen de classe introuvable." });
-    if (classeExam.isLocked) return res.status(403).json({ error: "Cet examen est verrouillé." });
+    if (classeExam.isLocked || classeExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Cet examen est verrouillé ou sa session est clôturée." });
+    }
 
     const count = await prisma.classeMockExamSubject.count({ where: { classeMockExamId: classeExam.id } });
 
@@ -427,11 +483,13 @@ router.put("/mock-exams/classes/subjects/:classeMockExamSubjectId", verifyJwt, r
     const { coefficient, order } = req.body || {};
     const subj = await prisma.classeMockExamSubject.findUnique({
       where: { id: req.params.classeMockExamSubjectId },
-      include: { classeMockExam: { include: { subjects: true, classe: { include: { inscriptions: true } } } } },
+      include: { classeMockExam: { include: { mockExamSession: true, subjects: true, classe: { include: { inscriptions: true } } } } },
     });
 
     if (!subj) return res.status(404).json({ error: "Épreuve introuvable." });
-    if (subj.classeMockExam.isLocked) return res.status(403).json({ error: "Cet examen est verrouillé." });
+    if (subj.classeMockExam.isLocked || subj.classeMockExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Cet examen est verrouillé ou sa session est clôturée." });
+    }
 
     const newCoef = coefficient ? parseFloat(coefficient) : subj.coefficient;
 
@@ -500,11 +558,13 @@ router.delete("/mock-exams/classes/subjects/:classeMockExamSubjectId", verifyJwt
     const { force = false } = req.query || {};
     const subj = await prisma.classeMockExamSubject.findUnique({
       where: { id: req.params.classeMockExamSubjectId },
-      include: { classeMockExam: true },
+      include: { classeMockExam: { include: { mockExamSession: true } } },
     });
 
     if (!subj) return res.status(404).json({ error: "Épreuve introuvable." });
-    if (subj.classeMockExam.isLocked) return res.status(403).json({ error: "Cet examen est verrouillé." });
+    if (subj.classeMockExam.isLocked || subj.classeMockExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Cet examen est verrouillé ou sa session est clôturée." });
+    }
 
     const notesCount = await prisma.mockExamGrade.count({
       where: { classeMockExamSubjectId: subj.id, OR: [{ score: { not: null } }, { isAbsent: true }] },
@@ -530,7 +590,7 @@ router.delete("/mock-exams/classes/subjects/:classeMockExamSubjectId", verifyJwt
 });
 
 // ============================================================================
-// 6. SAISIE MATRICIELLE & IMPORTATION CSV DES NOTES D'ÉPREUVES
+// 6. SAISIE MATRICIELLE & IMPORTATION DES NOTES
 // ============================================================================
 
 router.get("/mock-exams/classes/:classeMockExamId/grid", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
@@ -575,6 +635,7 @@ router.post("/mock-exams/classes/:classeMockExamId/grades/batch", verifyJwt, req
     const classeExam = await prisma.classeMockExam.findFirst({
       where: { id: req.params.classeMockExamId, centerId: req.centerId },
       include: {
+        mockExamSession: true,
         subjects: true,
         classe: {
           include: {
@@ -588,7 +649,9 @@ router.post("/mock-exams/classes/:classeMockExamId/grades/batch", verifyJwt, req
     });
 
     if (!classeExam) return res.status(404).json({ error: "Examen de classe introuvable." });
-    if (classeExam.isLocked) return res.status(403).json({ error: "Bordereau verrouillé." });
+    if (classeExam.isLocked || classeExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Bordereau verrouillé ou session clôturée." });
+    }
 
     const subjectsMap = new Map(classeExam.subjects.map((s) => [s.id, s.coefficient]));
 
@@ -672,11 +735,10 @@ router.post("/mock-exams/classes/:classeMockExamId/grades/batch", verifyJwt, req
   }
 });
 
-// Importation directe de notes par épreuve via CSV (Matricule;Note)
 router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubjectId/import-grades", verifyJwt, requirePermission("grades.create"), async (req, res, next) => {
   try {
     const { classeMockExamId, classeMockExamSubjectId } = req.params;
-    const { rows } = req.body || {}; // [{ matricule: string, score: string|number }]
+    const { rows } = req.body || {};
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ error: "Liste de notes CSV vide." });
@@ -686,6 +748,7 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubje
       prisma.classeMockExam.findFirst({
         where: { id: classeMockExamId, centerId: req.centerId },
         include: {
+          mockExamSession: true,
           classe: { include: { inscriptions: { include: { student: true } } } },
           subjects: true,
         },
@@ -694,7 +757,9 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubje
     ]);
 
     if (!classeExam || !subj) return res.status(404).json({ error: "Épreuve ou examen de classe introuvable." });
-    if (classeExam.isLocked) return res.status(403).json({ error: "Cet examen est verrouillé." });
+    if (classeExam.isLocked || classeExam.mockExamSession?.isLocked) {
+      return res.status(403).json({ error: "Cet examen est verrouillé ou sa session est clôturée." });
+    }
 
     const studentMap = new Map(
       classeExam.classe.inscriptions.map((i) => [i.student.matricule.trim().toUpperCase(), i.student.id])
@@ -746,7 +811,6 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubje
         updatedCount++;
       }
 
-      // Recalcul des moyennes pour tous les élèves affectés
       const allGrades = await tx.mockExamGrade.findMany({ where: { classeMockExamId: classeExam.id } });
       for (const insc of classeExam.classe.inscriptions) {
         const stId = insc.studentId;
@@ -792,6 +856,16 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubje
 router.post("/mock-exams/classes/:classeMockExamId/lock", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     const { lock = true } = req.body || {};
+    const classeExam = await prisma.classeMockExam.findFirst({
+      where: { id: req.params.classeMockExamId, centerId: req.centerId },
+      include: { mockExamSession: true },
+    });
+
+    if (!classeExam) return res.status(404).json({ error: "Examen de classe introuvable." });
+    if (classeExam.mockExamSession?.isLocked && !lock) {
+      return res.status(403).json({ error: "Impossible de déverrouiller une classe d'une session clôturée. Déverrouillez d'abord la session globale." });
+    }
+
     await prisma.classeMockExam.update({
       where: { id: req.params.classeMockExamId },
       data: { isLocked: Boolean(lock) },
@@ -806,7 +880,6 @@ router.post("/mock-exams/classes/:classeMockExamId/lock", verifyJwt, requirePerm
 // 7. ÉDITION DES ACTES MINEFOP (SANS QR CODE, FORMAT DÉLÉGATION)
 // ============================================================================
 
-// Helper : composition du snapshot de classe pour bordereau MINEFOP
 async function buildClasseMockExamSnapshot(centerId, classeMockExamId, isBlank = false) {
   const [center, classeExam, template] = await Promise.all([
     prisma.center.findUnique({ where: { id: centerId } }),
@@ -840,7 +913,6 @@ async function buildClasseMockExamSnapshot(centerId, classeMockExamId, isBlank =
   const diplomas = classeExam.classe.inscriptions.map((i) => i.student.entryDiploma).filter(Boolean);
   const majorityDiploma = diplomas.length > 0 ? diplomas[0] : "BEPC";
 
-  // Filtrage des candidats retenus (exclut les candidats explicitement disqualifiés du bordereau officiel)
   const eligibleInscriptions = isBlank
     ? classeExam.classe.inscriptions
     : classeExam.classe.inscriptions.filter((insc) => {
@@ -889,7 +961,6 @@ async function buildClasseMockExamSnapshot(centerId, classeMockExamId, isBlank =
   };
 }
 
-// 1. Bordereau officiel scellé de classe
 router.post("/mock-exams/classes/:classeMockExamId/borderau-pdf", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -926,7 +997,6 @@ router.post("/mock-exams/classes/:classeMockExamId/borderau-pdf", verifyJwt, req
   }
 });
 
-// 2. Bordereau vierge de synthèse de classe (pour jury plénier)
 router.post("/mock-exams/classes/:classeMockExamId/blank-borderau-pdf", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -963,7 +1033,6 @@ router.post("/mock-exams/classes/:classeMockExamId/blank-borderau-pdf", verifyJw
   }
 });
 
-// 3. Fiche d'émargement & notation par épreuve (Examinateur en salle)
 router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubjectId/examiner-sheet-pdf", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -1044,7 +1113,6 @@ router.post("/mock-exams/classes/:classeMockExamId/subjects/:classeMockExamSubje
   }
 });
 
-// 4. Pack complet des fiches d'émargement de la classe en 1 clic
 router.post("/mock-exams/classes/:classeMockExamId/examiner-sheets-batch-pdf", verifyJwt, requirePermission("grades.read"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
@@ -1127,7 +1195,6 @@ router.post("/mock-exams/classes/:classeMockExamId/examiner-sheets-batch-pdf", v
   }
 });
 
-// 5. RECUEIL UNIQUE COMPILÉ DE TOUTE LA SESSION D'EXAMEN BLANC (TOUTES CLASSES)
 router.post("/mock-exam-sessions/:sessionId/bundle-borderau-pdf", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
     await ensureStorageTree(req.centerId);
