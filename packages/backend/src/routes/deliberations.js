@@ -10,14 +10,16 @@ const router = express.Router();
 
 /**
  * 1. CONSULTATION DE LA DÉLIBÉRATION (SEMESTRIELLE OU ANNUELLE)
- * Calcule toujours en temps réel la moyenne officielle avec la formule prescrite.
+ * Calcule en temps réel la moyenne avec le seuil d'admission choisi par le jury.
  */
 router.get("/deliberations", verifyJwt, requirePermission("grades.read", "formations.read"), async (req, res, next) => {
   try {
-    const { classeId, gradePeriodId, scope = "ANNUEL" } = req.query || {};
+    const { classeId, gradePeriodId, scope = "ANNUEL", admissionThreshold = 10.0 } = req.query || {};
     if (!classeId || !gradePeriodId) {
       return res.status(400).json({ error: "Classe et période d'évaluation requises." });
     }
+
+    const threshold = parseFloat(admissionThreshold) || 10.0;
 
     const [classe, period, existingDelib] = await Promise.all([
       prisma.classe.findFirst({
@@ -82,6 +84,7 @@ router.get("/deliberations", verifyJwt, requirePermission("grades.read", "format
         scope,
         isFinalYear,
         existingDecision: stExistingDelib?.decision,
+        admissionThreshold: threshold,
       });
 
       return {
@@ -122,6 +125,7 @@ router.get("/deliberations", verifyJwt, requirePermission("grades.read", "format
       },
       scope,
       totalPrescribedCoeffs,
+      admissionThreshold: threshold,
       offerings,
       isDeliberated: Boolean(existingDelib),
       deliberationId: existingDelib?.id || null,
@@ -138,10 +142,12 @@ router.get("/deliberations", verifyJwt, requirePermission("grades.read", "format
  */
 router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
-    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate } = req.body || {};
+    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate, admissionThreshold = 10.0 } = req.body || {};
     if (!classeId || !gradePeriodId) {
       return res.status(400).json({ error: "Classe et période requises." });
     }
+
+    const threshold = parseFloat(admissionThreshold) || 10.0;
 
     const [classe, period] = await Promise.all([
       prisma.classe.findFirst({
@@ -189,6 +195,7 @@ router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.vali
         subjectResults,
         scope,
         isFinalYear,
+        admissionThreshold: threshold,
       });
       return {
         studentId: insc.studentId,
@@ -258,6 +265,7 @@ router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.vali
           metadata: {
             classeLabel: classe.label,
             scope,
+            admissionThreshold: threshold,
             juryDate: finalJuryDate.toISOString(),
             studentsCount: computedList.length,
           },
@@ -267,7 +275,8 @@ router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.vali
 
     res.json({
       success: true,
-      message: `Délibération automatique calculée et scellée pour ${computedList.length} apprenant(s).`,
+      admissionThreshold: threshold,
+      message: `Délibération automatique calculée et scellée au seuil de ${threshold.toFixed(2)}/20 pour ${computedList.length} apprenant(s).`,
     });
   } catch (err) {
     next(err);
@@ -275,11 +284,12 @@ router.post("/deliberations/auto-run", verifyJwt, requirePermission("grades.vali
 });
 
 /**
- * 3. DÉLIBÉRATION GLOBALE DE TOUT LE CENTRE EN 1 CLIC
+ * 3. DÉLIBÉRATION GLOBALE DE TOUT LE CENTRE EN 1 CLIC (AVEC SEUIL PARAMÉTRABLE)
  */
 router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
-    const { academicYearId, scope = "ANNUEL", semesterOrder = 1, juryDate } = req.body || {};
+    const { academicYearId, scope = "ANNUEL", semesterOrder = 1, juryDate, admissionThreshold = 10.0 } = req.body || {};
+    const threshold = parseFloat(admissionThreshold) || 10.0;
 
     const targetYear = academicYearId
       ? await prisma.academicYear.findFirst({ where: { id: academicYearId, centerId: req.centerId }, include: { gradePeriods: true } })
@@ -348,6 +358,7 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
             subjectResults,
             scope,
             isFinalYear,
+            admissionThreshold: threshold,
           });
 
           if (calc.autoDecision === "admis" || calc.autoDecision === "valide") totalAdmis++;
@@ -425,6 +436,7 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
           metadata: {
             yearLabel: targetYear.label,
             scope,
+            admissionThreshold: threshold,
             totalClasses: classes.length,
             totalStudents: totalStudentsDeliberated,
             totalAdmis,
@@ -438,7 +450,8 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
 
     res.json({
       success: true,
-      message: `Délibération globale terminée pour la session ${targetYear.label}.`,
+      admissionThreshold: threshold,
+      message: `Délibération globale terminée au seuil de ${threshold.toFixed(2)}/20 pour la session ${targetYear.label}.`,
       report: {
         totalClasses: classes.length,
         totalStudents: totalStudentsDeliberated,
@@ -455,15 +468,16 @@ router.post("/deliberations/center-wide-run", verifyJwt, requirePermission("grad
 
 /**
  * 4. SAUVEGARDE DE LA DÉLIBÉRATION MANUELLE SOUVERAINE (« VALIDER & SCELLER »)
- * Calcule avec rigueur la moyenne sur les coefficients prescrits de la classe
- * tout en respectant l'arbitrage souverain de la décision accordée par le jury.
+ * Enregistre fidèlement le seuil d'admission choisi et la décision arbitrée par le jury.
  */
 router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"), async (req, res, next) => {
   try {
-    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate, results } = req.body || {};
+    const { classeId, gradePeriodId, scope = "ANNUEL", juryDate, admissionThreshold = 10.0, results } = req.body || {};
     if (!classeId || !gradePeriodId || !Array.isArray(results)) {
       return res.status(400).json({ error: "Données de délibération incomplètes." });
     }
+
+    const threshold = parseFloat(admissionThreshold) || 10.0;
 
     const classe = await prisma.classe.findFirst({
       where: { id: classeId, centerId: req.centerId },
@@ -492,7 +506,6 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
     const isFinalYear = classe.niveau.order >= classe.filiere.durationInYears;
     const finalJuryDate = juryDate ? new Date(juryDate) : new Date();
 
-    // Recalcul souverain partagé
     const sanitizedResults = results.map((resItem) => {
       const calc = computeStudentAcademicResults({
         studentId: resItem.studentId,
@@ -500,14 +513,13 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
         subjectResults,
         scope,
         isFinalYear,
+        admissionThreshold: threshold,
       });
 
       return {
         studentId: resItem.studentId,
-        // La moyenne est garantie rigoureusement identique à la délibération globale
         moyenne: calc.computedAverage,
         rang: resItem.rang ? parseInt(resItem.rang, 10) : 1,
-        // La décision respecte l'arbitrage humain du jury (repêchage, grâce...)
         decision: resItem.decision || calc.autoDecision,
       };
     });
@@ -549,7 +561,7 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
         if (scope === "ANNUEL") {
           await tx.inscription.updateMany({
             where: { studentId: resItem.studentId, classeId, centerId: req.centerId },
-            data: { status: resItem.decision },
+            data: { status: resItem.decision || "ajourne" },
           });
         }
       }
@@ -564,6 +576,7 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
           metadata: {
             classeLabel: classe.label,
             scope,
+            admissionThreshold: threshold,
             juryDate: finalJuryDate.toISOString(),
             studentsCount: sanitizedResults.length,
           },
@@ -573,7 +586,8 @@ router.post("/deliberations/run", verifyJwt, requirePermission("grades.validate"
 
     res.json({
       success: true,
-      message: `Délibération souveraine enregistrée : moyennes recalculées avec exactitude sur les coefficients prescrits (${offerings.reduce((s, o) => s + o.coefficient, 0)} coefs).`,
+      admissionThreshold: threshold,
+      message: `Délibération enregistrée au seuil d'admission de ${threshold.toFixed(2)}/20 (${sanitizedResults.length} apprenants).`,
       results: sanitizedResults,
     });
   } catch (err) {

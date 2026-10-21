@@ -73,6 +73,10 @@
         "to": "backend/seed.bundle.js"
       },
       {
+        "from": "../backend/dist/data",
+        "to": "backend/data"
+      },
+      {
         "from": "../../node_modules/@prisma/client",
         "to": "backend/node_modules/@prisma/client"
       },

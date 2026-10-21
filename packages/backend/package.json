@@ -10,7 +10,7 @@
     "prisma:status": "prisma migrate status",
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
-    "build:bundle": "esbuild src/index.js --bundle --platform=node --target=node20 --outfile=dist/server.bundle.js --external:@prisma/client && esbuild prisma/seed.js --bundle --platform=node --target=node20 --outfile=dist/seed.bundle.js --external:@prisma/client"
+    "build:bundle": "esbuild src/index.js --bundle --platform=node --target=node20 --outfile=dist/server.bundle.js --external:@prisma/client && esbuild prisma/seed.js --bundle --platform=node --target=node20 --outfile=dist/seed.bundle.js --external:@prisma/client && node scripts/copyPdfkitData.js"
   },
   "dependencies": {
     "@prisma/client": "5.20.0",

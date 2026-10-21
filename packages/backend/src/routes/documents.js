@@ -60,9 +60,6 @@ function getCenterSealBase64(centerId) {
   return getDefaultSealBase64();
 }
 
-/**
- * Résout le buffer de texture et le convertit en Data URL Base64 avec fallback automatique sur les assets
- */
 function getCenterDocumentBgDataUrl(centerId, docCategory = "card") {
   const buf = resolveDocumentTextureBuffer(centerId, docCategory, {});
   if (!buf) return null;
@@ -103,9 +100,9 @@ function getStudentPhotoBase64(centerId, photoPath) {
 function getGradeAppreciation(val) {
   if (val === null || val === undefined || isNaN(val)) return "—";
   const g = parseFloat(val);
-  if (g < 6.0) return "Médiocre";
+  if (g < 6.0) return "Très Faible";
   if (g < 8.0) return "Faible";
-  if (g < 10.0) return "Insuffisant";
+  if (g < 10.0) return "Médiocre";
   if (g < 12.0) return "Passable";
   if (g < 14.0) return "Assez Bien";
   if (g < 16.0) return "Bien";
@@ -113,13 +110,18 @@ function getGradeAppreciation(val) {
   return "Excellent";
 }
 
+/**
+ * Mention officielle conforme MINEFOP : 8.00 à 9.99 = Médiocre
+ */
 function getDiplomaMention(avg) {
-  if (avg === null || avg === undefined || isNaN(avg)) return "Passable";
+  if (avg === null || avg === undefined || isNaN(avg)) return "—";
   const a = parseFloat(avg);
   if (a >= 16.0) return "Très Bien";
   if (a >= 14.0) return "Bien";
   if (a >= 12.0) return "Assez Bien";
-  return "Passable";
+  if (a >= 10.0) return "Passable";
+  if (a >= 8.0) return "Médiocre";
+  return "Faible";
 }
 
 function getGeneralObservation(avg, hasEliminatory) {
@@ -134,8 +136,9 @@ function getGeneralObservation(avg, hasEliminatory) {
   if (a >= 14.0) return "Très bon travail. Résultats solides et réguliers. Tableau d'honneur.";
   if (a >= 12.0) return "Bon travail dans l'ensemble. Résultats satisfaisants, poursuivez dans cette voie.";
   if (a >= 10.0) return "Travail passable. Des efforts supplémentaires sont attendus pour consolider les acquis.";
-  if (a >= 8.0) return "Résultats insuffisants. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
-  return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
+  if (a >= 8.0) return "Travail médiocre. Résultats sous la moyenne, admis ou ajourné avec recommandation d'efforts sérieux.";
+  if (a >= 6.0) return "Résultats très faibles. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
+  return "Résultats insuffisants. Manque prononcé d'assiduité ou de méthode.";
 }
 
 function generateOfflineQrPayload(snapshot, docType) {
@@ -349,9 +352,8 @@ router.put("/documents/templates/:type", verifyJwt, requirePermission("center.up
 });
 
 /**
- * 3. SNAPSHOT ACADÉMIQUE AVEC ALIGNEMENT INTÈGRE SUR LES DÉLIBÉRATIONS DU JURY
- * Applique la division par les coefficients prescrits de la classe ($TotalPoints / TotalPrescribedCoeffs$)
- * et se synchronise sur la moyenne officielle scellée par le jury.
+ * 3. SNAPSHOT ACADÉMIQUE COMPLET : SYNCHRONISATION EXACTE AVEC LE JURY
+ * Intègre la division par les coefficients prescrits et la nouvelle échelle des mentions (8 = Médiocre).
  */
 async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetClasseId, gradePeriodId) {
   const student = await prisma.student.findFirst({
@@ -454,10 +456,9 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     }),
   ]);
 
-  // RÈGLE MÉTIER STRICTE : Total des coefficients prescrits de la classe
+  // Coefficients prescrits totaux de la classe
   const totalPrescribedCoeffs = offerings.reduce((sum, off) => sum + (off.coefficient || 0), 0);
 
-  // Calcul des statistiques de classe unifiées avec division par totalPrescribedCoeffs
   const classAverages = [];
   const allResults = await prisma.subjectResult.findMany({
     where: {
@@ -599,7 +600,6 @@ async function buildStudentAcademicSnapshot(centerId, studentIdentifier, targetC
     cat.groupAverage = cat.totalCoeff > 0 ? Number((cat.totalPoints / cat.totalCoeff).toFixed(2)) : null;
   });
 
-  // Moyenne générale mathématique divisée par le total des coefficients prescrits
   const computedAverage = totalPrescribedCoeffs > 0
     ? Number((grandTotalPoints / totalPrescribedCoeffs).toFixed(2))
     : null;
@@ -716,7 +716,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       orderBy: { generatedAt: "desc" },
     });
 
-    // Cas 1 : Document pérenne existant et aucune régénération forcée demandée
     if (isPermanentLegalDoc && existingDoc && !forceRegenerate) {
       if (fs.existsSync(existingDoc.filePath)) {
         return res.json({
@@ -733,7 +732,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
         });
       }
 
-      // Reconstitution physique déterministe à partir du snapshot d'origine
       const historicalSnapshot = existingDoc.renderSnapshot;
       if (historicalSnapshot) {
         const yearFolder = (historicalSnapshot.classe?.academicYearLabel || "archive").replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -768,7 +766,6 @@ router.post("/documents/generate", verifyJwt, requirePermission("students.read",
       }
     }
 
-    // Cas 2 : Première génération ou ré-émission forcée avec recalcul des notes
     const snapshot = await buildStudentAcademicSnapshot(req.centerId, studentId, classeId, gradePeriodId);
     if (!snapshot) {
       return res.status(404).json({ error: "Données académiques introuvables pour cet apprenant." });

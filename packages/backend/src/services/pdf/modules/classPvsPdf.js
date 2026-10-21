@@ -8,6 +8,32 @@ const { drawWatermark } = require("../common/pdfGraphics");
 const { renderSignatoriesAndQrCompact } = require("../common/pdfSignatories");
 
 /**
+ * Normalise la décision du jury de façon insensible à la casse et aux accents
+ */
+function parseJuryDecision(decisionStr) {
+  const normalized = String(decisionStr || "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const isPassed = normalized === "ADMIS" || normalized === "VALIDE" || normalized === "DIPLOME";
+
+  let label = "AJOURNÉ";
+  if (normalized === "DIPLOME") label = "DIPLÔMÉ";
+  else if (normalized === "VALIDE") label = "VALIDÉ";
+  else if (normalized === "ADMIS") label = "ADMIS";
+  else if (normalized === "REDOUBLE") label = "REDOUBLE";
+  else if (normalized === "EXCLU") label = "EXCLU";
+
+  return {
+    isPassed,
+    color: isPassed ? "#16805A" : "#C73B3B",
+    label,
+  };
+}
+
+/**
  * 1. BORDEREAU DE NOTES MANUSCRIT VIERGE (A4 Portrait)
  */
 async function generateBlankGradeSheetPdf(snapshot, outputPath) {
@@ -24,10 +50,8 @@ async function generateBlankGradeSheetPdf(snapshot, outputPath) {
       const startX = 25;
       const fullWidth = 545.28;
 
-      // Filigrane : UNIQUEMENT le logo du centre
       drawWatermark(doc, tmpl, logoBuf, null, 130, 260, 280);
 
-      // En-tête interne centré
       const endHeaderY = drawInternalSimpleHeader(doc, tmpl, center, logoBuf, 18, fullWidth, startX);
 
       const titleY = endHeaderY + 8;
@@ -110,10 +134,8 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
       const startX = 25;
       const fullWidth = 545.28;
 
-      // Filigrane : UNIQUEMENT le logo du centre
       drawWatermark(doc, tmpl, logoBuf, null, 130, 260, 280);
 
-      // En-tête interne centré
       const endHeaderY = drawInternalSimpleHeader(doc, tmpl, center, logoBuf, 18, fullWidth, startX);
 
       const titleY = endHeaderY + 8;
@@ -193,7 +215,7 @@ async function generateCertifiedGradeSheetPdf(snapshot, offlinePayload, outputPa
 
 /**
  * 3. PROCÈS-VERBAL DE DÉLIBÉRATION (PV_SEMESTRE / PV_ANNUEL - A4 Paysage)
- * Avec en-tête interne centré et Légende des matières au bas du document.
+ * Avec détection exacte de la décision (vert émeraude pour ADMIS/VALIDÉ/DIPLÔMÉ, rouge pour AJOURNÉ/REDOUBLE)
  */
 async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputPath) {
   return new Promise(async (resolve, reject) => {
@@ -209,10 +231,8 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
       const startX = 25;
       const fullWidth = 791.89;
 
-      // Filigrane : UNIQUEMENT le logo du centre
       drawWatermark(doc, tmpl, logoBuf, null, 250, 130, 300);
 
-      // En-tête interne d'établissement CENTRÉ
       const endHeaderY = drawInternalSimpleHeader(doc, tmpl, center, logoBuf, 14, fullWidth, startX);
 
       const titleY = endHeaderY + 5;
@@ -265,15 +285,18 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
         doc.font("Helvetica-Bold").text(row.semesterAverage !== null ? String(row.semesterAverage) : "—", sx, y + 3.5, { width: 45, align: "center" });
         doc.font("Helvetica").text(row.rank ? `${row.rank}e` : "—", sx + 45, y + 3.5, { width: 30, align: "center" });
 
-        const isPassed = row.decision === "ADMIS" || row.decision === "VALIDÉ" || row.decision === "DIPLÔMÉ";
-        doc.font("Helvetica-Bold").fillColor(isPassed ? "#16805A" : "#C73B3B").text(row.decision, sx + 75, y + 3.5, { width: 45, align: "center" });
+        // GESTION EXACTE DE LA COULEUR DE LA DÉCISION (INSENSIBLE À LA CASSE)
+        const decInfo = parseJuryDecision(row.decision);
+        doc.font("Helvetica-Bold").fillColor(decInfo.color).text(decInfo.label, sx + 75, y + 3.5, { width: 45, align: "center" });
 
         y += 14;
       });
 
       y += 5;
+
+      // Calcul intègre du nombre d'admis dans le récapitulatif
       const evaluatedRows = summaries.filter((s) => s.semesterAverage !== null);
-      const passedCount = evaluatedRows.filter((s) => s.decision === "ADMIS" || s.decision === "VALIDÉ" || s.decision === "DIPLÔMÉ").length;
+      const passedCount = evaluatedRows.filter((s) => parseJuryDecision(s.decision).isPassed).length;
       const successRate = evaluatedRows.length > 0 ? ((passedCount / evaluatedRows.length) * 100).toFixed(1) : "0";
 
       // Bloc Récapitulatif
@@ -285,7 +308,7 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
       );
       y += 21;
 
-      // NOUVEAU BLOC : LÉGENDE DE CORRESPONDANCE DES CODES AUX MATIÈRES AU BAS DU DOCUMENT
+      // Légende des matières au bas du document
       if (offerings && offerings.length > 0) {
         doc.rect(startX, y, fullWidth, 24).fillAndStroke("#FFFFFF", "#CBD5E1");
         doc.fillColor(primaryColor).fontSize(6).font("Helvetica-Bold").text("LÉGENDE DES CODES & DISCIPLINES ENSEIGNÉES :", startX + 6, y + 3.5);
@@ -312,7 +335,6 @@ async function generateClassSemesterSummaryPdf(snapshot, offlinePayload, outputP
 
 /**
  * 4. PROCÈS-VERBAL DU CONTRÔLE CONTINU (PV_CC - A4 Paysage)
- * Avec en-tête interne centré et Légende des matières au bas du document.
  */
 async function generateClassContinuousAssessmentSummaryPdf(snapshot, offlinePayload, outputPath) {
   return new Promise(async (resolve, reject) => {
@@ -328,10 +350,8 @@ async function generateClassContinuousAssessmentSummaryPdf(snapshot, offlinePayl
       const startX = 25;
       const fullWidth = 791.89;
 
-      // Filigrane : UNIQUEMENT le logo du centre
       drawWatermark(doc, tmpl, logoBuf, null, 250, 130, 300);
 
-      // En-tête interne d'établissement CENTRÉ
       const endHeaderY = drawInternalSimpleHeader(doc, tmpl, center, logoBuf, 14, fullWidth, startX);
 
       const titleY = endHeaderY + 5;
@@ -388,7 +408,6 @@ async function generateClassContinuousAssessmentSummaryPdf(snapshot, offlinePayl
 
       y += 5;
 
-      // NOUVEAU BLOC : LÉGENDE DE CORRESPONDANCE DES CODES AUX MATIÈRES AU BAS DU DOCUMENT
       if (offerings && offerings.length > 0) {
         doc.rect(startX, y, fullWidth, 24).fillAndStroke("#FFFFFF", "#CBD5E1");
         doc.fillColor(primaryColor).fontSize(6).font("Helvetica-Bold").text("LÉGENDE DES CODES & DISCIPLINES ENSEIGNÉES :", startX + 6, y + 3.5);

@@ -3,9 +3,9 @@
 function getGradeAppreciation(val) {
   if (val === null || val === undefined || isNaN(val)) return "—";
   const g = parseFloat(val);
-  if (g < 6.0) return "Médiocre";
+  if (g < 6.0) return "Très Faible";
   if (g < 8.0) return "Faible";
-  if (g < 10.0) return "Insuffisant";
+  if (g < 10.0) return "Médiocre";
   if (g < 12.0) return "Passable";
   if (g < 14.0) return "Assez Bien";
   if (g < 16.0) return "Bien";
@@ -14,12 +14,14 @@ function getGradeAppreciation(val) {
 }
 
 function getDiplomaMention(avg) {
-  if (avg === null || avg === undefined || isNaN(avg)) return "Passable";
+  if (avg === null || avg === undefined || isNaN(avg)) return "—";
   const a = parseFloat(avg);
   if (a >= 16.0) return "Très Bien";
   if (a >= 14.0) return "Bien";
   if (a >= 12.0) return "Assez Bien";
-  return "Passable";
+  if (a >= 10.0) return "Passable";
+  if (a >= 8.0) return "Médiocre";
+  return "Faible";
 }
 
 function getGeneralObservation(overallAvg, hasEliminatory) {
@@ -34,8 +36,9 @@ function getGeneralObservation(overallAvg, hasEliminatory) {
   if (avg >= 14.0) return "Très bon travail. Résultats solides et réguliers. Tableau d'honneur.";
   if (avg >= 12.0) return "Bon travail dans l'ensemble. Résultats satisfaisants, poursuivez dans cette voie.";
   if (avg >= 10.0) return "Travail passable. Des efforts supplémentaires sont attendus pour consolider les acquis.";
-  if (avg >= 8.0) return "Résultats insuffisants. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
-  return "Résultats très faibles. Manque d'assiduité ou de méthode. Avertissement du conseil de discipline.";
+  if (avg >= 8.0) return "Travail médiocre. Résultats sous la moyenne, admis ou ajourné avec recommandation d'efforts sérieux.";
+  if (avg >= 6.0) return "Résultats très faibles. Travail irrégulier, un redoublement d'efforts est impératif au rattrapage.";
+  return "Résultats insuffisants. Manque prononcé d'assiduité ou de méthode.";
 }
 
 /**
@@ -47,7 +50,6 @@ function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, he
   const gap = width * 0.02;
   const colRightX = startX + colLeftW + gap;
 
-  // Calcul mathématique réel du taux de réussite de classe (non figé)
   const successRateText = totals.classSuccessRate !== undefined && totals.classSuccessRate !== null
     ? `${totals.classSuccessRate}%`
     : (totals.totalStudents > 0 && totals.passedCount !== undefined
@@ -90,11 +92,15 @@ function drawRecapMatrix(doc, totals, startX = 25, startY = 640, width = 545, he
 
   doc.rect(colRightX + colRightW / 2, startY, colRightW / 2, rowH).fill("#F8FAFC");
   doc.fillColor("#475569").fontSize(6).font("Helvetica-Bold").text("MENTION :", colRightX + colRightW / 2 + 4, startY + 3);
-  doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text((totals.mention || "PASSABLE").toUpperCase(), colRightX + colRightW / 2 + 42, startY + 3);
+  doc.fillColor("#0F172A").fontSize(6.5).font("Helvetica-Bold").text((totals.mention || "MÉDIOCRE").toUpperCase(), colRightX + colRightW / 2 + 42, startY + 3);
 
-  const isPassed = totals.decision === "admis" || totals.decision === "valide" || totals.decision === "diplome" || (totals.overallAverage >= 10.0 && !totals.hasEliminatory);
+  // Évaluation insensible à la casse de la décision
+  const rawDec = String(totals.decision || "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const admissionCutoff = totals.admissionThreshold || 10.0;
+  const isPassed = rawDec === "ADMIS" || rawDec === "VALIDE" || rawDec === "DIPLOME" || (totals.overallAverage >= admissionCutoff && !totals.hasEliminatory);
+
   const decColor = isPassed ? "#16805A" : "#C73B3B";
-  const decLabel = totals.decision === "diplome"
+  const decLabel = rawDec === "DIPLOME"
     ? "DIPLÔMÉ(E)"
     : isPassed
     ? "ADMIS(E) / VALIDÉ(E)"

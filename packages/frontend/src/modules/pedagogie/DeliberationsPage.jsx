@@ -30,6 +30,9 @@ export default function DeliberationsPage() {
   const [scope, setScope] = useState("ANNUEL");
   const [juryDate, setJuryDate] = useState(new Date().toISOString().split("T")[0]);
 
+  // Seuil d'admission dynamique du jury (modifiable, ex: 8.00 ou 10.00 / 20)
+  const [admissionThreshold, setAdmissionThreshold] = useState("10.00");
+
   const [delibTab, setDelibTab] = useState("tableau");
   const [delibData, setDelibData] = useState(null);
   const [studentDecisions, setStudentDecisions] = useState({});
@@ -69,10 +72,15 @@ export default function DeliberationsPage() {
   function loadDeliberation() {
     if (!selectedClassId || !selectedPeriodId) return;
     setLoading(true);
-    apiFetch(`/deliberations?classeId=${selectedClassId}&gradePeriodId=${selectedPeriodId}&scope=${scope}`)
+    const cutoff = parseFloat(admissionThreshold) || 10.0;
+
+    apiFetch(`/deliberations?classeId=${selectedClassId}&gradePeriodId=${selectedPeriodId}&scope=${scope}&admissionThreshold=${cutoff}`)
       .then((data) => {
         setDelibData(data);
         if (data.juryDate) setJuryDate(new Date(data.juryDate).toISOString().split("T")[0]);
+        if (data.admissionThreshold !== undefined && data.admissionThreshold !== null) {
+          setAdmissionThreshold(Number(data.admissionThreshold).toFixed(2));
+        }
 
         const decisionsMap = {};
         data.results?.forEach((st) => {
@@ -105,9 +113,10 @@ export default function DeliberationsPage() {
   async function handleExecuteCenterWideDeliberation() {
     setRunningCenterWide(true);
     try {
+      const cutoff = parseFloat(admissionThreshold) || 10.0;
       const res = await apiFetch("/deliberations/center-wide-run", {
         method: "POST",
-        body: JSON.stringify({ scope, juryDate }),
+        body: JSON.stringify({ scope, juryDate, admissionThreshold: cutoff }),
       });
       setCenterWideReport(res.report);
       showToast(res.message, "success");
@@ -119,10 +128,10 @@ export default function DeliberationsPage() {
     }
   }
 
-  // VALIDATION & SCELLEMENT AVEC SYNCHRONISATION INSTANTANÉE
   async function handleSaveManualDeliberation() {
     setSaving(true);
     try {
+      const cutoff = parseFloat(admissionThreshold) || 10.0;
       const payloadResults = Object.entries(studentDecisions).map(([studentId, d]) => ({
         studentId,
         decision: d.decision,
@@ -136,6 +145,7 @@ export default function DeliberationsPage() {
           gradePeriodId: selectedPeriodId,
           scope,
           juryDate,
+          admissionThreshold: cutoff,
           results: payloadResults,
         }),
       });
@@ -235,9 +245,9 @@ export default function DeliberationsPage() {
               icon="sync"
               onClick={loadDeliberation}
               disabled={loading}
-              title="Recalculer les moyennes d'après les dernières saisies de notes"
+              title="Recalculer les moyennes d'après le seuil d'admission choisi"
             >
-              Recalculer les Moyennes
+              Recalculer Moyennes
             </Button>
             <Button variant="primary" icon="bolt" onClick={() => { setCenterWideReport(null); setCenterWideModal(true); }}>
               Délibérer Tout le Centre
@@ -246,9 +256,10 @@ export default function DeliberationsPage() {
         }
       />
 
+      {/* PANNEAU DE CONFIGURATION DU JURY (AVEC BARRE D'ADMISSION DU JURY) */}
       <StructuredPanel
-        title="Configuration de la Délibération"
-        subtitle="Sélectionnez la classe, la portée temporelle et la date du procès-verbal"
+        title="Paramètres de Délibération &amp; Barre d'Admission du Jury"
+        subtitle="Réglez le seuil d'admissibilité minimal (ex: 8.00 ou 10.00 / 20) et la date du procès-verbal"
         icon="gavel"
         headerAction={
           <div className="flex p-0.5 bg-[#F5F7FA] rounded border border-border h-[36px] dark:bg-[#07111D] dark:border-border-dark">
@@ -273,11 +284,11 @@ export default function DeliberationsPage() {
           </div>
         }
       >
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary select-none dark:text-ink-secondary-dark">
-                Classe (Session Active)
+                Classe (Active)
               </label>
               <input
                 type="text"
@@ -301,6 +312,40 @@ export default function DeliberationsPage() {
               <option key={p.id} value={p.id}>{p.label}</option>
             ))}
           </Select>
+
+          {/* CONTRÔLE DE SAISIE DE LA BARRE D'ADMISSION DU JURY (EX: 8.00 ou 10.00 / 20) */}
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <label className="text-caption font-semibold uppercase tracking-wider text-ink-secondary select-none dark:text-ink-secondary-dark">
+                Barre d'Admission (/20)
+              </label>
+              <span className="font-mono text-[10px] text-brand-900 font-bold dark:text-brand-500">
+                {parseFloat(admissionThreshold) < 10.0 ? "Grâce / Tolérance" : "Standard"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                step="0.25"
+                min="5"
+                max="20"
+                value={admissionThreshold}
+                onChange={(e) => setAdmissionThreshold(e.target.value)}
+                onBlur={loadDeliberation}
+                placeholder="10.00"
+                className="h-[40px] w-full rounded bg-surface px-3 py-2 text-body font-mono font-bold text-brand-900 border border-border focus:border-brand-700 outline-none dark:bg-surface-dark dark:border-border-dark dark:text-brand-500"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-[40px] px-2.5"
+                onClick={loadDeliberation}
+                title="Appliquer cette barre"
+              >
+                Appliquer
+              </Button>
+            </div>
+          </div>
 
           <Input type="date" label="Date Officielle du Jury" value={juryDate} onChange={(e) => setJuryDate(e.target.value)} />
         </div>
@@ -331,11 +376,11 @@ export default function DeliberationsPage() {
           ) : (
             <>
               <div className="p-4 rounded bg-surface border border-border flex items-center justify-between dark:bg-surface-dark dark:border-border-dark">
-                <span className="text-body-sm text-ink-secondary">Validés (≥10) :</span>
+                <span className="text-body-sm text-ink-secondary">Validés (≥ seuil) :</span>
                 <span className="font-heading font-bold text-h4 text-success">{summaryStats.valide}</span>
               </div>
               <div className="p-4 rounded bg-surface border border-border flex items-center justify-between dark:bg-surface-dark dark:border-border-dark">
-                <span className="text-body-sm text-ink-secondary">Ajournés (&lt;10) :</span>
+                <span className="text-body-sm text-ink-secondary">Ajournés :</span>
                 <span className="font-heading font-bold text-h4 text-warning">{summaryStats.ajourne}</span>
               </div>
             </>
@@ -385,7 +430,7 @@ export default function DeliberationsPage() {
                     </Badge>
                   </div>
                   <p className="text-caption text-ink-muted mt-0.5">
-                    {delibData.results?.length || 0} apprenant(s) évalué(s) • Total Coefs Prescrits : <strong>{delibData.totalPrescribedCoeffs}</strong> • Seuil d'admission : 10.00 / 20
+                    {delibData.results?.length || 0} apprenant(s) évalué(s) • Total Coefs Prescrits : <strong>{delibData.totalPrescribedCoeffs}</strong> • Barre d'Admission : <strong className="text-brand-900 dark:text-brand-500">{admissionThreshold} / 20</strong>
                   </p>
                 </div>
 
@@ -412,13 +457,14 @@ export default function DeliberationsPage() {
                     <TableHeaderCell>Apprenant</TableHeaderCell>
                     <TableHeaderCell className="w-32 text-center">Total Points</TableHeaderCell>
                     <TableHeaderCell className="w-28 text-center">Moyenne /20</TableHeaderCell>
-                    <TableHeaderCell className="w-48 text-center">Alertes &amp; Éliminatoires</TableHeaderCell>
+                    <TableHeaderCell className="w-48 text-center">Mention &amp; Alertes</TableHeaderCell>
                     <TableHeaderCell className="w-48">Décision du Jury</TableHeaderCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {delibData.results?.map((st) => {
                     const currentDec = studentDecisions[st.studentId]?.decision || (scope === "ANNUEL" ? "redouble" : "ajourne");
+                    const isPassed = currentDec === "admis" || currentDec === "diplome" || currentDec === "valide";
 
                     return (
                       <TableRow key={st.studentId}>
@@ -434,21 +480,33 @@ export default function DeliberationsPage() {
                           {st.moyenne !== null ? `${st.moyenne}` : "—"}
                         </TableCell>
 
-                        {/* ALERTES PÉDAGOGIQUES : DÉTECTION DES NOTES MANQUANTES ET ÉLIMINATOIRES */}
+                        {/* MENTION ACADÉMIQUE CONFORME & ALERTES (8 = Médiocre) */}
                         <TableCell align="center">
                           <div className="flex flex-col items-center gap-1">
+                            <Badge
+                              variant={
+                                st.mention === "Très Bien" || st.mention === "Bien"
+                                  ? "success"
+                                  : st.mention === "Médiocre"
+                                  ? "warning"
+                                  : st.mention === "Faible"
+                                  ? "error"
+                                  : "neutral"
+                              }
+                              className="text-[10.5px] font-bold"
+                            >
+                              {st.mention}
+                            </Badge>
+
                             {st.hasMissingGrades && (
-                              <Badge variant="warning" className="text-[10px]">
-                                {st.missingGradesCount} matière(s) non notée(s)
+                              <Badge variant="warning" className="text-[9.5px]">
+                                {st.missingGradesCount} module(s) manquant(s)
                               </Badge>
                             )}
                             {st.hasEliminatoryGrade && (
-                              <Badge variant="error" className="text-[10px]">
+                              <Badge variant="error" className="text-[9.5px]">
                                 Note &lt; 08 (Spécialité)
                               </Badge>
-                            )}
-                            {!st.hasMissingGrades && !st.hasEliminatoryGrade && (
-                              <span className="text-caption text-success font-semibold">Conforme</span>
                             )}
                           </div>
                         </TableCell>
@@ -458,7 +516,11 @@ export default function DeliberationsPage() {
                             <select
                               value={currentDec}
                               onChange={(e) => handleDecisionChange(st.studentId, e.target.value)}
-                              className="h-[32px] rounded bg-surface px-2 text-caption font-semibold border border-border outline-none dark:bg-surface-dark dark:border-border-dark"
+                              className={`h-[32px] rounded px-2 text-caption font-semibold border outline-none ${
+                                isPassed
+                                  ? "border-success bg-success-subtle text-success dark:bg-success-subtle-dark"
+                                  : "border-border bg-surface text-ink-primary dark:bg-surface-dark dark:border-border-dark"
+                              }`}
                             >
                               <option value="admis" disabled={st.hasMissingGrades}>Admis (Niveau Supérieur)</option>
                               <option value="diplome" disabled={st.hasMissingGrades}>Diplômé (Fin de cycle)</option>
@@ -470,10 +532,14 @@ export default function DeliberationsPage() {
                             <select
                               value={currentDec}
                               onChange={(e) => handleDecisionChange(st.studentId, e.target.value)}
-                              className="h-[32px] rounded bg-surface px-2 text-caption font-semibold border border-border outline-none dark:bg-surface-dark dark:border-border-dark"
+                              className={`h-[32px] rounded px-2 text-caption font-semibold border outline-none ${
+                                isPassed
+                                  ? "border-success bg-success-subtle text-success dark:bg-success-subtle-dark"
+                                  : "border-border bg-surface text-ink-primary dark:bg-surface-dark dark:border-border-dark"
+                              }`}
                             >
-                              <option value="valide" disabled={st.hasMissingGrades}>Semestre Validé (≥ 10.00)</option>
-                              <option value="ajourne">Semestre Ajourné (&lt; 10.00)</option>
+                              <option value="valide" disabled={st.hasMissingGrades}>Semestre Validé</option>
+                              <option value="ajourne">Semestre Ajourné</option>
                             </select>
                           )}
                         </TableCell>
@@ -489,13 +555,13 @@ export default function DeliberationsPage() {
             <div className="space-y-4">
               <StructuredPanel
                 title="Apprenants Ajournés, Matières Insuffisantes &amp; Modules Manquants"
-                subtitle="Modules sous le seuil d'admission (< 10.00), éliminatoires (< 08.00) ou non encore évalués"
+                subtitle="Modules sous la moyenne (< 10.00), éliminatoires (< 08.00) ou non encore évalués"
                 icon="rule"
                 headerAction={<Badge variant="warning">{failedStudentsDetails.length} apprenant(s) concerné(s)</Badge>}
               >
                 {failedStudentsDetails.length === 0 ? (
                   <div className="p-8 text-center bg-success-subtle rounded border border-success/30 text-success text-body-sm font-semibold dark:bg-success-subtle-dark dark:text-success-dark">
-                    ✓ Aucun apprenant ajourné : toute la classe a validé l'ensemble des modules au-dessus du seuil requis.
+                    ✓ Aucun apprenant ajourné : toute la classe a franchi la barre d'admission de {admissionThreshold} / 20.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
@@ -509,6 +575,7 @@ export default function DeliberationsPage() {
                           <div className="flex items-center gap-2">
                             <Badge variant="brand">Moyenne : {st.moyenne}/20</Badge>
                             <Badge variant="warning">{st.currentDecision}</Badge>
+                            <Badge variant={st.mention === "Médiocre" ? "warning" : "error"}>{st.mention}</Badge>
                           </div>
                         </div>
 
@@ -560,12 +627,12 @@ export default function DeliberationsPage() {
         </>
       )}
 
-      {/* Modale Délibération Tout le Centre */}
+      {/* MODALE DÉLIBÉRATION TOUT LE CENTRE AVEC SEUIL PARAMÉTRABLE */}
       <Modal
         isOpen={centerWideModal}
         onClose={() => setCenterWideModal(false)}
         title="Délibération de Tout l'Établissement"
-        subtitle={`Exécution en 1 clic pour toutes les classes de la session (${classes.length} classes)`}
+        subtitle={`Exécution globale pour toutes les classes actives au seuil de ${admissionThreshold} / 20`}
         icon="bolt"
         maxWidth="max-w-lg"
         footer={
@@ -586,16 +653,31 @@ export default function DeliberationsPage() {
             <p>
               Cette opération va calculer automatiquement les moyennes et attribuer les décisions pour <strong>toutes les classes de la session active</strong>.
             </p>
-            <div className="p-3.5 rounded bg-[#F5F7FA] border border-border space-y-1 font-mono text-caption dark:bg-[#07111D] dark:border-border-dark">
+
+            <div className="p-3.5 rounded bg-[#F5F7FA] border border-border space-y-2.5 font-mono text-caption dark:bg-[#07111D] dark:border-border-dark">
               <div>Portée : {scope === "ANNUEL" ? "Délibération Annuelle (Mise à jour des statuts)" : "Délibération Semestrielle"}</div>
               <div>Date Officielle : {juryDate}</div>
+
+              {/* SEUIL D'ADMISSION GLOBAL PARAMÉTRABLE */}
+              <div className="pt-2 border-t border-border flex items-center justify-between font-sans dark:border-border-dark">
+                <span className="font-semibold text-ink-primary dark:text-white">Barre d'admission appliquée :</span>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="5"
+                  max="20"
+                  value={admissionThreshold}
+                  onChange={(e) => setAdmissionThreshold(e.target.value)}
+                  className="w-20 h-8 text-center rounded border border-border font-mono font-bold text-brand-900 dark:bg-surface-dark dark:border-border-dark dark:text-brand-500"
+                />
+              </div>
             </div>
           </div>
         ) : (
           <div className="p-4 rounded bg-success-subtle border border-success/30 space-y-3 dark:bg-success-subtle-dark">
             <div className="font-semibold text-success flex items-center gap-1.5">
               <Icon name="check_circle" className="text-[18px]" />
-              <span>Délibération globale terminée avec succès !</span>
+              <span>Délibération globale terminée au seuil de {admissionThreshold} / 20 !</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-caption font-mono text-ink-primary dark:text-white">
               <div>Classes traitées : <strong>{centerWideReport.totalClasses}</strong></div>
